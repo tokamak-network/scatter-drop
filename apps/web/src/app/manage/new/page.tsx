@@ -66,6 +66,9 @@ export default function NewCampaignPage() {
           // merkleRoot comes from the CSV/snapshot pipeline in M6; zero placeholder.
           merkleRoot: ZERO_ROOT,
           totalAmount,
+          // startTime 0 = start immediately (on-chain effectiveStart = now);
+          // the start/end datetime picker lands in the phase-4 wizard redesign.
+          startTime: 0n,
           deadline: BigInt(deadlineUnix),
           identityRegistry: registryAddr,
           // ETH fee path: fee becomes msg.value (handled by the SDK builder).
