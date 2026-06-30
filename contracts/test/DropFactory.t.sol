@@ -202,6 +202,15 @@ contract DropFactoryTest is Test {
         factory.createDrop(uint8(DropFactory.AirdropType.CSV), address(0), ROOT, TOTAL, deadline, custReg);
     }
 
+    function test_createDrop_revertsOnZeroRegistry() public {
+        _verifyOperator(operator);
+        vm.prank(operator);
+        vm.expectRevert(DropFactory.InvalidAddress.selector);
+        factory.createDrop(
+            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, deadline, address(0)
+        );
+    }
+
     function test_createDrop_revertsOnZeroRoot() public {
         _verifyOperator(operator);
         vm.prank(operator);
@@ -346,6 +355,20 @@ contract DropFactoryTest is Test {
         factory.withdrawFees(address(feeToken), CSV_FEE / 2);
         assertEq(factory.collectedFees(address(feeToken)), CSV_FEE - CSV_FEE / 2);
         assertEq(feeToken.balanceOf(treasury), CSV_FEE / 2);
+    }
+
+    function test_withdrawFees_zeroAmountIsNoop() public {
+        _verifyOperator(operator);
+        _fund(operator, CSV_FEE, TOTAL);
+        _createCsv(operator);
+
+        vm.prank(admin);
+        factory.withdrawFees(address(feeToken), 0);
+
+        // Nothing moved, accounting untouched.
+        assertEq(factory.collectedFees(address(feeToken)), CSV_FEE);
+        assertEq(feeToken.balanceOf(treasury), 0);
+        assertEq(feeToken.balanceOf(address(factory)), CSV_FEE);
     }
 
     function test_withdrawFees_revertsOnOverdraw() public {

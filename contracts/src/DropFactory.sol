@@ -146,12 +146,16 @@ contract DropFactory is Ownable {
     function withdrawFees(address token, uint256 amount) external onlyOwner {
         uint256 collected = collectedFees[token];
         if (amount > collected) revert InsufficientCollectedFees();
-        unchecked {
-            collectedFees[token] = collected - amount;
+        // Skip the state write + transfer for a zero withdrawal: some ERC20s revert
+        // on zero-value transfers, and emitting FeesWithdrawn(0) would be noise.
+        if (amount > 0) {
+            unchecked {
+                collectedFees[token] = collected - amount;
+            }
+            address to = treasury;
+            IERC20(token).safeTransfer(to, amount);
+            emit FeesWithdrawn(token, to, amount);
         }
-        address to = treasury;
-        IERC20(token).safeTransfer(to, amount);
-        emit FeesWithdrawn(token, to, amount);
     }
 
     // ---------------------------------------------------------------------
@@ -176,7 +180,8 @@ contract DropFactory is Ownable {
         address identityRegistry
     ) external returns (address drop) {
         AirdropType t = _toType(airdropType);
-        if (airdropToken == address(0)) revert InvalidAddress();
+        // Validate the cheap in-memory args (incl. zero registry) before any external call.
+        if (airdropToken == address(0) || identityRegistry == address(0)) revert InvalidAddress();
         if (merkleRoot == bytes32(0)) revert InvalidMerkleRoot();
         if (totalAmount == 0) revert ZeroTotalAmount();
         if (deadline <= block.timestamp) revert InvalidDeadline();
@@ -193,8 +198,9 @@ contract DropFactory is Ownable {
         if (fee > 0) {
             IERC20 token = feeToken;
             if (address(token) == address(0)) revert FeeTokenNotSet();
-            token.safeTransferFrom(msg.sender, address(this), fee);
+            // CEI: account for the fee before the external transfer.
             collectedFees[address(token)] += fee;
+            token.safeTransferFrom(msg.sender, address(this), fee);
         }
 
         // Deploy the drop (operator = msg.sender, factory = this via MerkleDrop's msg.sender).
