@@ -11,18 +11,40 @@ import {
 import {
   AirdropType,
   airdropTypeLabel,
+  buildAddAllowedTokenRequest,
   buildApproveRequest,
   buildCreateDropRequest,
   buildDrop,
   getZkX509,
   NATIVE_FEE_TOKEN,
+  TokenTier,
   type AirdropEntry,
 } from "@tokamak-network/scatter-drop-sdk";
-import { ArrowLeft, ArrowRight, Check } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Download } from "lucide-react";
 import Link from "next/link";
 import { ConnectGate } from "@/components/ConnectGate";
 import { TxButton } from "@/components/TxButton";
-import { deploymentIssue, useDeployment, useFeeOf } from "@/lib/contracts";
+import {
+  deploymentIssue,
+  useDeployment,
+  useFeeOf,
+  useTokenTier,
+} from "@/lib/contracts";
+
+const SAMPLE_CSV =
+  "0x70997970C51812dc3A010C7d01b50e0d17dc79C8,1000\n0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC,500";
+
+function downloadSampleCsv() {
+  const blob = new Blob([SAMPLE_CSV], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "scatter-drop-recipients-sample.csv";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 100);
+}
 
 const STEPS = ["Operator", "Basics", "Eligibility", "Recipients", "Create"];
 
@@ -88,13 +110,27 @@ export default function NewCampaignPage() {
   const [csv, setCsv] = useState("");
   const [startDate, setStartDate] = useState("");
   const [deadline, setDeadline] = useState("");
-
-  const { data: fee } = useFeeOf(factory, NATIVE_FEE_TOKEN, type);
+  const [feeToken, setFeeToken] = useState<Address>(NATIVE_FEE_TOKEN);
 
   const registryAddr = (registry || registries?.usersRegistry) as
     | Address
     | undefined;
   const tokenValid = isAddress(token);
+
+  // Token registry tier (createDrop requires the airdrop token to be allowed).
+  const { data: tier } = useTokenTier(
+    factory,
+    tokenValid ? (token as Address) : undefined,
+  );
+  const tierAllowed = tier !== undefined && Number(tier) !== TokenTier.NONE;
+  const addTokenReq =
+    factory && tokenValid && tier !== undefined && !tierAllowed
+      ? buildAddAllowedTokenRequest(factory, token as Address)
+      : null;
+
+  // Fee paid in the selected token (ETH native or an ERC-20 like TON).
+  const isEthFee = feeToken === NATIVE_FEE_TOKEN;
+  const { data: fee } = useFeeOf(factory, feeToken, type);
 
   const { entries, errors: csvErrors } = useMemo(
     () => parseRecipients(csv),
@@ -125,14 +161,20 @@ export default function NewCampaignPage() {
   const ready =
     !!factory &&
     tokenValid &&
+    tierAllowed &&
     recipientsValid &&
     windowValid &&
     !!registryAddr &&
     fee !== undefined;
 
-  const approveReq =
+  const approveTokenReq =
     factory && tokenValid && totalAmount > 0n
       ? buildApproveRequest(token as Address, factory, totalAmount)
+      : null;
+  // ERC-20 fee path needs an approval of the fee token for the fee amount.
+  const approveFeeReq =
+    factory && !isEthFee && fee
+      ? buildApproveRequest(feeToken, factory, fee)
       : null;
   const createReq =
     ready && registryAddr
@@ -144,14 +186,18 @@ export default function NewCampaignPage() {
           startTime: BigInt(startUnix),
           deadline: BigInt(deadlineUnix),
           identityRegistry: registryAddr,
-          feeToken: NATIVE_FEE_TOKEN,
+          feeToken,
           fee,
         })
       : null;
 
   const canNext =
     step === 0 ||
-    (step === 1 && tokenValid && !!registryAddr && name.trim().length > 0) ||
+    (step === 1 &&
+      tokenValid &&
+      tierAllowed &&
+      !!registryAddr &&
+      name.trim().length > 0) ||
     step === 2 ||
     (step === 3 && recipientsValid && windowValid) ||
     step === 4;
@@ -247,6 +293,38 @@ export default function NewCampaignPage() {
                   {token && !tokenValid && (
                     <span className="text-xs text-red-500">Invalid address.</span>
                   )}
+                  {tokenValid && tier !== undefined && (
+                    <div className="flex items-center gap-2 pt-1">
+                      <span
+                        className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
+                          Number(tier) === TokenTier.OFFICIAL
+                            ? "bg-emerald-950/40 text-emerald-600 border-emerald-900/40"
+                            : Number(tier) === TokenTier.COMMUNITY
+                              ? "bg-indigo-950/40 text-indigo-400 border-indigo-900/40"
+                              : "bg-amber-950/20 text-amber-600 border-amber-500/20"
+                        }`}
+                      >
+                        {Number(tier) === TokenTier.OFFICIAL
+                          ? "OFFICIAL"
+                          : Number(tier) === TokenTier.COMMUNITY
+                            ? "COMMUNITY"
+                            : "NOT REGISTERED"}
+                      </span>
+                      {!tierAllowed && (
+                        <TxButton
+                          request={addTokenReq}
+                          label="+ Add token to registry"
+                          disabled={!addTokenReq}
+                        />
+                      )}
+                    </div>
+                  )}
+                  {tokenValid && !tierAllowed && (
+                    <span className="text-[11px] text-slate-500">
+                      The airdrop token must be registered (community self-add or
+                      admin-official) before a campaign can be created.
+                    </span>
+                  )}
                 </Field>
                 <Field label="Customer CA registry *">
                   <select
@@ -295,15 +373,15 @@ export default function NewCampaignPage() {
                       <span className="text-xs font-mono text-slate-400">
                         Fee:{" "}
                         {fee !== undefined && type === t
-                          ? `${formatUnits(fee, 18)} ETH`
+                          ? `${formatUnits(fee, 18)} ${isEthFee ? "ETH" : "tokens"}`
                           : "—"}
                       </span>
                     </label>
                   ))}
                 </div>
                 <p className="text-xs text-slate-500 font-mono">
-                  v1 core path: CSV → Merkle → immediate. Fee paid in ETH
-                  (multi-token/TON discount in a later step).
+                  v1 core path: CSV → Merkle → immediate. Choose the fee payment
+                  token (ETH or an ERC-20 like TON) in the final step.
                 </p>
               </div>
             )}
@@ -321,13 +399,22 @@ export default function NewCampaignPage() {
                     onChange={(e) => setCsv(e.target.value)}
                     placeholder={"0xabc…,120\n0xdef…,80"}
                   />
-                  <span className="text-xs text-slate-500">
-                    {entries.length} valid
-                    {csvErrors > 0 ? ` · ${csvErrors} invalid line(s)` : ""}
-                    {manifest
-                      ? ` · total ${formatUnits(totalAmount, 18)} (auto)`
-                      : ""}
-                  </span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-500">
+                      {entries.length} valid
+                      {csvErrors > 0 ? ` · ${csvErrors} invalid line(s)` : ""}
+                      {manifest
+                        ? ` · total ${formatUnits(totalAmount, 18)} (auto)`
+                        : ""}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={downloadSampleCsv}
+                      className="text-[11px] text-emerald-600 inline-flex items-center gap-1 hover:underline"
+                    >
+                      <Download className="w-3 h-3" /> Sample CSV
+                    </button>
+                  </div>
                 </Field>
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Start (optional)">
@@ -367,21 +454,53 @@ export default function NewCampaignPage() {
                   <dt className="muted">Merkle root</dt>
                   <dd className="font-mono text-xs break-all">{merkleRoot}</dd>
                   <dt className="muted">Fee</dt>
-                  <dd>{fee !== undefined ? `${formatUnits(fee, 18)} ETH` : "…"}</dd>
+                  <dd>
+                    {fee !== undefined
+                      ? `${formatUnits(fee, 18)} ${isEthFee ? "ETH" : "tokens"}`
+                      : "…"}
+                  </dd>
                 </dl>
+
+                <div className="space-y-1">
+                  <span className="label">Fee payment token</span>
+                  <div className="flex gap-2">
+                    <FeeOption
+                      active={isEthFee}
+                      onClick={() => setFeeToken(NATIVE_FEE_TOKEN)}
+                      label="ETH"
+                    />
+                    {dep.feeToken && (
+                      <FeeOption
+                        active={!isEthFee}
+                        onClick={() => setFeeToken(dep.feeToken as Address)}
+                        label="ERC-20 (e.g. TON — discounted)"
+                      />
+                    )}
+                  </div>
+                </div>
+
                 <p className="text-xs text-slate-500 font-mono">
-                  Guided: approve the distribution token, then createDrop (fee in
-                  ETH as msg.value + token deposit + deploy, one tx).
+                  Guided: {isEthFee ? "" : "approve the fee token, "}approve the
+                  distribution token, then createDrop (fee{" "}
+                  {isEthFee ? "as ETH msg.value" : "pulled via transferFrom"} +
+                  token deposit + deploy).
                 </p>
                 <div className="grid gap-2">
+                  {!isEthFee && (
+                    <TxButton
+                      request={approveFeeReq}
+                      label="1. Approve fee token"
+                      disabled={!approveFeeReq}
+                    />
+                  )}
                   <TxButton
-                    request={approveReq}
-                    label="1. Approve distribution token"
-                    disabled={!approveReq}
+                    request={approveTokenReq}
+                    label={`${isEthFee ? "1" : "2"}. Approve distribution token`}
+                    disabled={!approveTokenReq}
                   />
                   <TxButton
                     request={createReq}
-                    label="2. Create campaign"
+                    label={`${isEthFee ? "2" : "3"}. Create campaign`}
                     primary
                     disabled={!createReq}
                   />
@@ -433,5 +552,29 @@ function Field({
       <span className="label">{label}</span>
       {children}
     </label>
+  );
+}
+
+function FeeOption({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex-1 px-3 py-2 rounded-lg border text-xs font-mono transition ${
+        active
+          ? "border-emerald-500 bg-emerald-500/5 text-slate-100"
+          : "border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200"
+      }`}
+    >
+      {label}
+    </button>
   );
 }

@@ -56,6 +56,21 @@ export function useFeeOf(
   });
 }
 
+/** DropFactory.tokenTier(token) — 0 NONE / 1 COMMUNITY / 2 OFFICIAL. */
+export function useTokenTier(
+  factory: Address | undefined,
+  token: Address | undefined,
+) {
+  return useReadContract({
+    address: factory,
+    abi: dropFactoryAbi,
+    functionName: "tokenTier",
+    args: token ? [token] : undefined,
+    chainId: fork.id,
+    query: { enabled: !!factory && !!token },
+  });
+}
+
 /** DropFactory.collectedFees(token) — live vault balance for a token. */
 export function useCollectedFees(
   factory: Address | undefined,
