@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { Shield, User } from "lucide-react";
-import { useIsAdmin } from "@/lib/stub";
+import { useIsAdmin } from "@/lib/contracts";
 import { useMounted } from "@/lib/useMounted";
 import { fork } from "@/lib/wagmi";
 

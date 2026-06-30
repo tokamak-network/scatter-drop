@@ -31,6 +31,20 @@ export function deploymentIssue(
   return null;
 }
 
+/**
+ * Live admin gate: the connected wallet is the deployment's deployer
+ * (DropFactory owner). The factory ABI exposes no owner() view, so we use the
+ * deployer recorded in the deployment — flagged to K0 for an owner() read.
+ */
+export function useIsAdmin(address: Address | undefined): boolean {
+  const { data: dep } = useDeployment();
+  return (
+    !!address &&
+    !!dep?.deployer &&
+    dep.deployer.toLowerCase() === address.toLowerCase()
+  );
+}
+
 /** Active deployment (DropFactory + fee token + treasury), runtime-loaded. */
 export function useDeployment() {
   return useQuery({

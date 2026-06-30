@@ -2,15 +2,13 @@
 
 import type { ReactNode } from "react";
 import { useAccount } from "wagmi";
-import { useIsAdmin } from "@/lib/stub";
+import { useIsAdmin } from "@/lib/contracts";
 import { EmptyState } from "./states";
 
 /**
  * Route-level guard for the `/admin/*` section. Hiding the nav link is not a
  * guard, so this blocks rendering of admin pages for non-admin wallets.
- *
- * Stub: `useIsAdmin` returns false until the real DropFactory.owner() check is
- * wired in M7 (flip the stub to preview the admin UI during development).
+ * Admin = the deployment deployer (DropFactory owner) via useIsAdmin.
  */
 export function AdminGate({ children }: { children: ReactNode }) {
   const { address } = useAccount();
