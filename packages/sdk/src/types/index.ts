@@ -27,6 +27,9 @@ export interface CampaignInfo {
   drop: Address;
   token: Address;
   merkleRoot: Hex;
+  /** Claim window opens at this unix-seconds timestamp. */
+  startTime: bigint;
+  /** Claim window closes (and sweep becomes possible) at this timestamp. */
   deadline: bigint;
   identityRegistry: Address;
   operator: Address;

@@ -24,14 +24,23 @@ export async function getCampaignInfo(
   drop: Address,
 ): Promise<CampaignInfo> {
   const base = { address: drop, abi: merkleDropAbi } as const;
-  const [token, merkleRoot, deadline, identityRegistry, operator] = await Promise.all([
+  const [token, merkleRoot, startTime, deadline, identityRegistry, operator] = await Promise.all([
     client.readContract({ ...base, functionName: "token" }),
     client.readContract({ ...base, functionName: "merkleRoot" }),
+    client.readContract({ ...base, functionName: "startTime" }),
     client.readContract({ ...base, functionName: "deadline" }),
     client.readContract({ ...base, functionName: "identityRegistry" }),
     client.readContract({ ...base, functionName: "operator" }),
   ]);
-  return { drop, token, merkleRoot, deadline: BigInt(deadline), identityRegistry, operator };
+  return {
+    drop,
+    token,
+    merkleRoot,
+    startTime: BigInt(startTime),
+    deadline: BigInt(deadline),
+    identityRegistry,
+    operator,
+  };
 }
 
 /** Whether the allocation at `index` has already been claimed. */
