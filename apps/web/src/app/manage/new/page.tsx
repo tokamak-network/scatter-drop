@@ -40,14 +40,23 @@ function parseRecipients(text: string): {
 } {
   const entries: AirdropEntry[] = [];
   let errors = 0;
+  const seen = new Set<string>();
   for (const raw of text.split("\n")) {
     const line = raw.trim();
     if (!line) continue;
     const [addr, amt] = line.split(",").map((s) => s.trim());
-    if (!isAddress(addr) || !/^\d+(\.\d+)?$/.test(amt ?? "")) {
+    // Cap decimals at 18 so parseUnits can't throw "fractional part exceeds".
+    if (!isAddress(addr) || !/^\d+(\.\d{1,18})?$/.test(amt ?? "")) {
       errors++;
       continue;
     }
+    // buildDrop throws on duplicate addresses — reject them here as errors.
+    const lower = addr.toLowerCase();
+    if (seen.has(lower)) {
+      errors++;
+      continue;
+    }
+    seen.add(lower);
     entries.push({ account: addr, amount: parseUnits(amt, 18) });
   }
   return { entries, errors };
@@ -87,20 +96,22 @@ export default function NewCampaignPage() {
   const totalAmount = manifest ? BigInt(manifest.totalAmount) : 0n;
   const merkleRoot = (manifest?.merkleRoot ?? `0x${"0".repeat(64)}`) as Hex;
 
-  const startUnix = startDate
-    ? Math.floor(Date.parse(`${startDate}T00:00:00Z`) / 1000)
-    : 0;
+  const startParsed = startDate ? Date.parse(`${startDate}T00:00:00Z`) : 0;
+  const startUnix = Number.isNaN(startParsed)
+    ? 0
+    : Math.floor(startParsed / 1000);
   const deadlineParsed = deadline ? Date.parse(`${deadline}T00:00:00Z`) : 0;
   const deadlineUnix = Number.isNaN(deadlineParsed)
     ? 0
     : Math.floor(deadlineParsed / 1000);
 
   const recipientsValid = entries.length > 0 && csvErrors === 0;
+  const windowValid = deadlineUnix > 0 && (startUnix === 0 || deadlineUnix > startUnix);
   const ready =
     !!factory &&
     tokenValid &&
     recipientsValid &&
-    deadlineUnix > 0 &&
+    windowValid &&
     !!registryAddr &&
     fee !== undefined;
 
@@ -127,7 +138,7 @@ export default function NewCampaignPage() {
     step === 0 ||
     (step === 1 && tokenValid && !!registryAddr && name.trim().length > 0) ||
     step === 2 ||
-    (step === 3 && recipientsValid && deadlineUnix > 0) ||
+    (step === 3 && recipientsValid && windowValid) ||
     step === 4;
 
   return (
