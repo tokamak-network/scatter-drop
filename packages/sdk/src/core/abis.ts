@@ -99,6 +99,20 @@ export const dropFactoryAbi = [
   },
   {
     type: "function",
+    name: "feeModeOf",
+    stateMutability: "view",
+    inputs: [{ name: "token", type: "address" }],
+    outputs: [{ name: "", type: "uint8" }],
+  },
+  {
+    type: "function",
+    name: "feeBpsOf",
+    stateMutability: "view",
+    inputs: [{ name: "token", type: "address" }],
+    outputs: [{ name: "", type: "uint16" }],
+  },
+  {
+    type: "function",
     name: "setDefaultFeeMode",
     stateMutability: "nonpayable",
     inputs: [{ name: "mode", type: "uint8" }],

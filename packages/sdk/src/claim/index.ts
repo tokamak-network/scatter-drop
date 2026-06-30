@@ -1,7 +1,12 @@
 import { encodeFunctionData, getAddress, type Address, type Hex } from "viem";
 import type { ClaimProof } from "@tokamak-network/scatter-drop-merkle";
 import { dropFactoryAbi, erc20Abi, merkleDropAbi } from "../core/abis.js";
-import type { AirdropType } from "../types/index.js";
+import { FeeMode, type AirdropType } from "../types/index.js";
+
+export { FeeMode };
+
+/** Max PERCENT fee in basis points (mirrors DropFactory.MAX_FEE_BPS = 10%). */
+export const MAX_FEE_BPS = 1000;
 
 /** A minimal `{ to, data }` transaction request, ready for a wallet client. */
 export interface TxRequest {
@@ -39,12 +44,6 @@ export function encodeClaim(claim: ClaimProof): Hex {
  */
 export function buildClaimRequest(drop: Address, claim: ClaimProof): TxRequest {
   return { to: getAddress(drop), data: encodeClaim(claim) };
-}
-
-/** Token fee pricing mode. MUST match the Solidity `enum FeeMode`. */
-export enum FeeMode {
-  PERCENT = 0,
-  FLAT = 1,
 }
 
 /** Parameters for `DropFactory.createDrop` (operator creates a campaign). */
@@ -117,8 +116,15 @@ export function buildSetFeeModeRequest(factory: Address, token: Address, mode: F
   };
 }
 
+function assertBps(bps: number): void {
+  if (!Number.isInteger(bps) || bps < 0 || bps > MAX_FEE_BPS) {
+    throw new Error(`bps must be an integer in [0, ${MAX_FEE_BPS}] (got ${bps})`);
+  }
+}
+
 /** Build `DropFactory.setDefaultFeeBps(bps)` — admin sets the global default PERCENT rate. */
 export function buildSetDefaultFeeBpsRequest(factory: Address, bps: number): TxRequest {
+  assertBps(bps);
   return {
     to: getAddress(factory),
     data: encodeFunctionData({ abi: dropFactoryAbi, functionName: "setDefaultFeeBps", args: [bps] }),
@@ -127,6 +133,7 @@ export function buildSetDefaultFeeBpsRequest(factory: Address, bps: number): TxR
 
 /** Build `DropFactory.setFeeBps(token, bps)` — admin sets a token's PERCENT rate (basis points). */
 export function buildSetFeeBpsRequest(factory: Address, token: Address, bps: number): TxRequest {
+  assertBps(bps);
   return {
     to: getAddress(factory),
     data: encodeFunctionData({
