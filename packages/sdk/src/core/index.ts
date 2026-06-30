@@ -1,6 +1,6 @@
 import type { Address, PublicClient } from "viem";
-import type { CampaignInfo } from "../types/index.js";
-import { merkleDropAbi } from "./abis.js";
+import { TokenTier, type CampaignInfo } from "../types/index.js";
+import { dropFactoryAbi, merkleDropAbi } from "./abis.js";
 
 export {
   merkleDropAbi,
@@ -45,5 +45,34 @@ export async function isClaimed(
     abi: merkleDropAbi,
     functionName: "isClaimed",
     args: [index],
+  });
+}
+
+/** Read a token's registry tier from the DropFactory (NONE/COMMUNITY/OFFICIAL). */
+export async function getTokenTier(
+  client: PublicClient,
+  factory: Address,
+  token: Address,
+): Promise<TokenTier> {
+  const t = await client.readContract({
+    address: factory,
+    abi: dropFactoryAbi,
+    functionName: "tokenTier",
+    args: [token],
+  });
+  return Number(t) as TokenTier;
+}
+
+/** Whether a token may be used for airdrops (tier != NONE). */
+export async function isTokenAllowed(
+  client: PublicClient,
+  factory: Address,
+  token: Address,
+): Promise<boolean> {
+  return client.readContract({
+    address: factory,
+    abi: dropFactoryAbi,
+    functionName: "isAllowed",
+    args: [token],
   });
 }

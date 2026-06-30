@@ -103,3 +103,52 @@ export function buildApproveRequest(token: Address, spender: Address, amount: bi
     }),
   };
 }
+
+/**
+ * Build `DropFactory.addAllowedToken(token)` — a verified operator self-registers
+ * an airdrop token (COMMUNITY tier, no admin approval needed).
+ */
+export function buildAddAllowedTokenRequest(factory: Address, token: Address): TxRequest {
+  return {
+    to: getAddress(factory),
+    data: encodeFunctionData({
+      abi: dropFactoryAbi,
+      functionName: "addAllowedToken",
+      args: [getAddress(token)],
+    }),
+  };
+}
+
+/**
+ * Build `DropFactory.setOfficialToken(token, official)` — admin marks a token
+ * OFFICIAL (top of list) or downgrades it. Admin-only on-chain.
+ */
+export function buildSetOfficialTokenRequest(
+  factory: Address,
+  token: Address,
+  official: boolean,
+): TxRequest {
+  return {
+    to: getAddress(factory),
+    data: encodeFunctionData({
+      abi: dropFactoryAbi,
+      functionName: "setOfficialToken",
+      args: [getAddress(token), official],
+    }),
+  };
+}
+
+/**
+ * Build `DropFactory.removeAllowedToken(token)` — admin removes a token from the
+ * registry (→ NONE), e.g. a malicious/impersonating token. Admin-only on-chain.
+ */
+export function buildRemoveAllowedTokenRequest(factory: Address, token: Address): TxRequest {
+  return {
+    to: getAddress(factory),
+    data: encodeFunctionData({
+      abi: dropFactoryAbi,
+      functionName: "removeAllowedToken",
+      args: [getAddress(token)],
+    }),
+  };
+}
