@@ -75,3 +75,20 @@ source contracts/.env && forge test --root contracts \
 ```
 Without `SEPOLIA_RPC_URL` the tests skip, so the default `forge test` stays
 hermetic and offline.
+
+## One-command fork deploy (W5c)
+`scripts/dev-fork.sh` stands up a clickable local env: it starts an anvil
+**Sepolia fork**, deploys `DropFactory` (wired to the real zk-X509
+`RegistryFactory` + users `IdentityRegistry`) plus fresh mintable fee/airdrop
+`MockERC20`s via `script/DeployFork.s.sol`, and writes the addresses to
+`contracts/deployments/<chainId>.json` for the frontend/SDK. anvil stays up.
+
+```bash
+scripts/dev-fork.sh        # SEPOLIA_RPC_URL sourced from contracts/.env
+```
+
+`deployments/<chainId>.json` is a runtime artifact (gitignored). Note: creating a
+campaign from the deployed factory still requires the operator wallet to be
+identity-verified on the real registry (gate 1) — seeding a demo campaign on the
+fork needs a real proof or an `anvil_setStorageAt` override of `verifiedUntil`,
+tracked as a follow-up.
