@@ -141,7 +141,7 @@
        └ 소셜       → 퀘스트 설정(트위터/디스코드)
  3. 배포 방식 선택   ○ 즉시  ○ 베스팅(cliff+linear)  ○ 선착순
  4. 미리보기        자격자 수·총 배분량 확인 → (Merkle 방식이면) 트리 생성
- 5. 생성 & 결제      수수료(feeToken) 지불 + 토큰 예치 → createDrop / createGatedDrop
+ 5. 생성 & 결제      배포액의 %수수료(같은 토큰, on-top) — approve(총량+수수료) → createDrop
 ```
 온체인 검증 방식을 제외하면 4단계에서 동일한 명단으로 수렴 → Merkle 트리 → 배포.
 
@@ -149,29 +149,32 @@
 
 ## 7. 컨트랙트 구조
 ```
-DropFactory (어드민이 feeToken, feeOf[type], operatorRegistry, allowedToken 관리 + 수수료 볼트 보관)
+DropFactory (어드민이 feeBps, operatorRegistry, allowedToken 관리 + 수수료 볼트 보관)
  ├ operatorRegistry                          운영자용 CA 레지스트리 (어드민 전역 설정)
- ├ feeOf[feeToken][AirdropType] → uint       (납부토큰,종류)별 생성 수수료 (어드민, address(0)=ETH, §8)
+ ├ defaultFeeBps → uint16 (초기 300=3%)      전역 기본 수수료율 (§8)
+ ├ feeBps[airdropToken] → uint16             토큰별 수수료율(bps). 미설정=defaultFeeBps. ≤ MAX_FEE_BPS
  ├ tokenTier[address] → {NONE,COMMUNITY,OFFICIAL}  에어드랍 토큰 등록·등급 (§8.7)
  ├ setOperatorRegistry(addr)   onlyAdmin     운영자 신원 게이트 변경
- ├ setFee(feeToken, type, amount) onlyAdmin  (납부토큰,종류)별 수수료 설정 (TON 할인 등). 0=그 토큰 미허용
+ ├ setDefaultFeeBps(bps)       onlyAdmin     전역 기본율 변경 (≤ MAX_FEE_BPS)
+ ├ setFeeBps(token, bps)       onlyAdmin     토큰별 율 설정 (가치 낮은 토큰 ↑). ≤ MAX_FEE_BPS
  ├ addAllowedToken(token)      operator      검증 운영자가 직접 등록(승인 불요) → COMMUNITY. 게이트1 + token.code>0
  ├ setOfficialToken(token,on)  onlyAdmin     플랫폼 공식 토큰 지정/해제 → OFFICIAL (목록 상단 노출)
  ├ removeAllowedToken(token)   onlyAdmin     악성 토큰 제거 → NONE (모더레이션)
- ├ createDrop(type, airdropToken, merkleRoot, totalAmount, startTime, deadline, identityRegistry, feeToken)  payable
- │     · type ∈ {CSV, ONCHAIN_SNAPSHOT, SOCIAL}  (오프체인 명단 → Merkle). feeToken=납부수단(0=ETH)
+ ├ createDrop(type, airdropToken, merkleRoot, totalAmount, startTime, deadline, identityRegistry)
+ │     · type ∈ {CSV, ONCHAIN_SNAPSHOT, SOCIAL}. 수수료 = floor(totalAmount × bpsOf(airdropToken)/10000), on-top.
  │     · 클레임 윈도우 [startTime, deadline] — require(deadline > startTime) + (deadline - startTime >= MIN_DURATION) + deadline > now
  │     0a. require(operatorRegistry.verifiedUntil(msg.sender) >= now)  운영자 신원검증 (게이트1)
  │     0b. require(zkFactory.isRegistry[identityRegistry])             정식 고객 CA 레지스트리 검증
- │     0c. require(tokenTier[airdropToken] != NONE)                    등록 토큰만 배포 (미등록 시 운영자가 addAllowedToken)
- │     1. (ETH) require(msg.value==feeOf[0][type]) / (ERC20) transferFrom feeOf[feeToken][type] → 볼트 적립
- │     2. airdropToken.transferFrom(operator, newDrop, totalAmount)   배포 토큰 예치
- │     3. MerkleDrop 배포 (identityRegistry 주입)
- ├ createGatedDrop(airdropToken, ruleConfig, totalAmount, deadline, identityRegistry)  온체인 검증
- │     · type = ONCHAIN_GATED, 수수료 feeOf[ONCHAIN_GATED]
- │     동일한 운영자검증 + 수수료/예치 + 고객 레지스트리 검증 + GatedDrop 배포
- ├ collectedFees(token) → uint              ★ 볼트 적립 잔액 조회 (토큰별)
- └ withdrawFees(token, to, amount)  onlyAdmin ★ 수수료 볼트 출금 (플랫폼 어드민만)
+ │     0c. require(tokenTier[airdropToken] != NONE)                    등록 토큰만 배포
+ │     1. fee = totalAmount × bpsOf(airdropToken) / 10000  (bpsOf = feeBps[token] or defaultFeeBps)
+ │     2. airdropToken.safeTransferFrom(operator, newDrop, totalAmount)   배포 풀(전액)
+ │     3. airdropToken.safeTransferFrom(operator, address(this), fee)     수수료 볼트(같은 토큰) → collectedFees[airdropToken]+=fee
+ │     4. MerkleDrop 배포 (identityRegistry 주입)
+ │     (운영자 사전 approve = totalAmount + fee. exact-receipt(_pullExact)로 fee-on-transfer 거부.)
+ ├ createGatedDrop(airdropToken, ruleConfig, totalAmount, startTime, deadline, identityRegistry)  온체인 검증
+ │     · type = ONCHAIN_GATED. 동일 % 수수료(on-top) + 게이트 + GatedDrop 배포  [후속]
+ ├ collectedFees(token) → uint              ★ 볼트 적립 잔액 조회 (토큰별, 배포 토큰으로 적립)
+ └ withdrawFees(token, to, amount)  onlyAdmin ★ 수수료 볼트 출금 (treasury 고정, 플랫폼 어드민만)
 
 MerkleDrop (캠페인 1개 — CSV·소셜·스냅샷 규칙)
  ├ startTime / deadline                    클레임 윈도우 (불변). [시작, 마감]
@@ -195,34 +198,36 @@ GatedDrop (캠페인 1개 — 온체인 검증 규칙)  [후속 단계]
 ---
 
 ## 8. 이코노미 (수익 모델)
-- **에어드랍 종류별 × 결제 토큰별 차등 생성 수수료.** 금액이 ① 종류(자격 방식) ② **납부 토큰**에 따라 다르다.
-  - 종류별 차등 근거: 종류마다 플랫폼 원가(인덱서·백엔드·sybil 방지)가 달라서.
-  - **토큰별 차등 = 결제 수단 인센티브.** 여러 토큰으로 납부 가능하고 토큰마다 가격이 다르다.
-    예) **TON으로 내면 ETH보다 할인** — 어드민이 TON 가격을 더 낮게 설정.
-- 운영자는 생성 시 **납부 토큰을 선택**(ETH=native / TON 등 ERC-20). 해당 토큰의 종류별 금액만큼 **볼트에 적립**.
-  플랫폼 어드민이 `collectedFees(token)`로 토큰별 조회, `withdrawFees`로 출금.
-- 배포할 에어드랍 토큰과 수수료 납부 토큰은 **별개**. 특정 토큰의 금액 0 = 그 토큰으론 무료/미허용.
+- **수익이 거래량(총 배포량)에 비례.** 플랫폼 수익 = Σ(캠페인 배포량 × 그 토큰 feeBps/10000)
+  = 총배포량 × 평균율. **에어드랍이 많고 클수록 플랫폼 수익↑** → 운영자·플랫폼 인센티브 정렬.
+  (이전 고정금액 모델은 "캠페인 개수"에만 비례 → 큰 캠페인 가치 미반영이라 폐기.)
+- **생성 수수료 = 배포 토큰 예치액의 비율(%).** 고정금액이 아니라 **"얼마를 뿌리느냐"에 비례.**
+  - 근거: 많이 뿌리는 캠페인이 더 낸다(공정·직관). 토큰 가치 차이는 **토큰별 %를 어드민이 설정**해 해소
+    (가치 낮은 토큰은 % 높게). 결제 토큰 = **배포 토큰과 동일**(별도 납부토큰 선택 없음).
+- **수수료는 총량에 "추가"(on-top) — 운영자 부담.** 운영자가 1000을 뿌리려면 `1000 + 1000×fee%`를 예치.
+  배포 풀에는 **1000 전액**이 들어가고(수령자 영향 0), 수수료분은 **수수료 볼트**에 적립.
+- 어드민이 `collectedFees(token)`로 토큰별 조회, `withdrawFees`로 treasury 출금.
 
-### 생성 수수료 = feeOf[feeToken][AirdropType] (2차원)
-어드민이 **(납부토큰, 종류)별로** 금액 설정: `setFee(feeToken, type, amount)`. `feeToken=address(0)`은 native ETH.
-| | CSV | ONCHAIN_SNAPSHOT | ONCHAIN_GATED | SOCIAL |
-|---|---|---|---|---|
-| **ETH** (정가) | 저 | 중 | 중상 | 고 |
-| **TON** (할인) | 저×할인 | 중×할인 | … | … |
-> 종류별 차등(인덱서·백엔드 원가 반영) + 토큰별 차등(TON 할인 등 인센티브)을 곱으로 적용.
-> 미설정(0)인 (토큰,종류) 조합은 그 토큰으로 결제 불가.
+### 수수료율 = feeBps[airdropToken] (토큰별 비율, 기본 3%)
+- bps(basis points, 1% = 100bps)로 저장. **기본값 = 300bps(3%)** (전역 default).
+- 어드민이 토큰별 설정: `setFeeBps(token, bps)`. 미설정 토큰은 default(300) 적용.
+- 상한 가드: `MAX_FEE_BPS`(예: 1000 = 10%)로 과도 설정 방지.
+- 수수료액 = `floor(totalAmount × feeBps[token] / 10000)`.
+  예) 1000 토큰 × 300bps = 30 → 운영자 예치 1030, 풀 1000, 볼트 30.
 
-### createDrop 납부 흐름 (payable)
-- `feeToken == address(0)`(ETH): `require(msg.value == feeOf[0][type])` → `collectedFees[0] += msg.value`.
-- `feeToken != 0`(ERC-20, 예 TON): `require(msg.value == 0)` + `require(feeOf[feeToken][type] > 0)`(허용) →
-  `safeTransferFrom(operator, vault, feeOf[feeToken][type])` → `collectedFees[feeToken] += amount`.
-- `withdrawFees`는 ETH(address(0), call 전송) / ERC-20 모두 지원, treasury 고정.
+### createDrop 납부 흐름
+- `fee = totalAmount × bpsOf(airdropToken) / 10000` (bpsOf = 설정값 or default 300).
+- 운영자 approve(airdropToken, totalAmount + fee) → createDrop:
+  `airdropToken.safeTransferFrom(operator, drop, totalAmount)` (풀) +
+  `airdropToken.safeTransferFrom(operator, address(this), fee)` (볼트) → `collectedFees[airdropToken] += fee`.
+- (ETH 배포 토큰은 비지원 — airdropToken은 ERC-20, §SDK 가드와 일치.) `withdrawFees` treasury 고정.
 
 ### 어드민 전역 설정·권한 항목
 | 항목 | 설명 |
 |------|------|
-| **feeOf[token][type]** | **(납부토큰, 종류)별 생성 수수료 — TON 할인 등 토큰별 차등. 0=그 토큰 미허용** |
-| **수수료 볼트** | **생성 수수료가 DropFactory에 적립. `collectedFees(token)`로 잔액 조회** |
+| **feeBps[token]** | **토큰별 수수료율(bps). 미설정=defaultFeeBps(300=3%). setFeeBps(token,bps), ≤ MAX_FEE_BPS** |
+| **defaultFeeBps** | **전역 기본율(초기 300=3%). setDefaultFeeBps로 변경** |
+| **수수료 볼트** | **수수료가 DropFactory에 적립(배포 토큰으로). `collectedFees(token)` 조회** |
 | **withdrawFees** | **볼트 출금 — 플랫폼 어드민만 (`onlyAdmin`)** |
 | **operatorRegistry** | **운영자용 CA 레지스트리 — 캠페인 생성 신원 게이트(§4.3-1)** |
 

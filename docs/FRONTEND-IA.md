@@ -171,14 +171,13 @@ Step 2  자격 방식   ○ CSV 업로드                      → type=CSV
 Step 3  배포 방식   ○ 즉시  ○ 베스팅(cliff+linear)  ○ 선착순
 Step 4  명단 확정(오프체인)  ← 트랜잭션 없음
                     packages/merkle buildDrop → merkleRoot + **총량=Σ금액(자동)** + proofs.json
-                    미리보기: 자격자 수 · 총 배분량 · 윈도우 · (납부토큰별) 수수료
+                    미리보기: 자격자 수 · 총 배분량 · 윈도우 · **수수료(배포액×feeBps, on-top)** · 총 필요예치(총량+수수료)
 Step 5  자금 예치 & 생성(온체인)  ← 가이드형 트랜잭션 시퀀스
-                    1) 납부 토큰 선택(ETH / TON …) — getFeeOf로 토큰별 가격 표시(TON 할인)
-                    2) approve 배포토큰(=총량)  [필수]
-                    3) ERC20 수수료면 approve feeToken / ETH면 value=수수료  [자동 분기]
-                    4) createDrop(type, airdropToken, root, 총량, start, deadline, identityRegistry, feeToken)
-                       = 수수료 볼트 적립 + 배포토큰 총량 예치 + MerkleDrop 배포 (한 tx)
-                    · 각 단계 상태 표시(approve 1/2 … createDrop pending) + 안내 문구
+                    · 수수료 = 배포액 × feeBps(배포토큰, 기본 3%). 같은 토큰, 총량에 추가(on-top).
+                    1) approve 배포토큰(= 총량 + 수수료)  [한 번]
+                    2) createDrop(type, airdropToken, root, 총량, start, deadline, identityRegistry)
+                       = 배포풀(총량) + 수수료볼트(수수료, 같은 토큰) + MerkleDrop 배포 (한 tx)
+                    · 단계 상태 표시(approve … createDrop pending) + "총 X 예치(뿌릴 Y + 수수료 Z)" 안내
 ```
 > 흐름: ① 오프체인 머클트리(root 산출, 트랜잭션 X) → ② 온체인 createDrop 한 번(앞 approve 1~2건).
 >       root는 별도 등록 트랜잭션이 아니라 createDrop **인자**로 들어감.
@@ -200,12 +199,13 @@ Overview          /admin            플랫폼 현황 대시보드
  └ 운영자 수·클레임 총량 등 핵심 지표
 
 Campaign Funds    /admin/funds      ★ 생성 수수료 설정 — (납부토큰 × 종류) 2차원
- ├ 납부 토큰 행     ETH(address(0)) / TON / … — 토큰별로 가격 행 추가
- ├ feeOf[token][type] ★ setFee(token,type,amount) — 토큰별·종류별 금액 (TON 할인 = TON 행을 낮게)
- │            ┌ CSV ┬ SNAPSHOT ┬ GATED ┬ SOCIAL
- │      ETH   │  저 │   중      │  중상 │  고
- │      TON   │ 저↓ │  중↓     │  …    │  … (할인)
- └ (0 = 그 (토큰,종류) 미허용. 운영자는 생성 시 납부토큰 선택→해당 금액 볼트 적립)
+ ├ defaultFeeBps   ★ 전역 기본 수수료율 (초기 300=3%). setDefaultFeeBps
+ ├ feeBps[token]   ★ 토큰별 수수료율(bps) — setFeeBps(token, bps). 미설정=기본율. 가치 낮은 토큰 ↑.
+ │            토큰        율(bps)   = %
+ │            (default)   300       3%
+ │            TON         200       2%   (예: 가치 높아 낮게)
+ │            SDROP       500       5%
+ └ (수수료 = 배포액×율, 같은 토큰, on-top. ≤ MAX_FEE_BPS. collectedFees[token] 적립)
 
 Identity Registries /admin/identity ★ 신원 레지스트리 관리
  ├ Operator Gate   운영자용 CA 레지스트리(operatorRegistry) 등록·변경
