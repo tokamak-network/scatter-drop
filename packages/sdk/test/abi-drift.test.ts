@@ -28,24 +28,42 @@ import {
  * with a warning rather than failing, so `pnpm test` still runs without Foundry.
  */
 
+type AbiParam = {
+  type: string;
+  indexed?: boolean;
+  components?: AbiParam[];
+};
+
 type AbiItem = {
   type: string;
   name?: string;
   stateMutability?: string;
-  inputs?: { type: string; indexed?: boolean }[];
-  outputs?: { type: string }[];
+  inputs?: AbiParam[];
+  outputs?: AbiParam[];
 };
 
 const OUT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../../contracts/out");
 
+/**
+ * Fully-expanded parameter type. Recurses into tuple `components` so that a
+ * struct's field rename/reorder/retype is reflected in the signature instead of
+ * collapsing to a bare `tuple` / `tuple[]`.
+ */
+function paramType(p: AbiParam): string {
+  if (p.type.startsWith("tuple") && p.components) {
+    return `(${p.components.map(paramType).join(",")})${p.type.slice("tuple".length)}`;
+  }
+  return p.type;
+}
+
 /** Stable signature key for an ABI item, comparable across sources. */
 function sigKey(item: AbiItem): string {
   const ins = (item.inputs ?? [])
-    .map((i) => (i.indexed ? `${i.type} indexed` : i.type))
+    .map((i) => (i.indexed ? `${paramType(i)} indexed` : paramType(i)))
     .join(",");
   switch (item.type) {
     case "function": {
-      const outs = (item.outputs ?? []).map((o) => o.type).join(",");
+      const outs = (item.outputs ?? []).map(paramType).join(",");
       return `fn ${item.name}(${ins})->(${outs}):${item.stateMutability}`;
     }
     case "event":
@@ -91,7 +109,8 @@ describe.skipIf(!artifactsPresent)("SDK ABIs match the canonical Foundry artifac
   for (const { name, sdk, artifact } of PAIRS) {
     it(`${name}: every SDK-declared entry exists in the canonical ABI`, () => {
       const canonical = canonicalKeys(artifact);
-      const missing = (sdk as readonly AbiItem[])
+      // SDK ABIs are `as const` (deeply readonly literal types); widen via `unknown`.
+      const missing = (sdk as unknown as AbiItem[])
         .map(sigKey)
         .filter((key) => !canonical.has(key));
 
