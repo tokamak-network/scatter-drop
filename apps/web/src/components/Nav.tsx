@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useAccount, useConnect, useDisconnect } from "wagmi";
+import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { Shield, User } from "lucide-react";
 import { useIsAdmin } from "@/lib/stub";
 import { useMounted } from "@/lib/useMounted";
@@ -25,9 +25,10 @@ function short(addr: string) {
 export function Nav() {
   const pathname = usePathname();
   const mounted = useMounted();
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chainId } = useAccount();
   const { connect, connectors, isPending } = useConnect();
   const { disconnect } = useDisconnect();
+  const { switchChain } = useSwitchChain();
   const isAdminWallet = useIsAdmin(address);
   const isAdmin = mounted && isAdminWallet;
 
@@ -36,11 +37,26 @@ export function Nav() {
 
   return (
     <>
-      {/* Network banner */}
-      <div className="bg-slate-900 border-b border-slate-800 text-[11px] font-mono py-1.5 px-4 text-center text-slate-400 flex items-center justify-center gap-2">
-        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-        Connected Chain: <strong className="text-slate-200">{fork.name}</strong>
-      </div>
+      {/* Network banner — reflects the actual connected chain */}
+      {!connected || chainId === fork.id ? (
+        <div className="bg-slate-900 border-b border-slate-800 text-[11px] font-mono py-1.5 px-4 text-center text-slate-400 flex items-center justify-center gap-2">
+          <span
+            className={`w-2 h-2 rounded-full ${connected ? "bg-emerald-400 animate-pulse" : "bg-slate-500"}`}
+          />
+          {connected ? "Connected: " : "Target chain: "}
+          <strong className="text-slate-200">{fork.name}</strong>
+        </div>
+      ) : (
+        <div className="bg-amber-500 text-[11px] font-mono py-1.5 px-4 text-center text-amber-950 flex items-center justify-center gap-2">
+          Wrong network. Switch to {fork.name}.
+          <button
+            onClick={() => switchChain({ chainId: fork.id })}
+            className="underline font-bold cursor-pointer"
+          >
+            Switch
+          </button>
+        </div>
+      )}
 
       {/* Header */}
       <header className="border-b border-slate-900 bg-slate-950/80 backdrop-blur-md sticky top-0 z-40 px-4 py-4 md:px-8">

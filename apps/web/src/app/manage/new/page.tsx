@@ -59,7 +59,7 @@ export default function NewCampaignPage() {
       ? buildApproveRequest(token as Address, factory, totalAmount)
       : null;
   const createReq =
-    ready && registryAddr
+    ready && registryAddr && fee !== undefined
       ? buildCreateDropRequest(factory, {
           airdropType: type,
           airdropToken: token as Address,
