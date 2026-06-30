@@ -49,10 +49,21 @@ enum AirdropType { CSV, ONCHAIN_SNAPSHOT, ONCHAIN_GATED, SOCIAL }
 ## 2. 작업 규칙 (전역 워크플로우 준수)
 
 1. **브랜치/PR 단위:** 1 작업 = 1 브랜치 = 1 PR. `feat/<stream>-<short>` (예: `feat/contracts-merkledrop`).
-2. **사이클:** 개발 → 최적화 → `simplify` → 테스트 → 커밋·푸시·PR → 봇 리뷰 반영 → K0 리뷰 → merge(일반 merge, `--delete-branch`).
+2. **사이클:** 개발 → 최적화 → `simplify` → 테스트 → 커밋·푸시·PR → 봇 리뷰 반영 → merge(일반 merge, `--delete-branch`).
 3. **충돌 방지:** 스트림별 디렉토리 소유 — C=`contracts/`, S=`packages/{sdk,merkle}`, F=`apps/web`. 교차 변경은 K0 경유.
 4. **시임 변경 금지:** §1의 세 시임은 K0 승인 없이 변경 불가. 변경 필요 시 broadcast로 제안.
-5. **머지 순서:** 시임 의존 따라 K0가 머지 순서 조정(컨트랙트 ABI → SDK → 프론트).
+5. **머지 순서:** 시임 의존 따라 K0가 **머지 순서만** 지정(컨트랙트 ABI → SDK → 프론트). 순서가 풀린 PR은 작성자가 머지.
+
+### 2.1 자기 PR은 자기가 (혼선 방지)
+- **PR 작성자가 자기 PR을 끝까지 책임진다:** 봇 리뷰 모니터링 → 인라인 답글(반영 커밋 SHA 포함) → 머지.
+- **다른 사람 PR의 봇 피드백을 대신 읽거나 라우팅하지 않는다.** (K0 포함 — 혼선의 원인)
+- **머지 조건(작성자가 자가 확인):**
+  1) 로컬 전체 테스트 green (forge test / vitest) + PR 본문에 "local: N tests pass" 명시(영문)
+  2) 봇(Copilot/Gemini) 인라인 코멘트 전부 인라인 답글로 닫음(반영=커밋SHA, decline=근거)
+  3) K0가 지정한 **머지 순서 차례**일 것(의존 PR). 독립 PR은 아무 때나.
+  4) CI는 비활성(프로덕트 완성 후 등록) — 체크탭 비어도 정상.
+- **K0 역할(축소):** 배정·시임 동결·머지순서/의존 시퀀싱·충돌 중재·통합. PR별 봇 처리·머지는 작성자.
+- **머지 순서 GO:** K0가 broadcast로 "머지 GO" 통지(의존 해소 시). 받은 작성자가 자기 PR 머지.
 
 ## 3. 코디네이션 프로토콜 (claude-coord-mcp)
 
