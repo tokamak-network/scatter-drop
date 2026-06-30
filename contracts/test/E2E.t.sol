@@ -20,6 +20,7 @@ import { MerkleTestBase } from "./util/MerkleTestBase.sol";
 ///         stands up on a live anvil node for the SDK/frontend harness.
 contract E2ETest is MerkleTestBase {
     uint8 internal constant CSV = 0;
+    address internal constant ETH = address(0); // native fee token
 
     MockERC20 internal feeToken;
     MockERC20 internal airdropToken;
@@ -35,6 +36,7 @@ contract E2ETest is MerkleTestBase {
     address internal other = makeAddr("other"); // second allocation, never claims
 
     uint256 internal constant FEE = 10 ether;
+    uint256 internal constant ETH_FEE = 0.01 ether;
     uint256 internal constant CUSTOMER_AMT = 1000 ether;
     uint256 internal constant OTHER_AMT = 500 ether;
     uint256 internal constant TOTAL = CUSTOMER_AMT + OTHER_AMT;
@@ -62,6 +64,7 @@ contract E2ETest is MerkleTestBase {
         );
         vm.startPrank(admin);
         factory.setFee(address(feeToken), CSV, FEE);
+        factory.setFee(ETH, CSV, ETH_FEE); // also offer a native-ETH fee tier
         factory.setOfficialToken(address(airdropToken), true); // register the airdrop token
         vm.stopPrank();
 
@@ -130,6 +133,73 @@ contract E2ETest is MerkleTestBase {
         factory.withdrawFees(address(feeToken), FEE);
         assertEq(feeToken.balanceOf(treasury), FEE);
         assertEq(factory.collectedFees(address(feeToken)), 0);
+    }
+
+    /// @dev Full flow paying the creation fee in native ETH instead of an ERC20:
+    ///      createDrop{value} → claim → admin withdraws the ETH fee to treasury.
+    function test_E2E_EthFee_CreateClaimWithdraw() public {
+        vm.deal(operator, ETH_FEE);
+
+        vm.startPrank(operator);
+        airdropToken.approve(address(factory), TOTAL); // no feeToken approval on the ETH path
+        MerkleDrop drop = MerkleDrop(
+            factory.createDrop{ value: ETH_FEE }(
+                CSV, address(airdropToken), root, TOTAL, startTime, deadline, address(customerRegistry), ETH
+            )
+        );
+        vm.stopPrank();
+
+        // Fee accrued as ETH in the vault; no ERC20 fee pulled.
+        assertEq(factory.collectedFees(ETH), ETH_FEE);
+        assertEq(address(factory).balance, ETH_FEE);
+        assertEq(feeToken.balanceOf(address(factory)), 0);
+
+        vm.prank(customer);
+        drop.claim(0, customer, CUSTOMER_AMT, customerProof);
+        assertEq(airdropToken.balanceOf(customer), CUSTOMER_AMT);
+
+        // Admin withdraws the ETH fee to the fixed treasury.
+        vm.prank(admin);
+        factory.withdrawFees(ETH, ETH_FEE);
+        assertEq(treasury.balance, ETH_FEE);
+        assertEq(factory.collectedFees(ETH), 0);
+    }
+
+    /// @dev A campaign that opens in the future: claims revert until startTime,
+    ///      then succeed once the window opens.
+    function test_E2E_FutureStart_ClaimWindow() public {
+        uint64 futureStart = uint64(block.timestamp + 1 days);
+
+        vm.startPrank(operator);
+        feeToken.approve(address(factory), FEE);
+        airdropToken.approve(address(factory), TOTAL);
+        MerkleDrop drop = MerkleDrop(
+            factory.createDrop(
+                CSV,
+                address(airdropToken),
+                root,
+                TOTAL,
+                futureStart,
+                deadline,
+                address(customerRegistry),
+                address(feeToken)
+            )
+        );
+        vm.stopPrank();
+
+        assertEq(drop.startTime(), futureStart);
+
+        // Before the window opens, even a verified customer with a valid proof is blocked.
+        vm.prank(customer);
+        vm.expectRevert(MerkleDrop.ClaimNotStarted.selector);
+        drop.claim(0, customer, CUSTOMER_AMT, customerProof);
+
+        // Once startTime is reached, the same claim succeeds.
+        vm.warp(futureStart);
+        vm.prank(customer);
+        drop.claim(0, customer, CUSTOMER_AMT, customerProof);
+        assertEq(airdropToken.balanceOf(customer), CUSTOMER_AMT);
+        assertTrue(drop.isClaimed(0));
     }
 
     function test_E2E_RevertUnverifiedOperator() public {
