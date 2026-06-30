@@ -5,7 +5,8 @@
 #
 # Usage:
 #   scripts/dev-fork.sh            # starts anvil, deploys, keeps anvil running
-#   FORK_CHAIN_ID=31337 scripts/dev-fork.sh   # default; relabels the fork
+#   FORK_CHAIN_ID=1337 scripts/dev-fork.sh    # override the default 31337
+#   (avoid 11155111 — it collides with real Sepolia, the issue this fixes)
 #
 # Requires SEPOLIA_RPC_URL in contracts/.env (gitignored). Modelled on
 # scatter-dex/scripts/dev-fork.sh.
