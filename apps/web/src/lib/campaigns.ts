@@ -59,7 +59,7 @@ function registryLabel(addr: Address, chainId: number): string {
 async function scanDropCreated(
   client: PublicClient,
   dep: WebDeployment,
-  filter?: { drop: Address },
+  filter?: { drop?: Address; operator?: Address },
 ): Promise<DropCreatedArgs[]> {
   const latest = await client.getBlockNumber();
   let fromBlock =
@@ -125,6 +125,23 @@ export function useCampaigns() {
       }
       const args = await scanDropCreated(client, dep);
       return { live: true, campaigns: args.map((a) => toCampaign(a, dep.chainId)) };
+    },
+  });
+}
+
+/** Campaigns created by `address` (DropCreated logs filtered by operator). */
+export function useManagedCampaigns(address: Address | undefined) {
+  const client = usePublicClient({ chainId: fork.id });
+  const { data: dep } = useDeployment();
+
+  return useQuery({
+    queryKey: ["managedCampaigns", dep?.dropFactory, address],
+    enabled: dep !== undefined && !!address,
+    staleTime: 15_000,
+    queryFn: async (): Promise<Campaign[]> => {
+      if (!client || !dep || !address) return [];
+      const args = await scanDropCreated(client, dep, { operator: address });
+      return args.map((a) => toCampaign(a, dep.chainId));
     },
   });
 }

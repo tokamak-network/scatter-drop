@@ -135,18 +135,6 @@ export async function listMyClaims(address?: string): Promise<MyClaim[]> {
   ];
 }
 
-/**
- * Campaigns created by the connected wallet. Empty is valid.
- * Stub: returns the active set for any connected address (real ownership filter
- * by createDrop sender lands in M6).
- */
-export async function listManagedCampaigns(
-  address?: string,
-): Promise<Campaign[]> {
-  if (!address) return [];
-  return CAMPAIGNS.filter((c) => c.status === "active");
-}
-
 /** Stub admin gate — replaced by DropFactory.owner() check in M7. */
 export function useIsAdmin(_address?: string): boolean {
   return false;
