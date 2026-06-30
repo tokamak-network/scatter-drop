@@ -275,11 +275,14 @@ contract DropFactory is Ownable {
         if (airdropToken == address(0) || identityRegistry == address(0)) revert InvalidAddress();
         if (merkleRoot == bytes32(0)) revert InvalidMerkleRoot();
         if (totalAmount == 0) revert ZeroTotalAmount();
-        // Claim window: deadline must be in the future, open before it closes, and the
-        // open→close span must be at least MIN_DURATION (startTime may be now or future).
+        // Claim window: deadline must be in the future and open before it closes.
         if (deadline <= block.timestamp) revert InvalidDeadline();
         if (startTime >= deadline) revert InvalidWindow();
-        if (deadline - startTime < MIN_DURATION) revert InvalidWindow();
+        // Enforce MIN_DURATION on the *effective* (claimable-from-now) window: a
+        // past startTime must not let a near-instant deadline slip through, since
+        // claims can only ever start at `block.timestamp` at the earliest.
+        uint256 effectiveStart = startTime < block.timestamp ? block.timestamp : startTime;
+        if (deadline - effectiveStart < MIN_DURATION) revert InvalidWindow();
         // The airdrop token must be a real contract; identityRegistry's authenticity is
         // enforced below by zkFactory.isRegistry (a genuine registry is itself a contract).
         _requireContract(airdropToken);

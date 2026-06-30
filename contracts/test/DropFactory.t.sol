@@ -391,6 +391,29 @@ contract DropFactoryTest is Test {
         );
     }
 
+    function test_createDrop_revertsWhenPastStartLeavesShortWindow() public {
+        // A past startTime must not bypass MIN_DURATION: the remaining window
+        // (now → deadline) is what matters. start = now - 2h, deadline = now + 1m
+        // spans > MIN_DURATION nominally but leaves only ~1m claimable.
+        vm.warp(1 days); // move now forward so a 2h-past start is representable
+        _verifyOperator(operator);
+        _fund(operator, CSV_FEE, TOTAL);
+        uint64 pastStart = uint64(block.timestamp - 2 hours);
+        uint64 soonDeadline = uint64(block.timestamp + 1 minutes);
+        vm.prank(operator);
+        vm.expectRevert(DropFactory.InvalidWindow.selector);
+        factory.createDrop(
+            uint8(DropFactory.AirdropType.CSV),
+            address(airdropToken),
+            ROOT,
+            TOTAL,
+            pastStart,
+            soonDeadline,
+            custReg,
+            address(feeToken)
+        );
+    }
+
     function test_createDrop_succeedsAtExactlyMinDuration() public {
         _verifyOperator(operator);
         _fund(operator, CSV_FEE, TOTAL);
