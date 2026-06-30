@@ -70,6 +70,12 @@ export interface CreateDropParams {
  *   `totalAmount` (airdropToken) — see {@link buildApproveRequest}; value stays 0.
  */
 export function buildCreateDropRequest(factory: Address, params: CreateDropParams): TxRequest {
+  // The airdrop token is escrowed via ERC-20 transferFrom (approve-first), not
+  // msg.value. A native airdrop token would be silently underfunded — reject it
+  // so the caller can't build a doomed/underfunded createDrop.
+  if (getAddress(params.airdropToken) === NATIVE_FEE_TOKEN) {
+    throw new Error("airdropToken cannot be the native token (address(0)); use an ERC-20");
+  }
   const feeToken = getAddress(params.feeToken);
   const isEth = feeToken === NATIVE_FEE_TOKEN;
   return {

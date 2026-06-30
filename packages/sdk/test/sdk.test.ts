@@ -39,9 +39,12 @@ describe("types/util", () => {
     expect(airdropTypeLabel(AirdropType.SOCIAL)).toMatch(/Social/);
   });
 
-  it("claim window open iff now <= deadline", () => {
-    expect(isClaimWindowOpen(100n, 100n)).toBe(true);
-    expect(isClaimWindowOpen(100n, 101n)).toBe(false);
+  it("claim window respects both start and deadline", () => {
+    expect(isClaimWindowOpen(100n, 100n)).toBe(true);   // at deadline
+    expect(isClaimWindowOpen(100n, 101n)).toBe(false);  // past deadline
+    expect(isClaimWindowOpen(100n, 50n, 60n)).toBe(false); // before start
+    expect(isClaimWindowOpen(100n, 60n, 60n)).toBe(true);  // at start
+    expect(isClaimWindowOpen(100n, 80n, 60n)).toBe(true);  // inside window
   });
 });
 
@@ -118,6 +121,22 @@ describe("factory / erc20 calldata builders", () => {
     expect(req.value).toBe(777n);
     const d = decodeFunctionData({ abi: dropFactoryAbi, data: req.data });
     expect(d.args[7]).toBe(NATIVE_FEE_TOKEN);
+  });
+
+  it("buildCreateDropRequest rejects a native airdrop token", () => {
+    expect(() =>
+      buildCreateDropRequest(A(7), {
+        airdropType: AirdropType.CSV,
+        airdropToken: NATIVE_FEE_TOKEN,
+        merkleRoot: `0x${"ab".repeat(32)}`,
+        totalAmount: 1000n,
+        startTime: 1_800_000_000n,
+        deadline: 1_900_000_000n,
+        identityRegistry: A(3),
+        feeToken: NATIVE_FEE_TOKEN,
+        fee: 1n,
+      }),
+    ).toThrow(/native token/);
   });
 
   it("buildSetFeeRequest encodes (feeToken, type, amount)", () => {

@@ -16,7 +16,16 @@ export function airdropTypeLabel(type: AirdropType): string {
   }
 }
 
-/** True while `deadline` (unix seconds) is still in the future relative to `nowSeconds`. */
-export function isClaimWindowOpen(deadline: bigint, nowSeconds: bigint): boolean {
-  return nowSeconds <= deadline;
+/**
+ * True when `nowSeconds` is inside the claim window `[startTime, deadline]`.
+ * Mirrors the on-chain gate (claim reverts before startTime or after deadline),
+ * so the UI doesn't enable a claim that would revert. `startTime` defaults to 0
+ * (open from genesis) for back-compat with deadline-only callers.
+ */
+export function isClaimWindowOpen(
+  deadline: bigint,
+  nowSeconds: bigint,
+  startTime: bigint = 0n,
+): boolean {
+  return nowSeconds >= startTime && nowSeconds <= deadline;
 }
