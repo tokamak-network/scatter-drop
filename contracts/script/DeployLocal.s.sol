@@ -44,13 +44,18 @@ contract DeployLocal is Script {
     address internal constant ANVIL_ACCT_1 = 0x70997970C51812dc3A010C7d01b50e0d17dc79C8;
 
     function run() external {
-        address deployer = msg.sender;
         uint256 feeAmount = vm.envOr("FEE_AMOUNT", uint256(10 ether));
         uint256 fundAmount = vm.envOr("FUND_AMOUNT", uint256(1_000_000 ether));
-        address treasury = vm.envOr("TREASURY", deployer);
         address demoCustomer = vm.envOr("DEMO_CUSTOMER", ANVIL_ACCT_1);
 
         vm.startBroadcast();
+
+        // Capture the deployer INSIDE the broadcast: before `startBroadcast`,
+        // `msg.sender` is the default forge runner, not the `--private-key` /
+        // `--account` broadcaster. Reading it here ties the factory owner,
+        // verified operator, and minted-token recipient to the real signer.
+        address deployer = msg.sender;
+        address treasury = vm.envOr("TREASURY", deployer);
 
         // Tokens: a fee token and the airdrop token (separate, as in production).
         MockERC20 feeToken = new MockERC20("Fee Token", "FEE", 18);
