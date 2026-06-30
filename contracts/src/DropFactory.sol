@@ -21,9 +21,10 @@ import { MerkleDrop } from "./MerkleDrop.sol";
 ///           customer `identityRegistry`.
 ///         Fees accrue in `collectedFees[feeToken]` and are withdrawable only to the
 ///         fixed `treasury` (no arbitrary recipient — K0 decision §5).
-/// @dev    Trust model and the W13 audit summary live in `docs/SECURITY.md`. Supported fee
-///         and airdrop tokens are standard ERC20; fee-on-transfer / rebasing tokens are
-///         rejected at creation via the exact-receipt guard (`_pullExact`).
+///         Trust model and the W13 audit summary live in `docs/SECURITY.md`. Supported fee
+///         and airdrop tokens are standard ERC20; fee-on-transfer (and any non-exact transfer)
+///         is rejected at creation by the exact-receipt guard (`_pullExact`). Standard rebasing
+///         tokens pass at creation and are unsupported — a later rebase can under/over-fund a campaign.
 contract DropFactory is Ownable {
     using SafeERC20 for IERC20;
 

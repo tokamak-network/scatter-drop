@@ -51,7 +51,7 @@ zk-X509 state.
 | **Operator (creator)** | Semi-trusted; must pass gate 1 | Chooses `airdropToken`, `merkleRoot`, `totalAmount`, `deadline`, customer registry. Can `sweep` **only their own** campaign's leftovers, and only after `deadline`. |
 | **Claimer** | Untrusted; must pass gate 2 | Self-claim only (`account == msg.sender`); each leaf claimable once. |
 | **zk-X509 (RegistryFactory / IdentityRegistry)** | Trusted external | Read-only (`isRegistry`, `verifiedUntil`), `view`/STATICCALL — cannot reenter. |
-| **ERC20 tokens** | Untrusted input | Standard, non-rebasing, non-fee-on-transfer ERC20 is **enforced at creation** (exact-receipt guard); configured registries/tokens must be contracts (`NotAContract`). |
+| **ERC20 tokens** | Untrusted input | Standard, non-rebasing, non-fee-on-transfer ERC20 is **expected**. Fee-on-transfer (and any non-exact transfer) is **rejected at creation** by the exact-receipt guard; standard rebasing tokens pass at creation and are **unsupported** (a later global rebase can under/over-fund a live campaign — out of scope). Configured registries/tokens must be contracts (`NotAContract`). |
 
 Key invariants:
 - **Vault conservation:** `collectedFees[token] == Σ fees accrued − Σ fees withdrawn`, and the vault's real balance never under-runs accounting (enforced by exact-receipt). Test: `test_vaultConservation_overManyOps`.
@@ -81,9 +81,9 @@ findings below are resolved or accepted with rationale.
 
 | ID | Severity | Area | Finding | Resolution |
 | -- | -------- | ---- | ------- | ---------- |
-| M-1 | Medium | Funding (DropFactory) | A fee-on-transfer / rebasing `airdropToken` delivers less than `totalAmount` to the drop while the Merkle leaves commit to the full amount → later claimers DoS'd. | **Fixed** — `_pullExact` requires the recipient to net exactly the requested amount, else revert `IncorrectAmountReceived`. PR #7 (`7ae90c75`). |
+| M-1 | Medium | Funding (DropFactory) | A fee-on-transfer `airdropToken` delivers less than `totalAmount` to the drop while the Merkle leaves commit to the full amount → later claimers DoS'd. | **Fixed (fee-on-transfer)** — `_pullExact` requires the recipient to net exactly the requested amount at funding time, else revert `IncorrectAmountReceived`. PR #7 (`7ae90c75`). Standard rebasing tokens transfer exactly and pass this check; they are unsupported / out of scope (see §2). |
 | #1 | Low | Fee vault (DropFactory) | A fee-on-transfer `feeToken` over-credits `collectedFees` vs. the real balance, stranding a slice of fees. | **Fixed** — same `_pullExact` guard on the fee pull; CEI preserved (`collectedFees` credited before the external pull). PR #7 (`7ae90c75`). |
-| L-1 | Low | `claim` ordering (MerkleDrop) | The external `identityRegistry.verifiedUntil` call precedes `_claimed.set(index)`. | **Resolved** — `verifiedUntil` is `view` (STATICCALL) and cannot reenter/write; the token transfer still follows CEI (`_claimed.set` before transfer). Documented + a standalone-deploy token guard added. PR #9 (`7fdfef9b`). |
+| L-1 | Low | `claim` ordering (MerkleDrop) | The external `identityRegistry.verifiedUntil` call precedes `_claimed.set(index)`. | **Accepted (with rationale)** — the call order is unchanged: `verifiedUntil` is `view` (STATICCALL) so it cannot reenter or write state, and the value-moving `token.safeTransfer` still follows CEI (`_claimed.set` before transfer), so a double-claim is not reachable. PR #9 (`7fdfef9b`) documented this rationale and added a standalone-deploy token guard. |
 | L-2 | Low | Campaign duration (DropFactory) | No minimum lead time — an operator could `createDrop` with `deadline = now+1` and `sweep` almost immediately, publishing an instantly-void campaign. | **Fixed** — `MIN_DURATION = 1 hours`; `createDrop` requires `deadline >= block.timestamp + MIN_DURATION`. PR #10 (`94a77101`). |
 | I-1 | Info | Standalone deploy (MerkleDrop) | Direct (non-factory) deployment did not require the token to be a contract. | **Fixed** — constructor token code check added. PR #9 (`7fdfef9b`). (Factory path was already guarded by `DropFactory._requireContract`.) |
 | I-2 | Info | Enumeration (DropFactory) | `_drops` is unbounded; `allDrops()` could exceed the gas limit for on-chain consumers. | **Accepted** — `allDrops()` is a view; paginated `dropsLength()` / `dropAt()` are provided for on-chain/large use. |
@@ -122,9 +122,10 @@ targets.
 
 - [ ] Re-confirm leaf encoding parity between `MerkleDrop.claim` and
       `packages/merkle` (cross-test on real campaign vectors).
-- [ ] Review the exact-receipt assumption: confirm the platform's supported
-      token set is standard ERC20 (the contracts reject fee-on-transfer /
-      rebasing tokens at creation rather than supporting them).
+- [ ] Review the exact-receipt assumption: the contracts reject fee-on-transfer
+      / non-exact-transfer tokens at creation, but standard rebasing tokens pass
+      the creation check and are unsupported (out of scope) — confirm the
+      platform's supported token set is standard, non-rebasing ERC20.
 - [ ] Validate the zk-X509 trust boundary: `isRegistry` / `verifiedUntil`
       semantics, registry revocation/expiry handling, and the assumption that
       blessed registries are non-malicious.
