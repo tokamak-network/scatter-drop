@@ -93,6 +93,7 @@ contract DropFactory is Ownable {
         address identityRegistry,
         bytes32 merkleRoot,
         uint256 totalAmount,
+        uint64 startTime,
         uint64 deadline,
         uint256 fee
     );
@@ -102,6 +103,7 @@ contract DropFactory is Ownable {
     error OperatorNotVerified();
     error NotAStandardRegistry();
     error InvalidDeadline();
+    error InvalidWindow();
     error ZeroTotalAmount();
     error InvalidMerkleRoot();
     error InsufficientCollectedFees();
@@ -250,8 +252,9 @@ contract DropFactory is Ownable {
     /// @param airdropToken     ERC20 distributed to claimers (must be registered, `tier != NONE`).
     /// @param merkleRoot       Root over `keccak256(abi.encodePacked(index, account, amount))` leaves.
     /// @param totalAmount      Total `airdropToken` funded into the drop.
+    /// @param startTime        Unix time at/after which claims open (may be now or future).
     /// @param deadline         Unix time after which claims close and the operator may sweep;
-    ///                         must be at least `MIN_DURATION` in the future.
+    ///                         must be in the future and at least `MIN_DURATION` after `startTime`.
     /// @param identityRegistry zk-X509 IdentityRegistry gating claimers (gate 2).
     /// @param feeToken         Token used to pay the creation fee; `ETH (address(0))` = native ETH
     ///                         (send the fee as `msg.value`), otherwise send no ETH and the ERC20
@@ -262,6 +265,7 @@ contract DropFactory is Ownable {
         address airdropToken,
         bytes32 merkleRoot,
         uint256 totalAmount,
+        uint64 startTime,
         uint64 deadline,
         address identityRegistry,
         address feeToken
@@ -271,7 +275,11 @@ contract DropFactory is Ownable {
         if (airdropToken == address(0) || identityRegistry == address(0)) revert InvalidAddress();
         if (merkleRoot == bytes32(0)) revert InvalidMerkleRoot();
         if (totalAmount == 0) revert ZeroTotalAmount();
-        if (deadline < block.timestamp + MIN_DURATION) revert InvalidDeadline();
+        // Claim window: deadline must be in the future, open before it closes, and the
+        // open→close span must be at least MIN_DURATION (startTime may be now or future).
+        if (deadline <= block.timestamp) revert InvalidDeadline();
+        if (startTime >= deadline) revert InvalidWindow();
+        if (deadline - startTime < MIN_DURATION) revert InvalidWindow();
         // The airdrop token must be a real contract; identityRegistry's authenticity is
         // enforced below by zkFactory.isRegistry (a genuine registry is itself a contract).
         _requireContract(airdropToken);
@@ -299,7 +307,12 @@ contract DropFactory is Ownable {
         // MerkleDrop takes solmate ERC20 / IIdentityRegistry types; wrap the raw addresses.
         drop = address(
             new MerkleDrop(
-                ERC20(airdropToken), merkleRoot, deadline, IIdentityRegistry(identityRegistry), msg.sender
+                ERC20(airdropToken),
+                merkleRoot,
+                startTime,
+                deadline,
+                IIdentityRegistry(identityRegistry),
+                msg.sender
             )
         );
         _drops.push(drop);
@@ -309,7 +322,16 @@ contract DropFactory is Ownable {
         _pullExact(IERC20(airdropToken), msg.sender, drop, totalAmount);
 
         emit DropCreated(
-            drop, msg.sender, t, airdropToken, identityRegistry, merkleRoot, totalAmount, deadline, fee
+            drop,
+            msg.sender,
+            t,
+            airdropToken,
+            identityRegistry,
+            merkleRoot,
+            totalAmount,
+            startTime,
+            deadline,
+            fee
         );
     }
 

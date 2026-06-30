@@ -34,6 +34,9 @@ contract MerkleDrop {
     /// @notice Merkle root committing to all `(index, account, amount)` allocations.
     bytes32 public immutable merkleRoot;
 
+    /// @notice Unix timestamp at/after which claims open.
+    uint64 public immutable startTime;
+
     /// @notice Unix timestamp after which claims are closed and sweep is allowed.
     uint64 public immutable deadline;
 
@@ -67,6 +70,8 @@ contract MerkleDrop {
     error ZeroAddress();
     error NotAContract();
     error DeadlineInPast();
+    error InvalidWindow();
+    error ClaimNotStarted();
     error ClaimClosed();
     error NotSelfClaim();
     error NotVerified();
@@ -81,12 +86,14 @@ contract MerkleDrop {
 
     /// @param token_ ERC20 token to distribute.
     /// @param merkleRoot_ Root committing to all allocations.
+    /// @param startTime_ Unix timestamp at/after which claims open.
     /// @param deadline_ Unix timestamp after which claims close.
     /// @param identityRegistry_ zk-X509 registry gating claimers.
     /// @param operator_ Campaign operator (sweep authority).
     constructor(
         ERC20 token_,
         bytes32 merkleRoot_,
+        uint64 startTime_,
         uint64 deadline_,
         IIdentityRegistry identityRegistry_,
         address operator_
@@ -103,10 +110,13 @@ contract MerkleDrop {
         // this, but MerkleDrop can be deployed directly.
         if (address(token_).code.length == 0) revert NotAContract();
         if (deadline_ <= block.timestamp) revert DeadlineInPast();
+        // Claim window must be non-empty (open strictly before it closes).
+        if (deadline_ <= startTime_) revert InvalidWindow();
 
         factory = msg.sender;
         token = token_;
         merkleRoot = merkleRoot_;
+        startTime = startTime_;
         deadline = deadline_;
         identityRegistry = identityRegistry_;
         operator = operator_;
@@ -126,6 +136,7 @@ contract MerkleDrop {
         // Guards run cheapest-first; the external identity call is the single
         // most expensive op, so it runs last — an ineligible/tampered claim
         // reverts on the in-memory proof check before paying for it.
+        if (block.timestamp < startTime) revert ClaimNotStarted();
         if (block.timestamp > deadline) revert ClaimClosed();
         if (account != msg.sender) revert NotSelfClaim();
         if (_claimed.get(index)) revert AlreadyClaimed();

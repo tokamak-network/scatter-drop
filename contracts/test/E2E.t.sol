@@ -39,12 +39,14 @@ contract E2ETest is MerkleTestBase {
     uint256 internal constant OTHER_AMT = 500 ether;
     uint256 internal constant TOTAL = CUSTOMER_AMT + OTHER_AMT;
 
+    uint64 internal startTime;
     uint64 internal deadline;
     bytes32 internal root;
     bytes32[] internal customerProof; // proof for leaf index 0 (customer)
 
     function setUp() public {
         vm.warp(1_000_000);
+        startTime = uint64(block.timestamp);
         deadline = uint64(block.timestamp + 30 days);
 
         feeToken = new MockERC20("Fee", "FEE", 18);
@@ -89,6 +91,7 @@ contract E2ETest is MerkleTestBase {
                 address(airdropToken),
                 root,
                 TOTAL,
+                startTime,
                 deadline,
                 address(customerRegistry),
                 address(feeToken)
@@ -136,7 +139,14 @@ contract E2ETest is MerkleTestBase {
         vm.prank(rogue);
         vm.expectRevert(DropFactory.OperatorNotVerified.selector);
         factory.createDrop(
-            CSV, address(airdropToken), root, TOTAL, deadline, address(customerRegistry), address(feeToken)
+            CSV,
+            address(airdropToken),
+            root,
+            TOTAL,
+            startTime,
+            deadline,
+            address(customerRegistry),
+            address(feeToken)
         );
     }
 
@@ -147,7 +157,14 @@ contract E2ETest is MerkleTestBase {
         vm.prank(operator);
         vm.expectRevert(DropFactory.NotAStandardRegistry.selector);
         factory.createDrop(
-            CSV, address(airdropToken), root, TOTAL, deadline, address(rogueRegistry), address(feeToken)
+            CSV,
+            address(airdropToken),
+            root,
+            TOTAL,
+            startTime,
+            deadline,
+            address(rogueRegistry),
+            address(feeToken)
         );
     }
 

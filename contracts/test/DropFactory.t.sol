@@ -35,6 +35,7 @@ contract DropFactoryTest is Test {
     uint256 internal constant CSV_FEE = 10 ether; // ERC20 fee
     uint256 internal constant ETH_FEE = 0.01 ether;
 
+    uint64 internal startTime;
     uint64 internal deadline;
 
     event AllowedTokenSet(address indexed token, DropFactory.TokenTier tier, address indexed caller);
@@ -54,6 +55,7 @@ contract DropFactoryTest is Test {
         factory.setOfficialToken(address(airdropToken), true); // airdrop token registered
         vm.stopPrank();
 
+        startTime = uint64(block.timestamp); // claims open immediately
         deadline = uint64(block.timestamp + 7 days);
     }
 
@@ -77,7 +79,7 @@ contract DropFactoryTest is Test {
     function _create(uint8 airdropType, address who) internal returns (address drop) {
         vm.prank(who);
         drop = factory.createDrop(
-            airdropType, address(airdropToken), ROOT, TOTAL, deadline, custReg, address(feeToken)
+            airdropType, address(airdropToken), ROOT, TOTAL, startTime, deadline, custReg, address(feeToken)
         );
     }
 
@@ -120,7 +122,14 @@ contract DropFactoryTest is Test {
 
         vm.prank(operator);
         address drop = factory.createDrop{ value: ETH_FEE }(
-            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, deadline, custReg, ETH
+            uint8(DropFactory.AirdropType.CSV),
+            address(airdropToken),
+            ROOT,
+            TOTAL,
+            startTime,
+            deadline,
+            custReg,
+            ETH
         );
 
         assertEq(airdropToken.balanceOf(drop), TOTAL);
@@ -137,7 +146,14 @@ contract DropFactoryTest is Test {
 
         vm.prank(operator);
         address drop = factory.createDrop(
-            uint8(DropFactory.AirdropType.SOCIAL), address(airdropToken), ROOT, TOTAL, deadline, custReg, ETH
+            uint8(DropFactory.AirdropType.SOCIAL),
+            address(airdropToken),
+            ROOT,
+            TOTAL,
+            startTime,
+            deadline,
+            custReg,
+            ETH
         );
         assertEq(airdropToken.balanceOf(drop), TOTAL);
         assertEq(factory.collectedFees(ETH), 0);
@@ -156,6 +172,7 @@ contract DropFactoryTest is Test {
             custReg,
             ROOT,
             TOTAL,
+            startTime,
             deadline,
             CSV_FEE
         );
@@ -173,6 +190,7 @@ contract DropFactoryTest is Test {
             address(airdropToken),
             ROOT,
             TOTAL,
+            startTime,
             deadline,
             custReg,
             address(feeToken)
@@ -190,6 +208,7 @@ contract DropFactoryTest is Test {
             address(airdropToken),
             ROOT,
             TOTAL,
+            startTime,
             deadline,
             custReg,
             address(feeToken)
@@ -216,6 +235,7 @@ contract DropFactoryTest is Test {
             address(airdropToken),
             ROOT,
             TOTAL,
+            startTime,
             deadline,
             fakeReg,
             address(feeToken)
@@ -236,6 +256,7 @@ contract DropFactoryTest is Test {
             address(fresh),
             ROOT,
             TOTAL,
+            startTime,
             deadline,
             custReg,
             address(feeToken)
@@ -250,7 +271,9 @@ contract DropFactoryTest is Test {
         _fund(operator, CSV_FEE, TOTAL);
         vm.prank(operator);
         vm.expectRevert(DropFactory.InvalidAirdropType.selector);
-        factory.createDrop(4, address(airdropToken), ROOT, TOTAL, deadline, custReg, address(feeToken));
+        factory.createDrop(
+            4, address(airdropToken), ROOT, TOTAL, startTime, deadline, custReg, address(feeToken)
+        );
     }
 
     function test_createDrop_revertsOnZeroToken() public {
@@ -258,7 +281,14 @@ contract DropFactoryTest is Test {
         vm.prank(operator);
         vm.expectRevert(DropFactory.InvalidAddress.selector);
         factory.createDrop(
-            uint8(DropFactory.AirdropType.CSV), address(0), ROOT, TOTAL, deadline, custReg, address(feeToken)
+            uint8(DropFactory.AirdropType.CSV),
+            address(0),
+            ROOT,
+            TOTAL,
+            startTime,
+            deadline,
+            custReg,
+            address(feeToken)
         );
     }
 
@@ -271,6 +301,7 @@ contract DropFactoryTest is Test {
             address(airdropToken),
             ROOT,
             TOTAL,
+            startTime,
             deadline,
             address(0),
             address(feeToken)
@@ -286,6 +317,7 @@ contract DropFactoryTest is Test {
             address(airdropToken),
             bytes32(0),
             TOTAL,
+            startTime,
             deadline,
             custReg,
             address(feeToken)
@@ -301,6 +333,7 @@ contract DropFactoryTest is Test {
             address(airdropToken),
             ROOT,
             0,
+            startTime,
             deadline,
             custReg,
             address(feeToken)
@@ -316,23 +349,42 @@ contract DropFactoryTest is Test {
             address(airdropToken),
             ROOT,
             TOTAL,
-            uint64(block.timestamp),
+            startTime,
+            uint64(block.timestamp), // deadline == now → not in the future
             custReg,
             address(feeToken)
         );
     }
 
-    function test_createDrop_revertsWhenDeadlineBeforeMinDuration() public {
+    function test_createDrop_revertsWhenStartNotBeforeDeadline() public {
+        // startTime >= deadline → empty claim window.
         _verifyOperator(operator);
-        _fund(operator, CSV_FEE, TOTAL);
-        uint64 tooSoon = uint64(block.timestamp + factory.MIN_DURATION() - 1);
         vm.prank(operator);
-        vm.expectRevert(DropFactory.InvalidDeadline.selector);
+        vm.expectRevert(DropFactory.InvalidWindow.selector);
         factory.createDrop(
             uint8(DropFactory.AirdropType.CSV),
             address(airdropToken),
             ROOT,
             TOTAL,
+            deadline, // startTime == deadline
+            deadline,
+            custReg,
+            address(feeToken)
+        );
+    }
+
+    function test_createDrop_revertsWhenWindowBeforeMinDuration() public {
+        _verifyOperator(operator);
+        _fund(operator, CSV_FEE, TOTAL);
+        uint64 tooSoon = uint64(block.timestamp + factory.MIN_DURATION() - 1);
+        vm.prank(operator);
+        vm.expectRevert(DropFactory.InvalidWindow.selector);
+        factory.createDrop(
+            uint8(DropFactory.AirdropType.CSV),
+            address(airdropToken),
+            ROOT,
+            TOTAL,
+            startTime, // == now; window = MIN_DURATION - 1
             tooSoon,
             custReg,
             address(feeToken)
@@ -349,6 +401,7 @@ contract DropFactoryTest is Test {
             address(airdropToken),
             ROOT,
             TOTAL,
+            startTime,
             atMin,
             custReg,
             address(feeToken)
@@ -366,6 +419,7 @@ contract DropFactoryTest is Test {
             makeAddr("eoa"),
             ROOT,
             TOTAL,
+            startTime,
             deadline,
             custReg,
             address(feeToken)
@@ -385,6 +439,7 @@ contract DropFactoryTest is Test {
             address(airdropToken),
             ROOT,
             TOTAL,
+            startTime,
             deadline,
             custReg,
             address(feeToken)
@@ -402,6 +457,7 @@ contract DropFactoryTest is Test {
             address(airdropToken),
             ROOT,
             TOTAL,
+            startTime,
             deadline,
             custReg,
             address(feeToken)
@@ -417,7 +473,14 @@ contract DropFactoryTest is Test {
         vm.prank(operator);
         vm.expectRevert(DropFactory.IncorrectFee.selector);
         factory.createDrop{ value: ETH_FEE - 1 }(
-            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, deadline, custReg, ETH
+            uint8(DropFactory.AirdropType.CSV),
+            address(airdropToken),
+            ROOT,
+            TOTAL,
+            startTime,
+            deadline,
+            custReg,
+            ETH
         );
     }
 
@@ -433,7 +496,14 @@ contract DropFactoryTest is Test {
         vm.prank(operator);
         vm.expectRevert(DropFactory.IncorrectAmountReceived.selector);
         factory.createDrop(
-            uint8(DropFactory.AirdropType.SOCIAL), address(fot), ROOT, TOTAL, deadline, custReg, ETH
+            uint8(DropFactory.AirdropType.SOCIAL),
+            address(fot),
+            ROOT,
+            TOTAL,
+            startTime,
+            deadline,
+            custReg,
+            ETH
         );
     }
 
@@ -454,6 +524,7 @@ contract DropFactoryTest is Test {
             address(airdropToken),
             ROOT,
             TOTAL,
+            startTime,
             deadline,
             custReg,
             address(fot)
@@ -481,7 +552,14 @@ contract DropFactoryTest is Test {
         vm.deal(operator, ETH_FEE);
         vm.prank(operator);
         factory.createDrop{ value: ETH_FEE }(
-            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, deadline, custReg, ETH
+            uint8(DropFactory.AirdropType.CSV),
+            address(airdropToken),
+            ROOT,
+            TOTAL,
+            startTime,
+            deadline,
+            custReg,
+            ETH
         );
 
         assertEq(factory.collectedFees(address(feeToken)), CSV_FEE);
@@ -650,6 +728,7 @@ contract DropFactoryTest is Test {
             address(airdropToken),
             ROOT,
             TOTAL,
+            startTime,
             deadline,
             custReg,
             address(feeToken)
@@ -768,7 +847,14 @@ contract DropFactoryTest is Test {
         vm.deal(operator, ETH_FEE);
         vm.prank(operator);
         factory.createDrop{ value: ETH_FEE }(
-            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, deadline, custReg, ETH
+            uint8(DropFactory.AirdropType.CSV),
+            address(airdropToken),
+            ROOT,
+            TOTAL,
+            startTime,
+            deadline,
+            custReg,
+            ETH
         );
 
         uint256 before = treasury.balance;
@@ -791,7 +877,14 @@ contract DropFactoryTest is Test {
         vm.deal(operator, ETH_FEE);
         vm.prank(operator);
         factory.createDrop{ value: ETH_FEE }(
-            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, deadline, custReg, ETH
+            uint8(DropFactory.AirdropType.CSV),
+            address(airdropToken),
+            ROOT,
+            TOTAL,
+            startTime,
+            deadline,
+            custReg,
+            ETH
         );
 
         vm.prank(admin);
@@ -818,6 +911,7 @@ contract DropFactoryTest is Test {
                 address(airdropToken),
                 ROOT,
                 total,
+                startTime,
                 deadline,
                 custReg,
                 ETH
@@ -832,6 +926,7 @@ contract DropFactoryTest is Test {
             address(airdropToken),
             ROOT,
             total,
+            startTime,
             deadline,
             custReg,
             address(feeToken)

@@ -73,8 +73,9 @@ cast send "$AIRDROP" 'approve(address,uint256)' "$FACTORY" "$TOTAL" --private-ke
 echo "[seed] createDrop..."
 # ERC20-fee path: the fee is paid in FEE_TOKEN (approved above), so send no ETH value.
 # The airdrop token was registered OFFICIAL by DeployFork, so the token allow-list passes.
-cast send "$FACTORY" 'createDrop(uint8,address,bytes32,uint256,uint64,address,address)' \
-  0 "$AIRDROP" "$ROOT_HASH" "$TOTAL" "$DEADLINE" "$REGISTRY" "$FEE_TOKEN" \
+# startTime = NOW (claims open immediately); deadline = NOW + 7d (window >= MIN_DURATION).
+cast send "$FACTORY" 'createDrop(uint8,address,bytes32,uint256,uint64,uint64,address,address)' \
+  0 "$AIRDROP" "$ROOT_HASH" "$TOTAL" "$NOW" "$DEADLINE" "$REGISTRY" "$FEE_TOKEN" \
   --private-key "$OP_KEY" --rpc-url "$RPC_URL" >/dev/null
 
 LEN="$(cast call "$FACTORY" 'dropsLength()(uint256)' --rpc-url "$RPC_URL" | awk '{print $1}')"
