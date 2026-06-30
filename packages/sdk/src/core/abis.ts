@@ -1,0 +1,94 @@
+/**
+ * Minimal ABIs matching the frozen contract signatures (seam ②, DEV-PLAN §2).
+ * These are hand-authored stubs for M1; once M2 contracts land they will be
+ * replaced/augmented by the generated Foundry ABIs. Keep in sync with COORDINATION.md.
+ */
+
+export const merkleDropAbi = [
+  {
+    type: "function",
+    name: "claim",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "index", type: "uint256" },
+      { name: "account", type: "address" },
+      { name: "amount", type: "uint256" },
+      { name: "proof", type: "bytes32[]" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "isClaimed",
+    stateMutability: "view",
+    inputs: [{ name: "index", type: "uint256" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  { type: "function", name: "sweep", stateMutability: "nonpayable", inputs: [], outputs: [] },
+  { type: "function", name: "token", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
+  { type: "function", name: "merkleRoot", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "bytes32" }] },
+  { type: "function", name: "deadline", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint64" }] },
+  { type: "function", name: "identityRegistry", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
+  { type: "function", name: "operator", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
+] as const;
+
+export const dropFactoryAbi = [
+  {
+    type: "function",
+    name: "createDrop",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "airdropType", type: "uint8" },
+      { name: "airdropToken", type: "address" },
+      { name: "merkleRoot", type: "bytes32" },
+      { name: "totalAmount", type: "uint256" },
+      { name: "deadline", type: "uint64" },
+      { name: "identityRegistry", type: "address" },
+    ],
+    outputs: [{ name: "drop", type: "address" }],
+  },
+  {
+    type: "function",
+    name: "feeOf",
+    stateMutability: "view",
+    inputs: [{ name: "airdropType", type: "uint8" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "collectedFees",
+    stateMutability: "view",
+    inputs: [{ name: "token", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "withdrawFees",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "token", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [],
+  },
+] as const;
+
+export const identityRegistryAbi = [
+  {
+    type: "function",
+    name: "verifiedUntil",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ name: "", type: "uint64" }],
+  },
+] as const;
+
+export const registryFactoryAbi = [
+  {
+    type: "function",
+    name: "isRegistry",
+    stateMutability: "view",
+    inputs: [{ name: "registry", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+] as const;

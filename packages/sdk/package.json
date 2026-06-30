@@ -1,0 +1,42 @@
+{
+  "name": "@tokamak-network/scatter-drop-sdk",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Typed TypeScript SDK for scatter-drop (DropFactory + MerkleDrop + zk-X509 identity gate).",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./core": "./src/core/index.ts",
+    "./merkle": "./src/merkle/index.ts",
+    "./identity": "./src/identity/index.ts",
+    "./claim": "./src/claim/index.ts",
+    "./react": "./src/react/index.ts",
+    "./types": "./src/types/index.ts",
+    "./util": "./src/util/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@tokamak-network/scatter-drop-merkle": "workspace:*",
+    "viem": "^2.21.0"
+  },
+  "peerDependencies": {
+    "react": "^18 || ^19"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
