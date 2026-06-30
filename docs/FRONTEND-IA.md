@@ -173,7 +173,7 @@ Step 4  명단 확정(오프체인)  ← 트랜잭션 없음
                     packages/merkle buildDrop → merkleRoot + **총량=Σ금액(자동)** + proofs.json
                     미리보기: 자격자 수 · 총 배분량 · 윈도우 · **수수료(배포액×feeBps, on-top)** · 총 필요예치(총량+수수료)
 Step 5  자금 예치 & 생성(온체인)  ← 가이드형 트랜잭션 시퀀스
-                    · 수수료 = 배포액 × feeBps(배포토큰, 기본 3%). 같은 토큰, 총량에 추가(on-top).
+                    · 수수료 = 배포액 × feeBps(배포토큰, 기본 0.5%). 같은 토큰, 총량에 추가(on-top).
                     1) approve 배포토큰(= 총량 + 수수료)  [한 번]
                     2) createDrop(type, airdropToken, root, 총량, start, deadline, identityRegistry)
                        = 배포풀(총량) + 수수료볼트(수수료, 같은 토큰) + MerkleDrop 배포 (한 tx)
@@ -199,10 +199,10 @@ Overview          /admin            플랫폼 현황 대시보드
  └ 운영자 수·클레임 총량 등 핵심 지표
 
 Campaign Funds    /admin/funds      ★ 생성 수수료 설정 — (납부토큰 × 종류) 2차원
- ├ defaultFeeBps   ★ 전역 기본 수수료율 (초기 300=3%). setDefaultFeeBps
+ ├ defaultFeeBps   ★ 전역 기본 수수료율 (초기 50=0.5%). setDefaultFeeBps
  ├ feeBps[token]   ★ 토큰별 수수료율(bps) — setFeeBps(token, bps). 미설정=기본율. 가치 낮은 토큰 ↑.
  │            토큰        율(bps)   = %
- │            (default)   300       3%
+ │            (default)   50        0.5%
  │            TON         200       2%   (예: 가치 높아 낮게)
  │            SDROP       500       5%
  └ (수수료 = 배포액×율, 같은 토큰, on-top. ≤ MAX_FEE_BPS. collectedFees[token] 적립)

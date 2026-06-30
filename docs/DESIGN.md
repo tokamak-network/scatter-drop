@@ -159,7 +159,7 @@
 ```
 DropFactory (어드민이 feeBps, operatorRegistry, allowedToken 관리 + 수수료 볼트 보관)
  ├ operatorRegistry                          운영자용 CA 레지스트리 (어드민 전역 설정)
- ├ defaultFeeBps → uint16 (초기 300=3%)      전역 기본 수수료율 (§8)
+ ├ defaultFeeBps → uint16 (초기 50=0.5%)     전역 기본 수수료율 (§8)
  ├ feeBps[airdropToken] → uint16             토큰별 수수료율(bps). 미설정=defaultFeeBps. ≤ MAX_FEE_BPS
  ├ tokenTier[address] → {NONE,COMMUNITY,OFFICIAL}  에어드랍 토큰 등록·등급 (§8.7)
  ├ setOperatorRegistry(addr)   onlyAdmin     운영자 신원 게이트 변경
@@ -216,12 +216,12 @@ GatedDrop (캠페인 1개 — 온체인 검증 규칙)  [후속 단계]
   배포 풀에는 **1000 전액**이 들어가고(수령자 영향 0), 수수료분은 **수수료 볼트**에 적립.
 - 어드민이 `collectedFees(token)`로 토큰별 조회, `withdrawFees`로 treasury 출금.
 
-### 수수료율 = feeBps[airdropToken] (토큰별 비율, 기본 3%)
-- bps(basis points, 1% = 100bps)로 저장. **기본값 = 300bps(3%)** (전역 default).
-- 어드민이 토큰별 설정: `setFeeBps(token, bps)`. 미설정 토큰은 default(300) 적용.
+### 수수료율 = feeBps[airdropToken] (토큰별 비율, 기본 0.5%)
+- bps(basis points, 1% = 100bps)로 저장. **기본값 = 50bps(0.5%)** (전역 default).
+- 어드민이 토큰별 설정: `setFeeBps(token, bps)`. 미설정 토큰은 default(50) 적용.
 - 상한 가드: `MAX_FEE_BPS`(예: 1000 = 10%)로 과도 설정 방지.
 - 수수료액 = `floor(totalAmount × feeBps[token] / 10000)`.
-  예) 1000 토큰 × 300bps = 30 → 운영자 예치 1030, 풀 1000, 볼트 30.
+  예) 1000 토큰 × 50bps = 5 → 운영자 예치 1005, 풀 1000, 볼트 5.
 
 ### createDrop 납부 흐름
 - `fee = totalAmount × bpsOf(airdropToken) / 10000` (bpsOf = 설정값 or default 300).
@@ -233,8 +233,8 @@ GatedDrop (캠페인 1개 — 온체인 검증 규칙)  [후속 단계]
 ### 어드민 전역 설정·권한 항목
 | 항목 | 설명 |
 |------|------|
-| **feeBps[token]** | **토큰별 수수료율(bps). 미설정=defaultFeeBps(300=3%). setFeeBps(token,bps), ≤ MAX_FEE_BPS** |
-| **defaultFeeBps** | **전역 기본율(초기 300=3%). setDefaultFeeBps로 변경** |
+| **feeBps[token]** | **토큰별 수수료율(bps). 미설정=defaultFeeBps(50=0.5%). setFeeBps(token,bps), ≤ MAX_FEE_BPS** |
+| **defaultFeeBps** | **전역 기본율(초기 50=0.5%). setDefaultFeeBps로 변경** |
 | **수수료 볼트** | **수수료가 DropFactory에 적립(배포 토큰으로). `collectedFees(token)` 조회** |
 | **withdrawFees** | **볼트 출금 — 플랫폼 어드민만 (`onlyAdmin`)** |
 | **operatorRegistry** | **운영자용 CA 레지스트리 — 캠페인 생성 신원 게이트(§4.3-1)** |
