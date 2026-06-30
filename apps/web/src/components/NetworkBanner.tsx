@@ -7,7 +7,9 @@ export function NetworkBanner() {
   const { isConnected, chainId } = useAccount();
   const { switchChain } = useSwitchChain();
 
-  if (!isConnected || (chainId && SUPPORTED_CHAIN_IDS.includes(chainId))) {
+  // Render nothing when disconnected, while the chain is still hydrating
+  // (chainId undefined), or when the active chain is supported.
+  if (!isConnected || chainId === undefined || SUPPORTED_CHAIN_IDS.includes(chainId)) {
     return null;
   }
 

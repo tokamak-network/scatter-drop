@@ -1,4 +1,5 @@
 import { NavLink } from "@/components/NavLink";
+import { AdminGate } from "@/components/AdminGate";
 
 const ADMIN_LINKS = [
   { href: "/admin", label: "Overview", exact: true },
@@ -25,7 +26,9 @@ export default function AdminLayout({
           ))}
         </nav>
       </aside>
-      <div>{children}</div>
+      <div>
+        <AdminGate>{children}</AdminGate>
+      </div>
     </div>
   );
 }

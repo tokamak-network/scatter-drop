@@ -97,10 +97,14 @@ export function listMyClaims(_address?: string): MyClaim[] {
   ];
 }
 
-/** Campaigns created by the connected wallet. Empty is valid. */
+/**
+ * Campaigns created by the connected wallet. Empty is valid.
+ * Stub: returns a sample set for any connected address (real ownership filter
+ * by createDrop sender lands in M6).
+ */
 export function listManagedCampaigns(_address?: string): Campaign[] {
   if (!_address) return [];
-  return CAMPAIGNS.filter((c) => c.operator === "0xOperator…01");
+  return CAMPAIGNS.filter((c) => c.status === "active");
 }
 
 /** Stub admin gate — replaced by DropFactory.owner() check in M7. */
