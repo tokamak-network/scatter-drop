@@ -56,8 +56,19 @@ function parseRecipients(text: string): {
       errors++;
       continue;
     }
+    let amount: bigint;
+    try {
+      amount = parseUnits(amt, 18);
+    } catch {
+      errors++;
+      continue;
+    }
+    if (amount <= 0n) {
+      errors++;
+      continue;
+    }
     seen.add(lower);
-    entries.push({ account: addr, amount: parseUnits(amt, 18) });
+    entries.push({ account: addr, amount });
   }
   return { entries, errors };
 }
@@ -106,7 +117,11 @@ export default function NewCampaignPage() {
     : Math.floor(deadlineParsed / 1000);
 
   const recipientsValid = entries.length > 0 && csvErrors === 0;
-  const windowValid = deadlineUnix > 0 && (startUnix === 0 || deadlineUnix > startUnix);
+  // Deadline must be in the future and after the start (mirrors on-chain checks;
+  // MIN_DURATION is still enforced on-chain).
+  const nowSec = Math.floor(Date.now() / 1000);
+  const windowValid =
+    deadlineUnix > nowSec && (startUnix === 0 || deadlineUnix > startUnix);
   const ready =
     !!factory &&
     tokenValid &&
