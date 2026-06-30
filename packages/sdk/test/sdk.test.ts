@@ -3,12 +3,14 @@ import { decodeFunctionData, getAddress, type Address } from "viem";
 import {
   AirdropType,
   TokenTier,
+  NATIVE_FEE_TOKEN,
   airdropTypeLabel,
   buildAddAllowedTokenRequest,
   buildApproveRequest,
   buildClaimRequest,
   buildCreateDropRequest,
   buildRemoveAllowedTokenRequest,
+  buildSetFeeRequest,
   buildSetOfficialTokenRequest,
   buildWithdrawFeesRequest,
   dropFactoryAbi,
@@ -78,7 +80,7 @@ describe("claim encoding", () => {
 });
 
 describe("factory / erc20 calldata builders", () => {
-  it("buildCreateDropRequest encodes createDrop args", () => {
+  it("buildCreateDropRequest encodes createDrop v2 args (ERC-20 fee, value 0)", () => {
     const req = buildCreateDropRequest(A(7), {
       airdropType: AirdropType.CSV,
       airdropToken: A(2),
@@ -86,14 +88,43 @@ describe("factory / erc20 calldata builders", () => {
       totalAmount: 1000n,
       deadline: 1_900_000_000n,
       identityRegistry: A(3),
+      feeToken: A(9),
+      fee: 5n,
     });
     expect(req.to).toBe(A(7));
+    expect(req.value).toBe(0n);
     const d = decodeFunctionData({ abi: dropFactoryAbi, data: req.data });
     expect(d.functionName).toBe("createDrop");
     expect(d.args[0]).toBe(AirdropType.CSV);
     expect(d.args[1]).toBe(A(2));
     expect(d.args[3]).toBe(1000n);
     expect(d.args[5]).toBe(A(3));
+    expect(d.args[6]).toBe(A(9));
+  });
+
+  it("buildCreateDropRequest sends the fee as value when paid in ETH", () => {
+    const req = buildCreateDropRequest(A(7), {
+      airdropType: AirdropType.CSV,
+      airdropToken: A(2),
+      merkleRoot: `0x${"ab".repeat(32)}`,
+      totalAmount: 1000n,
+      deadline: 1_900_000_000n,
+      identityRegistry: A(3),
+      feeToken: NATIVE_FEE_TOKEN,
+      fee: 777n,
+    });
+    expect(req.value).toBe(777n);
+    const d = decodeFunctionData({ abi: dropFactoryAbi, data: req.data });
+    expect(d.args[6]).toBe(NATIVE_FEE_TOKEN);
+  });
+
+  it("buildSetFeeRequest encodes (feeToken, type, amount)", () => {
+    const d = decodeFunctionData({
+      abi: dropFactoryAbi,
+      data: buildSetFeeRequest(A(7), A(9), AirdropType.SOCIAL, 42n).data,
+    });
+    expect(d.functionName).toBe("setFee");
+    expect(d.args).toEqual([A(9), AirdropType.SOCIAL, 42n]);
   });
 
   it("buildWithdrawFeesRequest encodes token + amount", () => {

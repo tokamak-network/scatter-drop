@@ -67,6 +67,25 @@ export async function getTokenTier(
   return n;
 }
 
+/**
+ * Read the creation fee for a (feeToken, airdropType) pair.
+ * `feeToken = address(0)` is the ETH price. Returns 0 when that token isn't
+ * configured for the type (i.e. not an accepted payment option).
+ */
+export async function getFeeOf(
+  client: PublicClient,
+  factory: Address,
+  feeToken: Address,
+  airdropType: number,
+): Promise<bigint> {
+  return client.readContract({
+    address: factory,
+    abi: dropFactoryAbi,
+    functionName: "feeOf",
+    args: [feeToken, airdropType],
+  });
+}
+
 /** Whether a token may be used for airdrops (tier != NONE). */
 export async function isTokenAllowed(
   client: PublicClient,

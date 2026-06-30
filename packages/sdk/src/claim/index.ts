@@ -7,7 +7,12 @@ import type { AirdropType } from "../types/index.js";
 export interface TxRequest {
   to: Address;
   data: Hex;
+  /** Native value (wei) to send — set for payable calls like createDrop paid in ETH. */
+  value?: bigint;
 }
+
+/** Native-ETH sentinel for the fee token (matches `address(0)` on-chain). */
+export const NATIVE_FEE_TOKEN: Address = "0x0000000000000000000000000000000000000000";
 
 /**
  * @deprecated use {@link TxRequest}. Kept as an interface (not a type alias)
@@ -45,14 +50,26 @@ export interface CreateDropParams {
   /** Unix seconds. Must be > now (+ MIN_DURATION enforced on-chain). */
   deadline: bigint;
   identityRegistry: Address;
+  /** Fee payment token. `NATIVE_FEE_TOKEN` (address(0)) = pay the fee in ETH. */
+  feeToken: Address;
+  /**
+   * The creation fee for this (feeToken, type), from `feeOf(feeToken, type)`.
+   * Required when `feeToken` is native (ETH) — it becomes msg.value. For ERC-20
+   * fees it is ignored (the factory pulls via transferFrom after approve).
+   */
+  fee?: bigint;
 }
 
 /**
- * Build a `DropFactory.createDrop(...)` transaction request. The operator must
- * first `approve` the factory for the per-type fee (in feeToken) and the
- * campaign's airdropToken for `totalAmount` (see {@link buildApproveRequest}).
+ * Build a `DropFactory.createDrop(...)` transaction request (payable).
+ *
+ * - **ETH fee** (`feeToken == NATIVE_FEE_TOKEN`): pass `fee`; it is sent as msg.value.
+ * - **ERC-20 fee**: first `approve` the factory for `fee` (feeToken) and for
+ *   `totalAmount` (airdropToken) — see {@link buildApproveRequest}; value stays 0.
  */
 export function buildCreateDropRequest(factory: Address, params: CreateDropParams): TxRequest {
+  const feeToken = getAddress(params.feeToken);
+  const isEth = feeToken === NATIVE_FEE_TOKEN;
   return {
     to: getAddress(factory),
     data: encodeFunctionData({
@@ -65,7 +82,30 @@ export function buildCreateDropRequest(factory: Address, params: CreateDropParam
         params.totalAmount,
         params.deadline,
         getAddress(params.identityRegistry),
+        feeToken,
       ],
+    }),
+    value: isEth ? (params.fee ?? 0n) : 0n,
+  };
+}
+
+/**
+ * Build `DropFactory.setFee(feeToken, type, amount)` — admin sets the per-(token,type)
+ * creation fee. `feeToken = NATIVE_FEE_TOKEN` configures the ETH price; a cheaper
+ * amount for one token (e.g. TON) is how a discount is offered. Admin-only on-chain.
+ */
+export function buildSetFeeRequest(
+  factory: Address,
+  feeToken: Address,
+  airdropType: AirdropType,
+  amount: bigint,
+): TxRequest {
+  return {
+    to: getAddress(factory),
+    data: encodeFunctionData({
+      abi: dropFactoryAbi,
+      functionName: "setFee",
+      args: [getAddress(feeToken), airdropType, amount],
     }),
   };
 }
