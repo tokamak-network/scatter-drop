@@ -198,9 +198,11 @@ contract DropFactory is Ownable {
     /// @dev Gated by operator verification (gate 1) and a contract check. Idempotent:
     ///      an already-registered token keeps its tier (never downgrades `OFFICIAL`).
     function addAllowedToken(address token) external {
-        _requireVerifiedOperator();
-        _requireContract(token);
+        // Already-registered tokens are a no-op, so skip the (cheaper) contract check and the
+        // external operator-verification call entirely. Cheapest guard first within the block.
         if (tokenTier[token] == TokenTier.NONE) {
+            _requireContract(token);
+            _requireVerifiedOperator();
             tokenTier[token] = TokenTier.COMMUNITY;
             emit AllowedTokenSet(token, TokenTier.COMMUNITY, msg.sender);
         }
@@ -212,9 +214,11 @@ contract DropFactory is Ownable {
     ///         `removeAllowedToken` to fully de-register.
     function setOfficialToken(address token, bool official) external onlyOwner {
         if (official) {
-            _requireContract(token);
-            tokenTier[token] = TokenTier.OFFICIAL;
-            emit AllowedTokenSet(token, TokenTier.OFFICIAL, msg.sender);
+            if (tokenTier[token] != TokenTier.OFFICIAL) {
+                _requireContract(token);
+                tokenTier[token] = TokenTier.OFFICIAL;
+                emit AllowedTokenSet(token, TokenTier.OFFICIAL, msg.sender);
+            }
         } else if (tokenTier[token] == TokenTier.OFFICIAL) {
             tokenTier[token] = TokenTier.COMMUNITY;
             emit AllowedTokenSet(token, TokenTier.COMMUNITY, msg.sender);

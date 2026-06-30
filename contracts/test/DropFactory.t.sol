@@ -381,7 +381,8 @@ contract DropFactoryTest is Test {
 
     function test_addAllowedToken_byVerifiedOperator_setsCommunity() public {
         _verifyOperator(operator);
-        vm.expectEmit(true, false, true, true, address(factory));
+        // AllowedTokenSet indexes token (topic1) and caller (topic2); tier is data.
+        vm.expectEmit(true, true, false, true, address(factory));
         emit AllowedTokenSet(address(airdropToken), DropFactory.TokenTier.COMMUNITY, operator);
         vm.prank(operator);
         factory.addAllowedToken(address(airdropToken));
@@ -411,6 +412,26 @@ contract DropFactoryTest is Test {
         vm.prank(operator);
         factory.addAllowedToken(address(airdropToken)); // must keep OFFICIAL
 
+        assertEq(uint8(factory.tokenTier(address(airdropToken))), uint8(DropFactory.TokenTier.OFFICIAL));
+    }
+
+    function test_addAllowedToken_idempotentNoopSkipsGates() public {
+        _verifyOperator(operator);
+        vm.prank(operator);
+        factory.addAllowedToken(address(airdropToken)); // COMMUNITY
+
+        // Re-adding an already-registered token is a no-op and skips the gates,
+        // so even an unverified caller does not revert and the tier is unchanged.
+        vm.prank(makeAddr("stranger"));
+        factory.addAllowedToken(address(airdropToken));
+        assertEq(uint8(factory.tokenTier(address(airdropToken))), uint8(DropFactory.TokenTier.COMMUNITY));
+    }
+
+    function test_setOfficialToken_redundantOfficialIsNoop() public {
+        vm.startPrank(admin);
+        factory.setOfficialToken(address(airdropToken), true);
+        factory.setOfficialToken(address(airdropToken), true); // no-op, no re-write/event
+        vm.stopPrank();
         assertEq(uint8(factory.tokenTier(address(airdropToken))), uint8(DropFactory.TokenTier.OFFICIAL));
     }
 
