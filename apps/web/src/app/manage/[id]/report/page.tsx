@@ -4,6 +4,10 @@ import { getCampaign } from "@/lib/stub";
 import { distributionCsv, getDistributionReport } from "@/lib/reports";
 import { ReportActions } from "@/components/ReportActions";
 
+// SECURITY (M3): this distribution report is stub data today, so it's harmless.
+// When wired to real claim-event data it exposes the recipient list, so it MUST
+// be gated to the campaign operator: wrap in ConnectGate and verify the
+// connected wallet === campaign.operator (createDrop sender) before rendering.
 export default async function DistributionReportPage({
   params,
 }: {

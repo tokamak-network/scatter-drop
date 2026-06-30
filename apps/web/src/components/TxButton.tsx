@@ -53,8 +53,10 @@ export function TxButton({
         disabled={disabled || busy || !request}
         onClick={() =>
           request &&
-          // Pin the write to the fork so it cannot broadcast to whatever chain
-          // the wallet happens to be on (reads are pinned to the same chain).
+          // Target the fork chain for the write (matches the pinned reads).
+          // NOTE: this is only true isolation if the fork chainId differs from a
+          // public chain — see M1 (fork should use 31337, coordinated with the
+          // dev-fork script) so a wallet on real Sepolia can't receive the tx.
           sendTransaction({
             to: request.to,
             data: request.data,
