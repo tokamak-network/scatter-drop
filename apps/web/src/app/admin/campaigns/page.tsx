@@ -1,8 +1,8 @@
 import { PageHeader, RowLink } from "@/components/ui";
 import { listCampaigns } from "@/lib/stub";
 
-export default function AdminCampaignsPage() {
-  const campaigns = listCampaigns();
+export default async function AdminCampaignsPage() {
+  const campaigns = await listCampaigns();
 
   return (
     <>

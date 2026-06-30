@@ -1,8 +1,8 @@
 import { PageHeader, Kpi } from "@/components/ui";
 import { getAdminOverview } from "@/lib/stub";
 
-export default function AdminOverviewPage() {
-  const o = getAdminOverview();
+export default async function AdminOverviewPage() {
+  const o = await getAdminOverview();
 
   return (
     <>

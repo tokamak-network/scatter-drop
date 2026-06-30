@@ -1,8 +1,8 @@
 import { PageHeader, StubButton } from "@/components/ui";
 import { getAdminOverview } from "@/lib/stub";
 
-export default function AdminVaultPage() {
-  const { collectedFees } = getAdminOverview();
+export default async function AdminVaultPage() {
+  const { collectedFees } = await getAdminOverview();
 
   return (
     <>

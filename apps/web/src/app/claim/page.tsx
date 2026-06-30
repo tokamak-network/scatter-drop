@@ -1,14 +1,23 @@
 "use client";
 
 import { useAccount } from "wagmi";
+import { useQuery } from "@tanstack/react-query";
 import { PageHeader, RowLink } from "@/components/ui";
-import { EmptyState } from "@/components/states";
+import { EmptyState, Loading, ErrorState } from "@/components/states";
 import { ConnectGate } from "@/components/ConnectGate";
 import { listMyClaims } from "@/lib/stub";
 
 export default function MyClaimsPage() {
   const { address } = useAccount();
-  const claims = listMyClaims(address);
+  const {
+    data: claims,
+    isLoading,
+    isError,
+  } = useQuery({
+    queryKey: ["myClaims", address],
+    queryFn: () => listMyClaims(address),
+    enabled: !!address,
+  });
 
   return (
     <>
@@ -18,7 +27,11 @@ export default function MyClaimsPage() {
       />
 
       <ConnectGate prompt="Connect a wallet to see your allocations.">
-        {claims.length === 0 ? (
+        {isLoading ? (
+          <Loading label="Loading your claims…" />
+        ) : isError ? (
+          <ErrorState>Could not load your claims. Please try again.</ErrorState>
+        ) : !claims || claims.length === 0 ? (
           <EmptyState
             title="Nothing to claim yet"
             description="Browse open campaigns — you may qualify on the spot."

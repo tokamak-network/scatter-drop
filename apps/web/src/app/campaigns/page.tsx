@@ -2,8 +2,8 @@ import { PageHeader, CampaignCard } from "@/components/ui";
 import { EmptyState } from "@/components/states";
 import { listCampaigns } from "@/lib/stub";
 
-export default function CampaignsPage() {
-  const campaigns = listCampaigns();
+export default async function CampaignsPage() {
+  const campaigns = await listCampaigns();
 
   return (
     <>

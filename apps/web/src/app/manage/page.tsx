@@ -2,14 +2,23 @@
 
 import Link from "next/link";
 import { useAccount } from "wagmi";
+import { useQuery } from "@tanstack/react-query";
 import { PageHeader, RowLink } from "@/components/ui";
-import { EmptyState } from "@/components/states";
+import { EmptyState, Loading, ErrorState } from "@/components/states";
 import { ConnectGate } from "@/components/ConnectGate";
 import { listManagedCampaigns } from "@/lib/stub";
 
 export default function ManagePage() {
   const { address } = useAccount();
-  const campaigns = listManagedCampaigns(address);
+  const {
+    data: campaigns,
+    isLoading,
+    isError,
+  } = useQuery({
+    queryKey: ["managedCampaigns", address],
+    queryFn: () => listManagedCampaigns(address),
+    enabled: !!address,
+  });
 
   return (
     <>
@@ -24,7 +33,11 @@ export default function ManagePage() {
       />
 
       <ConnectGate prompt="Connect a wallet to see your campaigns.">
-        {campaigns.length === 0 ? (
+        {isLoading ? (
+          <Loading label="Loading your campaigns…" />
+        ) : isError ? (
+          <ErrorState>Could not load your campaigns. Please try again.</ErrorState>
+        ) : !campaigns || campaigns.length === 0 ? (
           <EmptyState
             title="No campaigns yet"
             description="Create your first compliant airdrop."

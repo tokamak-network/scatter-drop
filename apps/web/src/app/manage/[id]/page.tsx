@@ -8,9 +8,9 @@ export default async function ManageCampaignPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const campaign = getCampaign(id);
+  const campaign = await getCampaign(id);
   if (!campaign) notFound();
-  const stats = getParticipantStats(id);
+  const stats = await getParticipantStats(id);
 
   return (
     <>

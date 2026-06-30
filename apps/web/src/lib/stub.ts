@@ -3,8 +3,12 @@
  *
  * No contract calls yet — every value here is placeholder data so the UI shell
  * can be built and reviewed independently of the M2 contracts / M3 scripts.
- * These functions are the seam where wagmi `useReadContract` / event-indexing
- * hooks will be wired in later milestones (M5–M7).
+ *
+ * The read functions are intentionally **async** (return Promises) so this is
+ * the seam where M5–M7 swap in real reads (server-side viem `readContract`,
+ * client-side wagmi/react-query) without changing any call site: server
+ * components already `await` them; client components consume them via
+ * react-query `useQuery`.
  */
 
 export type AirdropType = "CSV" | "ONCHAIN_SNAPSHOT" | "ONCHAIN_GATED" | "SOCIAL";
@@ -74,11 +78,11 @@ const CAMPAIGNS: Campaign[] = [
   },
 ];
 
-export function listCampaigns(): Campaign[] {
+export async function listCampaigns(): Promise<Campaign[]> {
   return CAMPAIGNS;
 }
 
-export function getCampaign(id: string): Campaign | undefined {
+export async function getCampaign(id: string): Promise<Campaign | undefined> {
   return CAMPAIGNS.find((c) => c.id === id);
 }
 
@@ -90,8 +94,8 @@ export interface MyClaim {
 }
 
 /** Pre-confirmed (Merkle) claims for the connected wallet. Empty is valid. */
-export function listMyClaims(_address?: string): MyClaim[] {
-  if (!_address) return [];
+export async function listMyClaims(address?: string): Promise<MyClaim[]> {
+  if (!address) return [];
   return [
     { campaignId: "1", campaignName: "Acme Loyalty Drop", amount: "120 ACME", claimed: false },
   ];
@@ -102,8 +106,10 @@ export function listMyClaims(_address?: string): MyClaim[] {
  * Stub: returns a sample set for any connected address (real ownership filter
  * by createDrop sender lands in M6).
  */
-export function listManagedCampaigns(_address?: string): Campaign[] {
-  if (!_address) return [];
+export async function listManagedCampaigns(
+  address?: string,
+): Promise<Campaign[]> {
+  if (!address) return [];
   return CAMPAIGNS.filter((c) => c.status === "active");
 }
 
@@ -120,7 +126,9 @@ export interface ParticipantStats {
   claimRatePct: number;
 }
 
-export function getParticipantStats(_id: string): ParticipantStats {
+export async function getParticipantStats(
+  _id: string,
+): Promise<ParticipantStats> {
   return { eligible: 4200, verified: 3100, claimed: 1764, unclaimed: 1336, claimRatePct: 42 };
 }
 
@@ -132,7 +140,7 @@ export interface AdminOverview {
   operatorCount: number;
 }
 
-export function getAdminOverview(): AdminOverview {
+export async function getAdminOverview(): Promise<AdminOverview> {
   return {
     totalCampaigns: CAMPAIGNS.length,
     activeCampaigns: CAMPAIGNS.filter((c) => c.status === "active").length,
