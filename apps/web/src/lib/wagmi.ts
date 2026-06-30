@@ -3,14 +3,15 @@ import { injected } from "wagmi/connectors";
 import { defineChain } from "viem";
 
 /**
- * Local dev fork chain. `dev-fork.sh` runs `anvil --fork-url $SEPOLIA_RPC_URL`,
- * so the fork keeps Sepolia's chain id (11155111) by default but is served from
- * a local RPC. Both are overridable via env for a plain anvil (31337) run.
+ * Local dev fork chain. `dev-fork.sh` runs anvil forked from Sepolia with
+ * `--chain-id 31337`, keeping Sepolia state but re-labeling the chain id to
+ * 31337 so it's distinct from real Sepolia (M1: a wallet on real Sepolia can't
+ * receive a fork tx). Overridable via env.
  *
  * Reads `NEXT_PUBLIC_CHAIN_ID` / `NEXT_PUBLIC_RPC_URL` (the names `dev-fork.sh`
  * dumps for copy-paste), falling back to the older `NEXT_PUBLIC_FORK_*` names.
  */
-const DEFAULT_FORK_CHAIN_ID = 11155111;
+const DEFAULT_FORK_CHAIN_ID = 31337;
 // Use || (not ??) so an empty-string env var (NEXT_PUBLIC_CHAIN_ID=) falls
 // through to the next source instead of being treated as set.
 const parsedChainId = Number(
