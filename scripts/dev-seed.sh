@@ -35,7 +35,7 @@ CUST_AMT="1000000000000000000000" # 1000e18
 OTHER_AMT="500000000000000000000"  # 500e18
 TOTAL="1500000000000000000000"     # 1500e18
 # cast call annotates values (e.g. "10000000000000000000 [1e19]") — keep field 1.
-FEE="$(cast call "$FACTORY" 'feeOf(address,uint8)(uint256)' "$FEE_TOKEN" 0 --rpc-url "$RPC_URL" | awk '{print $1}')"
+FEE="$(cast call "$FACTORY" 'feeOf(address,uint256)(uint256)' "$AIRDROP" "$TOTAL" --rpc-url "$RPC_URL" | awk '{print $1}')"
 NOW="$(cast block latest --field timestamp --rpc-url "$RPC_URL" | awk '{print $1}')"
 if ! [[ "$NOW" =~ ^[0-9]+$ ]]; then
   echo "ERROR: could not read current block timestamp from $RPC_URL" >&2
@@ -66,16 +66,18 @@ echo "[seed] verifying operator + customer on the fork..."
 "$ROOT/scripts/dev-verify.sh" "$OPERATOR" >/dev/null
 "$ROOT/scripts/dev-verify.sh" "$CUSTOMER" >/dev/null
 
-echo "[seed] approving fee + airdrop tokens..."
-cast send "$FEE_TOKEN" 'approve(address,uint256)' "$FACTORY" "$FEE" --private-key "$OP_KEY" --rpc-url "$RPC_URL" >/dev/null
-cast send "$AIRDROP" 'approve(address,uint256)' "$FACTORY" "$TOTAL" --private-key "$OP_KEY" --rpc-url "$RPC_URL" >/dev/null
+echo "[seed] approving airdrop token (distribution + on-top fee)..."
+# The fee is charged on top in the airdrop token, so approve TOTAL + FEE
+# (python handles >2^63 arithmetic that bash $(( )) would overflow).
+APPROVE="$(python3 -c "print($TOTAL + $FEE)")"
+cast send "$AIRDROP" 'approve(address,uint256)' "$FACTORY" "$APPROVE" --private-key "$OP_KEY" --rpc-url "$RPC_URL" >/dev/null
 
 echo "[seed] createDrop..."
-# ERC20-fee path: the fee is paid in FEE_TOKEN (approved above), so send no ETH value.
-# The airdrop token was registered OFFICIAL by DeployFork, so the token allow-list passes.
+# Fee is charged on top in the airdrop token (approved above); no separate fee token.
+# The airdrop token was allow-listed by DeployFork, so the token allow-list passes.
 # startTime = NOW (claims open immediately); deadline = NOW + 7d (window >= MIN_DURATION).
-cast send "$FACTORY" 'createDrop(uint8,address,bytes32,uint256,uint64,uint64,address,address)' \
-  0 "$AIRDROP" "$ROOT_HASH" "$TOTAL" "$NOW" "$DEADLINE" "$REGISTRY" "$FEE_TOKEN" \
+cast send "$FACTORY" 'createDrop(uint8,address,bytes32,uint256,uint64,uint64,address)' \
+  0 "$AIRDROP" "$ROOT_HASH" "$TOTAL" "$NOW" "$DEADLINE" "$REGISTRY" \
   --private-key "$OP_KEY" --rpc-url "$RPC_URL" >/dev/null
 
 LEN="$(cast call "$FACTORY" 'dropsLength()(uint256)' --rpc-url "$RPC_URL" | awk '{print $1}')"

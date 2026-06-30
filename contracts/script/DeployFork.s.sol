@@ -48,9 +48,11 @@ contract DeployFork is Script {
 
         DropFactory factory =
             new DropFactory(deployer, operatorRegistry, IRegistryFactoryLike(zkFactory), treasury);
-        factory.setFee(address(feeToken), CSV, feeAmount);
-        // Register the demo airdrop token (OFFICIAL) so seeded createDrop calls pass the allow-list.
-        factory.setOfficialToken(address(airdropToken), true);
+        // Curate the demo airdrop token (allow-list) and price its creation fee as a flat amount
+        // in the airdrop token, so seeded createDrop calls pass and the fee is deterministic.
+        factory.setAllowedToken(address(airdropToken), true);
+        factory.setFeeMode(address(airdropToken), DropFactory.FeeMode.FLAT);
+        factory.setFlatFee(address(airdropToken), feeAmount);
 
         feeToken.mint(deployer, fundAmount);
         airdropToken.mint(deployer, fundAmount);

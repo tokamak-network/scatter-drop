@@ -72,8 +72,10 @@ contract DeployLocal is Script {
         DropFactory factory = new DropFactory(
             deployer, address(operatorRegistry), IRegistryFactoryLike(address(zkFactory)), treasury
         );
-        factory.setFee(address(feeToken), CSV, feeAmount);
-        factory.setOfficialToken(address(airdropToken), true); // register the demo airdrop token
+        // Curate the demo airdrop token and price its creation fee as a flat amount in that token.
+        factory.setAllowedToken(address(airdropToken), true);
+        factory.setFeeMode(address(airdropToken), DropFactory.FeeMode.FLAT);
+        factory.setFlatFee(address(airdropToken), feeAmount);
 
         // Verify the operator (deployer) and the demo customer well past any deadline.
         operatorRegistry.setVerifiedUntil(deployer, type(uint64).max);
