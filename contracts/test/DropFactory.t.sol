@@ -375,6 +375,100 @@ contract DropFactoryTest is Test {
         );
     }
 
+    // -- token registry (W18a) -------------------------------------------
+
+    event AllowedTokenSet(address indexed token, DropFactory.TokenTier tier, address indexed caller);
+
+    function test_addAllowedToken_byVerifiedOperator_setsCommunity() public {
+        _verifyOperator(operator);
+        vm.expectEmit(true, false, true, true, address(factory));
+        emit AllowedTokenSet(address(airdropToken), DropFactory.TokenTier.COMMUNITY, operator);
+        vm.prank(operator);
+        factory.addAllowedToken(address(airdropToken));
+
+        assertEq(uint8(factory.tokenTier(address(airdropToken))), uint8(DropFactory.TokenTier.COMMUNITY));
+        assertTrue(factory.isAllowed(address(airdropToken)));
+    }
+
+    function test_addAllowedToken_revertsWhenOperatorUnverified() public {
+        vm.prank(operator); // not verified
+        vm.expectRevert(DropFactory.OperatorNotVerified.selector);
+        factory.addAllowedToken(address(airdropToken));
+    }
+
+    function test_addAllowedToken_revertsOnEoaToken() public {
+        _verifyOperator(operator);
+        vm.prank(operator);
+        vm.expectRevert(DropFactory.NotAContract.selector);
+        factory.addAllowedToken(makeAddr("eoa"));
+    }
+
+    function test_addAllowedToken_doesNotDowngradeOfficial() public {
+        vm.prank(admin);
+        factory.setOfficialToken(address(airdropToken), true);
+
+        _verifyOperator(operator);
+        vm.prank(operator);
+        factory.addAllowedToken(address(airdropToken)); // must keep OFFICIAL
+
+        assertEq(uint8(factory.tokenTier(address(airdropToken))), uint8(DropFactory.TokenTier.OFFICIAL));
+    }
+
+    function test_setOfficialToken_onlyOwner() public {
+        vm.prank(operator);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, operator));
+        factory.setOfficialToken(address(airdropToken), true);
+    }
+
+    function test_setOfficialToken_setsOfficialAndRequiresContract() public {
+        vm.startPrank(admin);
+        vm.expectRevert(DropFactory.NotAContract.selector);
+        factory.setOfficialToken(makeAddr("eoa"), true);
+
+        factory.setOfficialToken(address(airdropToken), true);
+        vm.stopPrank();
+        assertEq(uint8(factory.tokenTier(address(airdropToken))), uint8(DropFactory.TokenTier.OFFICIAL));
+    }
+
+    function test_setOfficialToken_unsetDemotesToCommunity() public {
+        vm.startPrank(admin);
+        factory.setOfficialToken(address(airdropToken), true);
+        factory.setOfficialToken(address(airdropToken), false);
+        vm.stopPrank();
+        assertEq(uint8(factory.tokenTier(address(airdropToken))), uint8(DropFactory.TokenTier.COMMUNITY));
+    }
+
+    function test_setOfficialToken_unsetOnNonOfficialIsNoop() public {
+        // never registered → unset leaves it NONE
+        vm.prank(admin);
+        factory.setOfficialToken(address(airdropToken), false);
+        assertEq(uint8(factory.tokenTier(address(airdropToken))), uint8(DropFactory.TokenTier.NONE));
+    }
+
+    function test_removeAllowedToken_onlyOwnerSetsNone() public {
+        _verifyOperator(operator);
+        vm.prank(operator);
+        factory.addAllowedToken(address(airdropToken));
+
+        vm.prank(operator);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, operator));
+        factory.removeAllowedToken(address(airdropToken));
+
+        vm.prank(admin);
+        factory.removeAllowedToken(address(airdropToken));
+        assertEq(uint8(factory.tokenTier(address(airdropToken))), uint8(DropFactory.TokenTier.NONE));
+        assertFalse(factory.isAllowed(address(airdropToken)));
+    }
+
+    function test_createDrop_stillWorksWithoutRegistration() public {
+        // W18a is non-destructive: createDrop does not yet require a registered token.
+        _verifyOperator(operator);
+        _fund(operator, CSV_FEE, TOTAL);
+        address drop = _createCsv(operator);
+        assertTrue(drop != address(0));
+        assertEq(uint8(factory.tokenTier(address(airdropToken))), uint8(DropFactory.TokenTier.NONE));
+    }
+
     // -- exact-receipt guard (IncorrectAmountReceived) -------------------
 
     function test_createDrop_revertsOnFeeOnTransferAirdropToken() public {
