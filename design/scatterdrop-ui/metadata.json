@@ -1,0 +1,6 @@
+{
+  "name": "ScatterDrop",
+  "description": "A decentralized sybil-resistant airdrop portal integrated with zk-X509 CA registry identity verification.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
