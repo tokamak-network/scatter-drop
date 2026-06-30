@@ -1,7 +1,27 @@
-import { parseDeployment, type ScatterDropDeployment } from "@tokamak-network/scatter-drop-sdk";
+import { getAddress, type Address } from "viem";
+import {
+  parseDeployment,
+  type ScatterDropDeployment,
+} from "@tokamak-network/scatter-drop-sdk";
 
-/** Deployment plus the optional block it was deployed at (for log scanning). */
-export type WebDeployment = ScatterDropDeployment & { deployBlock?: bigint };
+/**
+ * Deployment plus the optional deploy block (for log scanning) and deployer
+ * address (DropFactory owner — used as the admin gate; the ABI exposes no
+ * owner() view, flagged to K0).
+ */
+export type WebDeployment = ScatterDropDeployment & {
+  deployBlock?: bigint;
+  deployer?: Address;
+};
+
+function toAddr(v: unknown): Address | undefined {
+  if (typeof v !== "string") return undefined;
+  try {
+    return getAddress(v);
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Resolves the active scatter-drop deployment (DropFactory + fee token + treasury).
@@ -37,7 +57,11 @@ export function getEnvDeployment(): WebDeployment | null {
       feeToken: process.env.NEXT_PUBLIC_FEE_TOKEN,
       treasury: process.env.NEXT_PUBLIC_TREASURY,
     });
-    return { ...base, deployBlock: toBlock(process.env.NEXT_PUBLIC_DEPLOY_BLOCK) };
+    return {
+      ...base,
+      deployBlock: toBlock(process.env.NEXT_PUBLIC_DEPLOY_BLOCK),
+      deployer: toAddr(process.env.NEXT_PUBLIC_DEPLOYER),
+    };
   } catch {
     return null;
   }
@@ -48,7 +72,11 @@ export async function fetchDeployment(): Promise<WebDeployment | null> {
     const res = await fetch("/deployment.json", { cache: "no-store" });
     if (!res.ok) return getEnvDeployment();
     const raw = await res.json();
-    return { ...parseDeployment(raw), deployBlock: toBlock(raw?.deployBlock) };
+    return {
+      ...parseDeployment(raw),
+      deployBlock: toBlock(raw?.deployBlock),
+      deployer: toAddr(raw?.deployer),
+    };
   } catch {
     return getEnvDeployment();
   }

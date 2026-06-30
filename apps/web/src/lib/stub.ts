@@ -46,13 +46,6 @@ export interface Campaign {
   status: CampaignStatus;
 }
 
-export const FEE_BY_TYPE: Record<AirdropType, string> = {
-  [AirdropType.CSV]: "10 FEE",
-  [AirdropType.ONCHAIN_SNAPSHOT]: "25 FEE",
-  [AirdropType.ONCHAIN_GATED]: "40 FEE",
-  [AirdropType.SOCIAL]: "75 FEE",
-};
-
 const CAMPAIGNS: Campaign[] = [
   {
     id: "1",
@@ -135,11 +128,6 @@ export async function listMyClaims(address?: string): Promise<MyClaim[]> {
   ];
 }
 
-/** Stub admin gate — replaced by DropFactory.owner() check in M7. */
-export function useIsAdmin(_address?: string): boolean {
-  return false;
-}
-
 export interface Eligibility {
   eligible: boolean;
   alreadyClaimed: boolean;
@@ -197,37 +185,3 @@ export async function getParticipantStats(
   return { eligible: 4200, verified: 3100, claimed: 1764, unclaimed: 1336, claimRatePct: 42 };
 }
 
-export interface AdminOverview {
-  totalCampaigns: number;
-  activeCampaigns: number;
-  endedCampaigns: number;
-  collectedFees: string;
-  operatorCount: number;
-  /** Fee token + treasury addresses (DropFactory config). */
-  feeToken: Address;
-  treasury: Address;
-}
-
-export async function getAdminOverview(): Promise<AdminOverview> {
-  return {
-    totalCampaigns: CAMPAIGNS.length,
-    activeCampaigns: CAMPAIGNS.filter((c) => c.status === "active").length,
-    endedCampaigns: CAMPAIGNS.filter((c) => c.status === "ended").length,
-    collectedFees: "1,250 FEE",
-    operatorCount: 2,
-    feeToken: addr("fee1"),
-    treasury: addr("17ea"),
-  };
-}
-
-export interface StandardRegistry {
-  id: string;
-  label: string;
-  address: Address;
-  trustedCAs: number;
-}
-
-export const STANDARD_REGISTRIES: StandardRegistry[] = [
-  { id: "KR-NPKI", label: "KR-NPKI (Korea national PKI)", address: addr("c0a1"), trustedCAs: 12 },
-  { id: "EE-eID", label: "EE-eID (Estonia eID)", address: addr("c0a2"), trustedCAs: 5 },
-];

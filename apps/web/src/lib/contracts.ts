@@ -31,6 +31,35 @@ export function deploymentIssue(
   return null;
 }
 
+const ownableAbi = [
+  {
+    type: "function",
+    name: "owner",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "address" }],
+  },
+] as const;
+
+/**
+ * Live admin gate: the connected wallet is the DropFactory owner. Reads the
+ * on-chain `owner()` (Ownable; minimal ABI, since the SDK ABI omits it) so a
+ * transferred owner / multisig is honored, falling back to the deployment's
+ * `deployer` only if the read is unavailable.
+ */
+export function useIsAdmin(address: Address | undefined): boolean {
+  const { data: dep } = useDeployment();
+  const { data: owner } = useReadContract({
+    address: dep?.dropFactory,
+    abi: ownableAbi,
+    functionName: "owner",
+    chainId: fork.id,
+    query: { enabled: !!dep?.dropFactory },
+  });
+  const admin = owner ?? dep?.deployer;
+  return !!address && !!admin && admin.toLowerCase() === address.toLowerCase();
+}
+
 /** Active deployment (DropFactory + fee token + treasury), runtime-loaded. */
 export function useDeployment() {
   return useQuery({
