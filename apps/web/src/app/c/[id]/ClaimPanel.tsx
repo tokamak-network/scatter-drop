@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useAccount } from "wagmi";
 import { useQuery } from "@tanstack/react-query";
 import { formatUnits } from "viem";
@@ -118,6 +119,14 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
           <p className="muted" style={{ fontSize: 12, margin: 0 }}>
             Claim requires (identity verified) AND (eligible). Self-claim only.
           </p>
+
+          <Link
+            href={`/c/${campaign.id}/receipt`}
+            className="muted"
+            style={{ fontSize: 13, textDecoration: "underline" }}
+          >
+            Tax receipt →
+          </Link>
         </div>
       </ConnectGate>
     </div>

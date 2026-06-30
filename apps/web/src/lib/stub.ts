@@ -18,7 +18,7 @@ export type { ClaimProof };
 export type CampaignStatus = "active" | "ended";
 
 /** Pad a short hex suffix into a valid 20-byte address (stub addresses). */
-const addr = (suffix: string): Address =>
+export const addr = (suffix: string): Address =>
   `0x${suffix.toLowerCase().padStart(40, "0")}` as Address;
 
 export interface Campaign {
