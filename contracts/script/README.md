@@ -39,6 +39,20 @@ The off-chain tree (`packages/merkle`) and on-chain `MerkleDrop` share
 with sorted-pair hashing — already cross-checked by `MerkleDrop.t.sol`. The E2E
 re-exercises it against a live chain.
 
+## Confirmed signatures (from W4 / PR#5)
+```solidity
+constructor(address initialOwner, IERC20 feeToken_, address operatorRegistry_,
+            IRegistryFactoryLike zkFactory_, address treasury_)   // Ownable(initialOwner)
+enum AirdropType { CSV, ONCHAIN_SNAPSHOT, ONCHAIN_GATED, SOCIAL } // CSV = 0
+setFee(uint8,uint256) / setFeeToken(IERC20) / setOperatorRegistry(address)
+setZkFactory(IRegistryFactoryLike) / setTreasury(address) / withdrawFees(address,uint256)
+createDrop(uint8 airdropType, address airdropToken, bytes32 merkleRoot,
+           uint256 totalAmount, uint64 deadline, address identityRegistry) -> address drop
+MockRegistryFactory.setRegistry(address,bool) / isRegistry(address) -> bool
+```
+`DeployLocal.s.sol` is written against these and is ready to compile the moment
+W4 lands on `main` (just rebase). Create→claim→sweep E2E added on top after merge.
+
 ## Open items (confirm with K0 before finalizing)
 - Local zk-X509: keep mock-only for M3 (assumed), real integration deferred.
 - Whether E2E assertions live in a Foundry test (`forge script` + `forge test`)
