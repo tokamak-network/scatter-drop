@@ -37,6 +37,15 @@ contract DropFactory is Ownable {
         SOCIAL
     }
 
+    /// @notice Registry status of an airdrop token. `NONE` = not registered;
+    ///         `COMMUNITY` = permissionlessly self-registered by a verified operator;
+    ///         `OFFICIAL` = curated by the admin (surfaced first in the UI).
+    enum TokenTier {
+        NONE,
+        COMMUNITY,
+        OFFICIAL
+    }
+
     /// @notice Minimum lead time between campaign creation and its deadline. Prevents a
     ///         publish-and-instantly-sweep campaign that would mislead would-be claimers.
     uint256 public constant MIN_DURATION = 1 hours;
@@ -63,11 +72,17 @@ contract DropFactory is Ownable {
     /// @notice Every MerkleDrop deployed by this factory, in creation order.
     address[] private _drops;
 
+    /// @notice Registry tier of each airdrop token. Operators self-register `COMMUNITY`
+    ///         tokens; the admin curates `OFFICIAL` ones. (Enforcement on `createDrop`
+    ///         lands in a later step — this registry is additive for now.)
+    mapping(address => TokenTier) public tokenTier;
+
     event FeeTokenUpdated(address indexed feeToken);
     event OperatorRegistryUpdated(address indexed operatorRegistry);
     event ZkFactoryUpdated(address indexed zkFactory);
     event TreasuryUpdated(address indexed treasury);
     event FeeUpdated(AirdropType indexed airdropType, uint256 amount);
+    event AllowedTokenSet(address indexed token, TokenTier tier, address indexed caller);
     event FeesWithdrawn(address indexed token, address indexed to, uint256 amount);
     event DropCreated(
         address indexed drop,
@@ -176,6 +191,54 @@ contract DropFactory is Ownable {
     }
 
     // ---------------------------------------------------------------------
+    // Token registry
+    // ---------------------------------------------------------------------
+
+    /// @notice Permissionlessly register `token` as a `COMMUNITY` airdrop token.
+    /// @dev Gated by operator verification (gate 1) and a contract check. Idempotent:
+    ///      an already-registered token keeps its tier (never downgrades `OFFICIAL`).
+    function addAllowedToken(address token) external {
+        // Already-registered tokens are a no-op, so skip the (cheaper) contract check and the
+        // external operator-verification call entirely. Cheapest guard first within the block.
+        if (tokenTier[token] == TokenTier.NONE) {
+            _requireContract(token);
+            _requireVerifiedOperator();
+            tokenTier[token] = TokenTier.COMMUNITY;
+            emit AllowedTokenSet(token, TokenTier.COMMUNITY, msg.sender);
+        }
+    }
+
+    /// @notice Admin curation of `OFFICIAL` tokens. `official = true` marks `token`
+    ///         `OFFICIAL` (requires a contract); `false` demotes an `OFFICIAL` token back
+    ///         to `COMMUNITY` (still allowed) and is a no-op otherwise. Use
+    ///         `removeAllowedToken` to fully de-register.
+    function setOfficialToken(address token, bool official) external onlyOwner {
+        if (official) {
+            if (tokenTier[token] != TokenTier.OFFICIAL) {
+                _requireContract(token);
+                tokenTier[token] = TokenTier.OFFICIAL;
+                emit AllowedTokenSet(token, TokenTier.OFFICIAL, msg.sender);
+            }
+        } else if (tokenTier[token] == TokenTier.OFFICIAL) {
+            tokenTier[token] = TokenTier.COMMUNITY;
+            emit AllowedTokenSet(token, TokenTier.COMMUNITY, msg.sender);
+        }
+    }
+
+    /// @notice Admin removal: de-register `token` entirely (`tier = NONE`).
+    function removeAllowedToken(address token) external onlyOwner {
+        if (tokenTier[token] != TokenTier.NONE) {
+            tokenTier[token] = TokenTier.NONE;
+            emit AllowedTokenSet(token, TokenTier.NONE, msg.sender);
+        }
+    }
+
+    /// @notice True if `token` is registered at any tier (`COMMUNITY` or `OFFICIAL`).
+    function isAllowed(address token) external view returns (bool) {
+        return tokenTier[token] != TokenTier.NONE;
+    }
+
+    // ---------------------------------------------------------------------
     // Campaign creation
     // ---------------------------------------------------------------------
 
@@ -208,9 +271,7 @@ contract DropFactory is Ownable {
         _requireContract(airdropToken);
 
         // Gate 1: campaign creator must be a verified operator.
-        if (IIdentityRegistry(operatorRegistry).verifiedUntil(msg.sender) < block.timestamp) {
-            revert OperatorNotVerified();
-        }
+        _requireVerifiedOperator();
         // Customer registry must be a genuine zk-X509 IdentityRegistry.
         if (!zkFactory.isRegistry(identityRegistry)) revert NotAStandardRegistry();
 
@@ -281,6 +342,13 @@ contract DropFactory is Ownable {
     ///      clear error instead of an opaque ABI-decode/AddressEmptyCode revert downstream.
     function _requireContract(address a) private view {
         if (a.code.length == 0) revert NotAContract();
+    }
+
+    /// @dev Gate 1: revert unless `msg.sender` is currently verified against `operatorRegistry`.
+    function _requireVerifiedOperator() private view {
+        if (IIdentityRegistry(operatorRegistry).verifiedUntil(msg.sender) < block.timestamp) {
+            revert OperatorNotVerified();
+        }
     }
 
     /// @dev `safeTransferFrom` that requires `to` to net exactly `amount`, reverting
