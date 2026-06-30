@@ -3,10 +3,10 @@ import { injected } from "wagmi/connectors";
 import { defineChain } from "viem";
 
 /**
- * Local dev fork chain. `dev-fork.sh` runs `anvil --fork-url $SEPOLIA_RPC_URL
- * --chain-id 31337`, keeping Sepolia state but re-labeling the chain id to 31337
- * so it's distinct from real Sepolia (M1: a wallet on real Sepolia can't receive
- * a fork tx). Overridable via env.
+ * Local dev fork chain. `dev-fork.sh` runs anvil forked from Sepolia with
+ * `--chain-id 31337`, keeping Sepolia state but re-labeling the chain id to
+ * 31337 so it's distinct from real Sepolia (M1: a wallet on real Sepolia can't
+ * receive a fork tx). Overridable via env.
  *
  * Reads `NEXT_PUBLIC_CHAIN_ID` / `NEXT_PUBLIC_RPC_URL` (the names `dev-fork.sh`
  * dumps for copy-paste), falling back to the older `NEXT_PUBLIC_FORK_*` names.

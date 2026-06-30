@@ -53,9 +53,10 @@ export function TxButton({
         disabled={disabled || busy || !request}
         onClick={() =>
           request &&
-          // Target the fork chain (31337) for the write, matching the pinned
-          // reads. The fork uses a distinct chainId from real Sepolia (M1), so a
-          // wallet on a public chain can't receive this tx.
+          // Target the configured fork chain (fork.id, default 31337) for the
+          // write, matching the pinned reads. The fork uses a chainId distinct
+          // from real Sepolia (M1), so a wallet on a public chain can't receive
+          // this tx.
           sendTransaction({
             to: request.to,
             data: request.data,
