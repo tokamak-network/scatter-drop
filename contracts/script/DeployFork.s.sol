@@ -31,6 +31,8 @@ contract DeployFork is Script {
     uint8 internal constant CSV = 0;
 
     function run() external {
+        // Casts are required: an untyped `ether` literal is ambiguous between
+        // the uint256 and int256 `envOr` overloads ("not unique" otherwise).
         uint256 feeAmount = vm.envOr("FEE_AMOUNT", uint256(10 ether));
         uint256 fundAmount = vm.envOr("FUND_AMOUNT", uint256(1_000_000 ether));
         address zkFactory = vm.envOr("SEPOLIA_ZK_REGISTRY_FACTORY", ZK_FACTORY);

@@ -23,8 +23,10 @@ set +a
 
 RPC_URL="http://127.0.0.1:8545"
 FORK_CHAIN_ID="${FORK_CHAIN_ID:-11155111}"
-# Anvil account #0 (well-known dev key) deploys.
-DEPLOYER_KEY="${DEPLOYER_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
+# Anvil account #0 — a publicly-known dev key, hardcoded on purpose. Not
+# overridable: this helper only ever targets a local anvil fork, and accepting a
+# key from the environment would risk leaking a real one into process args.
+DEPLOYER_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
 LOG_DIR="$ROOT/.dev-logs"
 mkdir -p "$LOG_DIR"
@@ -35,13 +37,13 @@ anvil --fork-url "$SEPOLIA_RPC_URL" --chain-id "$FORK_CHAIN_ID" \
 ANVIL_PID=$!
 trap 'kill "$ANVIL_PID" 2>/dev/null || true' EXIT
 
-for _ in $(seq 1 30); do
+for _ in {1..30}; do
   cast block-number --rpc-url "$RPC_URL" >/dev/null 2>&1 && break
   sleep 1
 done
 if ! cast block-number --rpc-url "$RPC_URL" >/dev/null 2>&1; then
   echo "  ERROR: anvil did not come up; last log:" >&2
-  tail -20 "$LOG_DIR/anvil.log" >&2 || true
+  tail -n 20 "$LOG_DIR/anvil.log" >&2 || true
   exit 1
 fi
 echo "  anvil up on $RPC_URL (PID $ANVIL_PID)"
