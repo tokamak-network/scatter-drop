@@ -61,11 +61,14 @@ const hits = new Map<string, number[]>();
 
 export function rateLimited(ip: string, limit = 5, windowMs = 60_000): boolean {
   const now = Date.now();
-  const recent = (hits.get(ip) ?? []).filter((t) => now - t < windowMs);
-  if (recent.length >= limit) {
-    hits.set(ip, recent);
-    return true;
+  // Prune stale buckets each call so the map can't grow unbounded.
+  for (const [key, ts] of hits) {
+    const live = ts.filter((t) => now - t < windowMs);
+    if (live.length === 0) hits.delete(key);
+    else hits.set(key, live);
   }
+  const recent = hits.get(ip) ?? [];
+  if (recent.length >= limit) return true;
   recent.push(now);
   hits.set(ip, recent);
   return false;
@@ -97,6 +100,7 @@ export function parseSnapshotRequest(
   if (b.fromBlock !== undefined) {
     const fb = toBigInt(b.fromBlock);
     if (fb === null) return { error: "Invalid fromBlock" };
+    if (fb > block) return { error: "fromBlock cannot be greater than block" };
     fromBlock = fb;
   }
 

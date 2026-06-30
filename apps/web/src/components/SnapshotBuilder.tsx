@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { isAddress } from "viem";
 import { Loader2, Play, RotateCcw } from "lucide-react";
 import {
@@ -39,19 +39,29 @@ export function SnapshotBuilder({
     isAddress(token) &&
     isUint(block) &&
     BigInt(block || "0") > 0n &&
-    isUint(minBalance) &&
+    (minBalance === "" || isUint(minBalance)) &&
     (fromBlock === "" || isUint(fromBlock)) &&
     amountValid;
 
-  // Lift the manifest up (and clear it whenever inputs change / we reset).
+  // Keep the latest onResult in a ref so the lift effect depends only on the
+  // job state, not the callback identity (avoids a re-render loop with an inline
+  // parent callback).
+  const onResultRef = useRef(onResult);
   useEffect(() => {
-    onResult(phase === "done" ? result : null);
-  }, [phase, result, onResult]);
+    onResultRef.current = onResult;
+  }, [onResult]);
+  useEffect(() => {
+    onResultRef.current(phase === "done" ? result : null);
+  }, [phase, result]);
 
   const topN = useMemo(() => {
     if (!result) return [];
     return Object.values(result.claims)
-      .sort((a, b) => (BigInt(b.amount) > BigInt(a.amount) ? 1 : -1))
+      .sort((a, b) => {
+        const av = BigInt(a.amount);
+        const bv = BigInt(b.amount);
+        return bv > av ? 1 : bv < av ? -1 : 0;
+      })
       .slice(0, 5);
   }, [result]);
 
