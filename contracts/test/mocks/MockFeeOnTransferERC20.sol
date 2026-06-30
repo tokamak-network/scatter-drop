@@ -9,7 +9,10 @@ import { ERC20 } from "solmate/tokens/ERC20.sol";
 contract MockFeeOnTransferERC20 is ERC20 {
     uint256 public immutable feeBps; // e.g. 100 = 1%
 
+    error FeeTooHigh();
+
     constructor(string memory name_, string memory symbol_, uint256 feeBps_) ERC20(name_, symbol_, 18) {
+        if (feeBps_ > 10_000) revert FeeTooHigh();
         feeBps = feeBps_;
     }
 
@@ -18,33 +21,27 @@ contract MockFeeOnTransferERC20 is ERC20 {
     }
 
     function transfer(address to, uint256 amount) public override returns (bool) {
-        uint256 fee = (amount * feeBps) / 10_000;
-        balanceOf[msg.sender] -= amount;
-        _burn2(fee);
-        unchecked {
-            balanceOf[to] += amount - fee;
-        }
-        emit Transfer(msg.sender, to, amount - fee);
+        _transferWithFee(msg.sender, to, amount);
         return true;
     }
 
     function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
         uint256 allowed = allowance[from][msg.sender];
         if (allowed != type(uint256).max) allowance[from][msg.sender] = allowed - amount;
-
-        uint256 fee = (amount * feeBps) / 10_000;
-        balanceOf[from] -= amount;
-        _burn2(fee);
-        unchecked {
-            balanceOf[to] += amount - fee;
-        }
-        emit Transfer(from, to, amount - fee);
+        _transferWithFee(from, to, amount);
         return true;
     }
 
-    /// @dev Reduce totalSupply for the burned fee without touching a holder balance
-    ///      (the fee is destroyed in transit).
-    function _burn2(uint256 amount) private {
-        totalSupply -= amount;
+    /// @dev Move `amount` from `from`, deliver `amount - fee` to `to`, and burn `fee` in transit.
+    ///      Emits both the delivery and the burn `Transfer` so events match the state changes.
+    function _transferWithFee(address from, address to, uint256 amount) private {
+        uint256 fee = (amount * feeBps) / 10_000;
+        balanceOf[from] -= amount;
+        unchecked {
+            balanceOf[to] += amount - fee;
+            totalSupply -= fee;
+        }
+        emit Transfer(from, to, amount - fee);
+        if (fee > 0) emit Transfer(from, address(0), fee);
     }
 }

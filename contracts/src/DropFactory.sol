@@ -280,6 +280,10 @@ contract DropFactory is Ownable {
     function _pullExact(IERC20 token, address from, address to, uint256 amount) private {
         uint256 balBefore = token.balanceOf(to);
         token.safeTransferFrom(from, to, amount);
-        if (token.balanceOf(to) - balBefore != amount) revert IncorrectAmountReceived();
+        // unchecked so a token whose `to` balance fails to increase by `amount` (rebasing or
+        // malicious balanceOf) reverts with IncorrectAmountReceived rather than an arithmetic panic.
+        unchecked {
+            if (token.balanceOf(to) - balBefore != amount) revert IncorrectAmountReceived();
+        }
     }
 }
