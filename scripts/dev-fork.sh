@@ -52,6 +52,15 @@ echo "[2/3] Deploying DropFactory + tokens onto the fork..."
 forge script script/DeployFork.s.sol:DeployFork \
   --rpc-url "$RPC_URL" --broadcast --private-key "$DEPLOYER_KEY"
 
-echo "[3/3] Done. Addresses: contracts/deployments/$FORK_CHAIN_ID.json"
-echo "  anvil still running on $RPC_URL — Ctrl-C to stop."
+echo "[3/4] Addresses: contracts/deployments/$FORK_CHAIN_ID.json"
+
+if [ "${SEED_DEMO:-true}" != "false" ]; then
+  echo "[4/4] Seeding a demo campaign (verify operator+customer, createDrop)..."
+  RPC_URL="$RPC_URL" FORK_CHAIN_ID="$FORK_CHAIN_ID" "$ROOT/scripts/dev-seed.sh" \
+    || echo "  (demo seed failed — non-fatal; SEED_DEMO=false to skip)"
+else
+  echo "[4/4] SEED_DEMO=false — skipping demo campaign."
+fi
+
+echo "Done. anvil still running on $RPC_URL — Ctrl-C to stop."
 wait "$ANVIL_PID"

@@ -87,8 +87,20 @@ hermetic and offline.
 scripts/dev-fork.sh        # SEPOLIA_RPC_URL sourced from contracts/.env
 ```
 
-`deployments/<chainId>.json` is a runtime artifact (gitignored). Note: creating a
-campaign from the deployed factory still requires the operator wallet to be
-identity-verified on the real registry (gate 1) — seeding a demo campaign on the
-fork needs a real proof or an `anvil_setStorageAt` override of `verifiedUntil`,
-tracked as a follow-up.
+`deployments/<chainId>.json` is a runtime artifact (gitignored).
+
+## Dev identity verification + demo seed (W5d)
+A real zk proof is impractical on a fork, so two helpers fake verification by
+overriding `verifiedUntil` on the users `IdentityRegistry` via
+`anvil_setStorageAt` (mapping base slot `11`, found by probing the live proxy):
+
+- **`scripts/dev-verify.sh <address> [until]`** — mark any wallet verified
+  (default: never expires). Run it on the browser-connected wallet so it passes
+  the gate and can `createDrop` / `claim`.
+- **`scripts/dev-seed.sh`** — verify operator + a demo customer, fund/approve,
+  and `createDrop` one 2-leaf campaign so the frontend shows something
+  immediately. Prints the drop address and the customer's claim proof.
+
+`dev-fork.sh` runs `dev-seed.sh` automatically after deploy (set `SEED_DEMO=false`
+to skip). Verified end-to-end on a Sepolia fork: deploy → seed → the demo
+customer `claim`s real tokens through the real-zk-X509-gated drop.
