@@ -62,5 +62,19 @@ else
   echo "[4/4] SEED_DEMO=false — skipping demo campaign."
 fi
 
+# Print copy-paste frontend env (apps/web/.env.local). Reads the addresses the
+# deploy just wrote; the web app owns the file, so we only emit the lines.
+DEPLOY_JSON="$ROOT/contracts/deployments/$FORK_CHAIN_ID.json"
+json_addr() { grep -o "\"$1\"[^,}]*" "$DEPLOY_JSON" | grep -oiE '0x[0-9a-f]{40}' | head -1; }
+if [ -f "$DEPLOY_JSON" ]; then
+  echo
+  echo "Frontend env (copy into apps/web/.env.local):"
+  echo "  NEXT_PUBLIC_CHAIN_ID=$FORK_CHAIN_ID"
+  echo "  NEXT_PUBLIC_RPC_URL=$RPC_URL"
+  echo "  NEXT_PUBLIC_DROP_FACTORY=$(json_addr dropFactory)"
+  echo "  NEXT_PUBLIC_FEE_TOKEN=$(json_addr feeToken)"
+  echo "  NEXT_PUBLIC_AIRDROP_TOKEN=$(json_addr airdropToken)"
+fi
+
 echo "Done. anvil still running on $RPC_URL — Ctrl-C to stop."
 wait "$ANVIL_PID"
