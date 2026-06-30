@@ -117,15 +117,17 @@ contract MerkleDrop {
     /// @param amount Token amount allocated to `account`.
     /// @param proof Merkle inclusion proof for the leaf.
     function claim(uint256 index, address account, uint256 amount, bytes32[] calldata proof) external {
-        // Cheapest, local guards first; the external identity call and the
-        // keccak/proof verification only run once those pass.
+        // Guards run cheapest-first; the external identity call is the single
+        // most expensive op, so it runs last — an ineligible/tampered claim
+        // reverts on the in-memory proof check before paying for it.
         if (block.timestamp > deadline) revert ClaimClosed();
         if (account != msg.sender) revert NotSelfClaim();
         if (_claimed.get(index)) revert AlreadyClaimed();
-        if (identityRegistry.verifiedUntil(msg.sender) < block.timestamp) revert NotVerified();
 
         bytes32 leaf = keccak256(abi.encodePacked(index, account, amount));
         if (!MerkleProof.verify(proof, merkleRoot, leaf)) revert InvalidProof();
+
+        if (identityRegistry.verifiedUntil(msg.sender) < block.timestamp) revert NotVerified();
 
         _claimed.set(index);
         token.safeTransfer(msg.sender, amount);
@@ -144,9 +146,12 @@ contract MerkleDrop {
         if (block.timestamp <= deadline) revert SweepTooEarly();
 
         uint256 balance = token.balanceOf(address(this));
-        token.safeTransfer(operator, balance);
-
-        emit Swept(operator, balance);
+        // Skip the transfer when nothing is left: some ERC20s revert on a
+        // zero-value transfer, and emitting Swept(0) would be noise.
+        if (balance > 0) {
+            token.safeTransfer(operator, balance);
+            emit Swept(operator, balance);
+        }
     }
 
     /*//////////////////////////////////////////////////////////////

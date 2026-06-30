@@ -257,4 +257,23 @@ contract MerkleDropTest is Test {
         vm.expectRevert(MerkleDrop.SweepTooEarly.selector);
         drop.sweep();
     }
+
+    /// @dev A second sweep (or one on a fully-claimed drop) is a no-op: it must
+    ///      not revert and must not emit, since the balance is zero.
+    function test_Sweep_ZeroBalanceIsNoop() public {
+        vm.warp(deadline + 1);
+
+        // First sweep drains the whole (unclaimed) balance.
+        vm.prank(OPERATOR);
+        drop.sweep();
+        assertEq(token.balanceOf(address(drop)), 0);
+        uint256 operatorBalance = token.balanceOf(OPERATOR);
+
+        // Second sweep finds nothing: no revert, no transfer, no event.
+        vm.recordLogs();
+        vm.prank(OPERATOR);
+        drop.sweep();
+        assertEq(vm.getRecordedLogs().length, 0);
+        assertEq(token.balanceOf(OPERATOR), operatorBalance);
+    }
 }
