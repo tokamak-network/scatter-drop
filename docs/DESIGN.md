@@ -149,7 +149,7 @@
        └ 소셜       → 퀘스트 설정(트위터/디스코드)
  3. 배포 방식 선택   ○ 즉시  ○ 베스팅(cliff+linear)  ○ 선착순
  4. 미리보기        자격자 수·총 배분량 확인 → (Merkle 방식이면) 트리 생성
- 5. 생성 & 결제      배포액의 %수수료(같은 토큰, on-top) — approve(총량+수수료) → createDrop
+ 5. 생성 & 결제      수수료(토큰 방식: %또는 정액, 같은 토큰, on-top) — approve(총량+수수료) → createDrop
 ```
 온체인 검증 방식을 제외하면 4단계에서 동일한 명단으로 수렴 → Merkle 트리 → 배포.
 
@@ -157,14 +157,20 @@
 
 ## 7. 컨트랙트 구조
 ```
-DropFactory (어드민이 feeBps, operatorRegistry, allowedToken 관리 + 수수료 볼트 보관)
+DropFactory (어드민이 수수료방식·feeBps·flatFee, operatorRegistry, allowedToken 관리 + 수수료 볼트 보관)
  ├ operatorRegistry                          운영자용 CA 레지스트리 (어드민 전역 설정)
- ├ defaultFeeBps → uint16 (초기 50=0.5%)     전역 기본 수수료율 (§8)
- ├ feeBps[airdropToken] → uint16             토큰별 수수료율(bps). 미설정=defaultFeeBps. ≤ MAX_FEE_BPS
+ ├ defaultFeeMode → FeeMode (초기 PERCENT)   전역 기본 수수료 방식 (§8)
+ ├ feeMode[token] → {PERCENT,FLAT}           토큰별 수수료 방식. 미설정=defaultFeeMode
+ ├ defaultFeeBps → uint16 (초기 50=0.5%)     PERCENT 전역 기본율 (§8)
+ ├ feeBps[token] → uint16                    PERCENT 토큰별 율(bps). 미설정=defaultFeeBps. ≤ MAX_FEE_BPS
+ ├ flatFee[token] → uint256                  FLAT 토큰별 정액. FLAT인데 0이면 미설정→revert
  ├ tokenTier[address] → {NONE,ALLOWED}       에어드랍 토큰 화이트리스트 (§8.7, 증권성 규제)
  ├ setOperatorRegistry(addr)   onlyAdmin     운영자 신원 게이트 변경
- ├ setDefaultFeeBps(bps)       onlyAdmin     전역 기본율 변경 (≤ MAX_FEE_BPS)
- ├ setFeeBps(token, bps)       onlyAdmin     토큰별 율 설정 (가치 낮은 토큰 ↑). ≤ MAX_FEE_BPS
+ ├ setDefaultFeeMode(mode)     onlyAdmin     전역 기본 방식 변경
+ ├ setFeeMode(token, mode)     onlyAdmin     토큰별 방식 PERCENT/FLAT 설정
+ ├ setDefaultFeeBps(bps)       onlyAdmin     PERCENT 전역 기본율 (≤ MAX_FEE_BPS)
+ ├ setFeeBps(token, bps)       onlyAdmin     PERCENT 토큰별 율. ≤ MAX_FEE_BPS
+ ├ setFlatFee(token, amount)   onlyAdmin     FLAT 토큰별 정액
  ├ setAllowedToken(token, on)  onlyAdmin     ★토큰 허가/해제 (어드민 전용 — 증권성 심사 후). 운영자 셀프등록 없음
  ├ createDrop(type, airdropToken, merkleRoot, totalAmount, startTime, deadline, identityRegistry)
  │     · type ∈ {CSV, ONCHAIN_SNAPSHOT, SOCIAL}. 수수료 = floor(totalAmount × bpsOf(airdropToken)/10000), on-top.
@@ -204,35 +210,43 @@ GatedDrop (캠페인 1개 — 온체인 검증 규칙)  [후속 단계]
 ---
 
 ## 8. 이코노미 (수익 모델)
-- **수익이 거래량(총 배포량)에 비례.** 플랫폼 수익 = Σ(캠페인 배포량 × 그 토큰 feeBps/10000)
-  = 총배포량 × 평균율. **에어드랍이 많고 클수록 플랫폼 수익↑** → 운영자·플랫폼 인센티브 정렬.
-  (이전 고정금액 모델은 "캠페인 개수"에만 비례 → 큰 캠페인 가치 미반영이라 폐기.)
-- **생성 수수료 = 배포 토큰 예치액의 비율(%).** 고정금액이 아니라 **"얼마를 뿌리느냐"에 비례.**
-  - 근거: 많이 뿌리는 캠페인이 더 낸다(공정·직관). 토큰 가치 차이는 **토큰별 %를 어드민이 설정**해 해소
-    (가치 낮은 토큰은 % 높게). 결제 토큰 = **배포 토큰과 동일**(별도 납부토큰 선택 없음).
-- **수수료는 총량에 "추가"(on-top) — 운영자 부담.** 운영자가 1000을 뿌리려면 `1000 + 1000×fee%`를 예치.
+- **생성 수수료 방식을 어드민이 토큰별로 선택: 거래액 비율(PERCENT) 또는 정액(FLAT).**
+  - **PERCENT**(기본): 수익이 거래량에 비례 = Σ(배포량×율). 많이·크게 뿌릴수록 수익↑(인센티브 정렬).
+    토큰 가치 차이는 토큰별 율로 해소(가치 낮은 토큰 율↑). 기본 0.5%.
+  - **FLAT**: 캠페인당 토큰별 정액. 배포량 무관 고정 수익(예측 가능). 안정 토큰·특정 정책에 유용.
+  - 결제 토큰 = **배포 토큰과 동일**(별도 납부토큰 선택 없음).
+- **수수료는 총량에 "추가"(on-top) — 운영자 부담.** 운영자가 1000을 뿌리려면 `1000 + fee`를 예치.
   배포 풀에는 **1000 전액**이 들어가고(수령자 영향 0), 수수료분은 **수수료 볼트**에 적립.
 - 어드민이 `collectedFees(token)`로 토큰별 조회, `withdrawFees`로 treasury 출금.
 
-### 수수료율 = feeBps[airdropToken] (토큰별 비율, 기본 0.5%)
-- bps(basis points, 1% = 100bps)로 저장. **기본값 = 50bps(0.5%)** (전역 default).
-- 어드민이 토큰별 설정: `setFeeBps(token, bps)`. 미설정 토큰은 default(50) 적용.
-- 상한 가드: `MAX_FEE_BPS`(예: 1000 = 10%)로 과도 설정 방지.
-- 수수료액 = `floor(totalAmount × feeBps[token] / 10000)`.
-  예) 1000 토큰 × 50bps = 5 → 운영자 예치 1005, 풀 1000, 볼트 5.
+### 수수료 방식 = 토큰별 PERCENT / FLAT 선택 (어드민)
+어드민이 **토큰마다 수수료 방식을 선택**한다: 거래액 비율(%) 또는 정액(flat).
+- `enum FeeMode { PERCENT, FLAT }`. 토큰별 `feeMode[token]`, 미설정 토큰은 **defaultFeeMode(기본 PERCENT)**.
+- **PERCENT 방식:** `fee = floor(totalAmount × bpsOf(token) / 10000)`.
+  `bpsOf(token) = feeBps[token]` (미설정=`defaultFeeBps`, 기본 50bps=0.5%). `≤ MAX_FEE_BPS`(예 1000=10%).
+  예) 1000 토큰 × 50bps = 5.
+- **FLAT 방식:** `fee = flatFee[token]` (캠페인 크기와 무관한 토큰별 정액). 토큰별 `setFlatFee(token, amount)`.
+  FLAT인데 `flatFee[token]==0`이면 미설정 → **revert FeeNotConfigured**(무료 우회 방지).
+  예) flatFee[TON]=10 → 캠페인이 1000 뿌리든 100만 뿌리든 수수료 10 TON.
+- 두 방식 공통: **on-top**(운영자 예치 = 총량 + fee), 같은 토큰, 볼트 적립.
 
-### createDrop 납부 흐름
-- `fee = totalAmount × bpsOf(airdropToken) / 10000` (bpsOf = 설정값 or default 50).
+### bpsOf/feeOf 결정 + createDrop 납부 흐름
+```
+fee = feeMode(airdropToken) == PERCENT
+      ? totalAmount × bpsOf(airdropToken) / 10000
+      : flatFeeOf(airdropToken)        // FLAT, >0 보장(아니면 revert)
+```
 - 운영자 approve(airdropToken, totalAmount + fee) → createDrop:
-  `airdropToken.safeTransferFrom(operator, drop, totalAmount)` (풀) +
-  `airdropToken.safeTransferFrom(operator, address(this), fee)` (볼트) → `collectedFees[airdropToken] += fee`.
-- (ETH 배포 토큰은 비지원 — airdropToken은 ERC-20, §SDK 가드와 일치.) `withdrawFees` treasury 고정.
+  `safeTransferFrom(operator, drop, totalAmount)` (풀) + `safeTransferFrom(operator, this, fee)` (볼트)
+  → `collectedFees[airdropToken] += fee`. (airdropToken은 ERC-20, ETH 배포 비지원.) `withdrawFees` treasury 고정.
 
 ### 어드민 전역 설정·권한 항목
 | 항목 | 설명 |
 |------|------|
-| **feeBps[token]** | **토큰별 수수료율(bps). 미설정=defaultFeeBps(50=0.5%). setFeeBps(token,bps), ≤ MAX_FEE_BPS** |
-| **defaultFeeBps** | **전역 기본율(초기 50=0.5%). setDefaultFeeBps로 변경** |
+| **feeMode[token]** | **토큰별 수수료 방식 PERCENT/FLAT. 미설정=defaultFeeMode(기본 PERCENT). setFeeMode(token,mode)** |
+| **defaultFeeMode** | **전역 기본 방식(초기 PERCENT). setDefaultFeeMode** |
+| **feeBps[token] / defaultFeeBps** | **PERCENT 방식 율(bps). 미설정=defaultFeeBps(50=0.5%). setFeeBps, setDefaultFeeBps. ≤ MAX_FEE_BPS** |
+| **flatFee[token]** | **FLAT 방식 정액(토큰별). setFlatFee(token,amount). FLAT인데 0이면 미설정→createDrop revert** |
 | **수수료 볼트** | **수수료가 DropFactory에 적립(배포 토큰으로). `collectedFees(token)` 조회** |
 | **withdrawFees** | **볼트 출금 — 플랫폼 어드민만 (`onlyAdmin`)** |
 | **operatorRegistry** | **운영자용 CA 레지스트리 — 캠페인 생성 신원 게이트(§4.3-1)** |
