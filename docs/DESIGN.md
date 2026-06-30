@@ -111,6 +111,13 @@
 | 가스 | 저렴(proof 검증만) | 높음(상태 조회+검증) |
 | 특성 | 정적·소급 가능 | 동적·"기간 내 조건 충족"이면 OK |
 
+**스냅샷 명단 산출 — v1은 Dune 활용 (자체 인덱서 불필요).**
+"블록 N 기준 토큰 ≥ X 보유자 + 잔액" 같은 명단은 **Dune Analytics**로 뽑는다.
+- 마법사가 입력값(토큰주소·스냅샷블록·최소수량·배분방식 균등/비례)으로 **Dune SQL 쿼리를 생성** →
+  운영자가 Dune에서 실행 → 결과 **CSV 내보내기** → 마법사에 업로드(=CSV 경로로 수렴).
+- 즉 v1 스냅샷 = "Dune 쿼리 생성기 + CSV 임포트"로 충분. 플랫폼 인덱서는 **후속(자동화)**.
+- 비례 배분은 `(주소, 잔액)`에서 `총량 × 잔액/Σ잔액`으로 마법사가 계산.
+
 → 두 방식은 용도가 다름.
    - **(A) 스냅샷**: "과거 특정 블록 기준 홀더에게 보상" — 명단 고정, 소급.
    - **(B) 기간+조건**: "기간을 열어두고, 그 안에서 온체인 조건만 맞으면 클레임" — 명단 미리 안 만들고
@@ -151,8 +158,9 @@ DropFactory (어드민이 feeToken, feeOf[type], operatorRegistry, allowedToken 
  ├ addAllowedToken(token)      operator      검증 운영자가 직접 등록(승인 불요) → COMMUNITY. 게이트1 + token.code>0
  ├ setOfficialToken(token,on)  onlyAdmin     플랫폼 공식 토큰 지정/해제 → OFFICIAL (목록 상단 노출)
  ├ removeAllowedToken(token)   onlyAdmin     악성 토큰 제거 → NONE (모더레이션)
- ├ createDrop(type, airdropToken, merkleRoot, totalAmount, deadline, identityRegistry, feeToken)  payable
+ ├ createDrop(type, airdropToken, merkleRoot, totalAmount, startTime, deadline, identityRegistry, feeToken)  payable
  │     · type ∈ {CSV, ONCHAIN_SNAPSHOT, SOCIAL}  (오프체인 명단 → Merkle). feeToken=납부수단(0=ETH)
+ │     · 클레임 윈도우 [startTime, deadline] — require(deadline > startTime) + (deadline - startTime >= MIN_DURATION) + deadline > now
  │     0a. require(operatorRegistry.verifiedUntil(msg.sender) >= now)  운영자 신원검증 (게이트1)
  │     0b. require(zkFactory.isRegistry[identityRegistry])             정식 고객 CA 레지스트리 검증
  │     0c. require(tokenTier[airdropToken] != NONE)                    등록 토큰만 배포 (미등록 시 운영자가 addAllowedToken)
@@ -166,11 +174,12 @@ DropFactory (어드민이 feeToken, feeOf[type], operatorRegistry, allowedToken 
  └ withdrawFees(token, to, amount)  onlyAdmin ★ 수수료 볼트 출금 (플랫폼 어드민만)
 
 MerkleDrop (캠페인 1개 — CSV·소셜·스냅샷 규칙)
+ ├ startTime / deadline                    클레임 윈도우 (불변). [시작, 마감]
  ├ identityRegistry                        zk-X509 IdentityRegistry (필수, 불변)
- ├ claim(index, account, amount, proof)    ① 신원검증(verifiedUntil≥now) ② proof 검증 후 self-claim
+ ├ claim(index, account, amount, proof)    ⓪ now∈[startTime,deadline] ① 신원검증(verifiedUntil≥now) ② proof 검증 후 self-claim
  ├ isClaimed(index) → bool                 중복 방지 (bitmap)
- ├ sweep()                                 마감 후 운영자 잔여 회수
- └ view: token, merkleRoot, deadline, identityRegistry, totalClaimed
+ ├ sweep()                                 마감(deadline) 후 운영자 잔여 회수
+ └ view: token, merkleRoot, startTime, deadline, identityRegistry, totalClaimed
 
 GatedDrop (캠페인 1개 — 온체인 검증 규칙)  [후속 단계]
  ├ identityRegistry                        zk-X509 IdentityRegistry (필수, 불변)

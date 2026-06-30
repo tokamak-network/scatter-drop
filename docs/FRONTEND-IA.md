@@ -148,16 +148,24 @@ Campaign 관리     /manage/[id]     (본인이 createDrop한 캠페인만)
 ### 3.1 생성 마법사 (`/manage/new`) — DESIGN §6
 ```
 Step 0  운영자 신원검증  operatorRegistry.verifiedUntil(me) ≥ now 확인 (미검증 시 차단)
-Step 1  기본 정보   이름·설명·로고·배포 토큰·총량·마감일
+Step 1  기본 정보   이름·설명·로고·배포 토큰·총량·**시작시간·마감시간**
+                  · 클레임 윈도우 [시작, 마감] 둘 다 입력 (datetime). 검증: 마감>시작, 윈도우≥MIN_DURATION
                   · 배포 토큰: 등록부 picker (OFFICIAL 먼저 → COMMUNITY). 없으면 "+ 토큰 추가"(addAllowedToken)
-                  + zk-X509 고객 CA Registry *필수 (§0-2 — 수령자 신원 게이트)
+                  · 고객 CA Registry: 표준(추천) 선택 / 목록 선택 / **주소 직접 입력** (셋 중 하나, 필수)
 Step 2  자격 방식   ○ CSV 업로드                      → type=CSV
                     ○ 규칙: 스냅샷                     → type=ONCHAIN_SNAPSHOT
                     ○ 규칙: 온체인 검증(GatedDrop)     → type=ONCHAIN_GATED
                     ○ 소셜·태스크                      → type=SOCIAL  [3단계]
    · 선택 즉시 해당 종류의 **생성 수수료(feeOf[type])를 표시** (종류마다 다름)
-   └ CSV  → (address, amount) 업로드 + 검증
-   └ 규칙 → 조건 빌더(보유≥N, 스테이킹≥X, NFT, AND/OR) + 스냅샷/실시간
+   └ CSV  → 두 경로 (둘 다 결국 (address, amount) 리스트 → merkle 트리):
+       (A) 업로드: 가진 CSV 드롭 + 검증(parseCsv). + **양식 가이드 + 샘플 CSV 다운로드** 버튼.
+       (B) 빌더(파일 없어도 됨): 앱에서 수령자 작성
+           · 행 추가(주소+금액) / 리스트 붙여넣기 / "N명 균등 X씩" 헬퍼 / 검증·중복체크
+           · 미리보기(인원·총량) + 원하면 CSV로 내보내기(저장·공유용)
+       → 어느 경로든 packages/merkle buildDrop → merkleRoot + proofs.json (온체인 입력은 root)
+   └ 규칙(스냅샷) → 입력(토큰주소·스냅샷블록·최소수량·균등/비례) → **Dune SQL 생성**
+       → 운영자가 Dune 실행→CSV 내보내기→업로드(=CSV 경로). v1 인덱서 불필요.
+   └ 규칙(온체인 검증) → 조건 빌더(보유≥N·스테이킹≥X·NFT·AND/OR) [GatedDrop, 후속]
    └ 소셜 → 퀘스트 설정(트위터/디스코드)
 Step 3  배포 방식   ○ 즉시  ○ 베스팅(cliff+linear)  ○ 선착순
 Step 4  미리보기    자격자 수·총 배분량 → Merkle 트리 생성
