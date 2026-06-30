@@ -8,7 +8,7 @@ import {
   buildClaimRequest,
   isVerificationValid,
 } from "@tokamak-network/scatter-drop-sdk";
-import { CheckCircle2, Gift, XCircle } from "lucide-react";
+import { CheckCircle2, Gift, Loader2, XCircle } from "lucide-react";
 import { ConnectGate } from "@/components/ConnectGate";
 import { TxButton } from "@/components/TxButton";
 import { useIsClaimed, useVerifiedUntil } from "@/lib/contracts";
@@ -24,16 +24,16 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
   const { address } = useAccount();
   const now = BigInt(Math.floor(Date.now() / 1000));
 
-  const { data: elig } = useQuery({
+  const { data: elig, isPending: eligLoading } = useQuery({
     queryKey: ["eligibility", campaign.id, address],
     queryFn: () => getStubEligibility(campaign.id, address),
     enabled: !!address,
   });
-  const { data: verifiedUntil } = useVerifiedUntil(
+  const { data: verifiedUntil, isLoading: gateLoading } = useVerifiedUntil(
     campaign.identityRegistry,
     address,
   );
-  const { data: claimedOnChain } = useIsClaimed(
+  const { data: claimedOnChain, isLoading: claimLoading } = useIsClaimed(
     campaign.drop,
     elig?.claim?.index,
   );
@@ -47,7 +47,14 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
     ? `${formatUnits(BigInt(elig.claim.amount), 18)} ${campaign.tokenSymbol}`
     : null;
 
+  // Stay in a loading state until the async checks resolve, so we don't flash
+  // "Not eligible" / enable Claim prematurely.
+  const isLoading =
+    !!address &&
+    (eligLoading || gateLoading || (!!elig?.eligible && claimLoading));
+
   const canClaim =
+    !isLoading &&
     verified &&
     windowOpen &&
     !!elig?.eligible &&
@@ -56,17 +63,19 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
   const claimRequest =
     canClaim && elig?.claim ? buildClaimRequest(campaign.drop, elig.claim) : null;
 
-  const claimLabel = !verified
-    ? "Identity verification required"
-    : claimedOnChain
-      ? "Already claimed"
-      : notStarted
-        ? "Claim window not open yet"
-        : ended
-          ? "Claim window closed"
-          : !elig?.eligible
-            ? "Not eligible"
-            : "Claim";
+  const claimLabel = isLoading
+    ? "Checking eligibility…"
+    : !verified
+      ? "Identity verification required"
+      : claimedOnChain
+        ? "Already claimed"
+        : notStarted
+          ? "Claim window not open yet"
+          : ended
+            ? "Claim window closed"
+            : !elig?.eligible
+              ? "Not eligible"
+              : "Claim";
 
   return (
     <div className="space-y-6">
@@ -105,19 +114,27 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
 
         <ConnectGate prompt="Connect a wallet to check your eligibility.">
           <div className="bg-slate-950 p-4 rounded-lg border border-slate-800/80 flex gap-2 items-start">
-            {elig?.eligible ? (
+            {eligLoading ? (
+              <Loader2 className="w-4 h-4 text-slate-500 animate-spin shrink-0 mt-0.5" />
+            ) : elig?.eligible ? (
               <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
             ) : (
               <XCircle className="w-4 h-4 text-slate-600 shrink-0 mt-0.5" />
             )}
             <div className="text-xs space-y-0.5">
               <div className="font-bold text-slate-300">
-                {elig?.eligible && amount ? `Eligible for ${amount}` : "Not eligible"}
+                {eligLoading
+                  ? "Checking eligibility…"
+                  : elig?.eligible && amount
+                    ? `Eligible for ${amount}`
+                    : "Not eligible"}
               </div>
               <div className="text-slate-500 text-[11px] leading-snug">
-                {elig?.eligible
-                  ? "Your address is in the distribution list."
-                  : "This wallet is not in the distribution list for this campaign."}
+                {eligLoading
+                  ? "Verifying your address against the distribution list…"
+                  : elig?.eligible
+                    ? "Your address is in the distribution list."
+                    : "This wallet is not in the distribution list for this campaign."}
               </div>
             </div>
           </div>
