@@ -56,6 +56,27 @@ export function useFeeOf(
   });
 }
 
+const erc20DecimalsAbi = [
+  {
+    type: "function",
+    name: "decimals",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "uint8" }],
+  },
+] as const;
+
+/** ERC20.decimals() for an address (the SDK erc20Abi omits it). */
+export function useErc20Decimals(token: Address | undefined) {
+  return useReadContract({
+    address: token,
+    abi: erc20DecimalsAbi,
+    functionName: "decimals",
+    chainId: fork.id,
+    query: { enabled: !!token },
+  });
+}
+
 /** DropFactory.tokenTier(token) — 0 NONE / 1 COMMUNITY / 2 OFFICIAL. */
 export function useTokenTier(
   factory: Address | undefined,

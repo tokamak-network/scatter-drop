@@ -4,6 +4,13 @@ import { getCampaign } from "@/lib/stub";
 import { distributionCsv, getDistributionReport } from "@/lib/reports";
 import { ReportActions } from "@/components/ReportActions";
 
+// SECURITY (M3): this distribution report is stub data today, so it's harmless.
+// When wired to real claim-event data it exposes the recipient list. This is a
+// Server Component, so server-fetched data ships in the RSC payload regardless
+// of any client-side gate — a ConnectGate is NOT sufficient. Gate it
+// server-side: fetch behind an authenticated API route / Server Action that
+// verifies a SIWE session (or signed challenge) for the campaign operator
+// (createDrop sender) before returning the recipient data.
 export default async function DistributionReportPage({
   params,
 }: {

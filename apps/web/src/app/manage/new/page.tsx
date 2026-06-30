@@ -1,13 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import {
-  formatUnits,
-  isAddress,
-  parseUnits,
-  type Address,
-  type Hex,
-} from "viem";
+import { useEffect, useState } from "react";
+import { formatUnits, isAddress, type Address, type Hex } from "viem";
 import {
   AirdropType,
   airdropTypeLabel,
@@ -17,8 +11,9 @@ import {
   buildDrop,
   getZkX509,
   NATIVE_FEE_TOKEN,
+  parseCsv,
   TokenTier,
-  type AirdropEntry,
+  type DropManifest,
 } from "@tokamak-network/scatter-drop-sdk";
 import { ArrowLeft, ArrowRight, Check, Download } from "lucide-react";
 import Link from "next/link";
@@ -27,6 +22,7 @@ import { TxButton } from "@/components/TxButton";
 import {
   deploymentIssue,
   useDeployment,
+  useErc20Decimals,
   useFeeOf,
   useTokenTier,
 } from "@/lib/contracts";
@@ -55,44 +51,25 @@ const TYPES = [
   AirdropType.SOCIAL,
 ];
 
-/** Parse "address,amount" lines into entries (amount in token units, 18 dp). */
+/**
+ * Parse the recipients CSV using the SDK `parseCsv` (single source of truth) and
+ * build the Merkle drop, so the wizard's tree/root/total match the SDK + claim
+ * path exactly. `parseCsv` amounts are base-unit integers (wei-like, NO 18-dp
+ * assumption); it and `buildDrop` throw on malformed/duplicate rows, which we
+ * surface as a message instead of crashing the render.
+ */
 function parseRecipients(text: string): {
-  entries: AirdropEntry[];
-  errors: number;
+  manifest: DropManifest | null;
+  error: string | null;
 } {
-  const entries: AirdropEntry[] = [];
-  let errors = 0;
-  const seen = new Set<string>();
-  for (const raw of text.split("\n")) {
-    const line = raw.trim();
-    if (!line) continue;
-    const [addr, amt] = line.split(",").map((s) => s.trim());
-    // Cap decimals at 18 so parseUnits can't throw "fractional part exceeds".
-    if (!isAddress(addr) || !/^\d+(\.\d{1,18})?$/.test(amt ?? "")) {
-      errors++;
-      continue;
-    }
-    // buildDrop throws on duplicate addresses — reject them here as errors.
-    const lower = addr.toLowerCase();
-    if (seen.has(lower)) {
-      errors++;
-      continue;
-    }
-    let amount: bigint;
-    try {
-      amount = parseUnits(amt, 18);
-    } catch {
-      errors++;
-      continue;
-    }
-    if (amount <= 0n) {
-      errors++;
-      continue;
-    }
-    seen.add(lower);
-    entries.push({ account: addr, amount });
+  if (!text.trim()) return { manifest: null, error: null };
+  try {
+    const entries = parseCsv(text);
+    if (entries.length === 0) return { manifest: null, error: null };
+    return { manifest: buildDrop(entries), error: null };
+  } catch (e) {
+    return { manifest: null, error: e instanceof Error ? e.message : "Invalid CSV" };
   }
-  return { entries, errors };
 }
 
 export default function NewCampaignPage() {
@@ -132,16 +109,28 @@ export default function NewCampaignPage() {
   const isEthFee = feeToken === NATIVE_FEE_TOKEN;
   const { data: fee } = useFeeOf(factory, feeToken, type);
 
-  const { entries, errors: csvErrors } = useMemo(
-    () => parseRecipients(csv),
-    [csv],
-  );
-  const manifest = useMemo(
-    () => (entries.length ? buildDrop(entries) : null),
-    [entries],
-  );
+  // Debounce parsing/Merkle build so large lists don't rebuild on every keystroke.
+  const [parsed, setParsed] = useState<{
+    manifest: DropManifest | null;
+    error: string | null;
+  }>({ manifest: null, error: null });
+  useEffect(() => {
+    const t = setTimeout(() => setParsed(parseRecipients(csv)), 400);
+    return () => clearTimeout(t);
+  }, [csv]);
+  const { manifest, error: csvError } = parsed;
+  const recipientCount = manifest?.count ?? 0;
   const totalAmount = manifest ? BigInt(manifest.totalAmount) : 0n;
   const merkleRoot = (manifest?.merkleRoot ?? `0x${"0".repeat(64)}`) as Hex;
+
+  // Token decimals for human-readable display (amounts in CSV are base units).
+  const { data: decimals } = useErc20Decimals(
+    tokenValid ? (token as Address) : undefined,
+  );
+  const fmtAmount = (v: bigint) =>
+    decimals !== undefined
+      ? `${formatUnits(v, decimals)} tokens`
+      : `${v.toString()} base units`;
 
   const startParsed = startDate ? Date.parse(`${startDate}T00:00:00Z`) : 0;
   const startUnix = Number.isNaN(startParsed)
@@ -152,7 +141,7 @@ export default function NewCampaignPage() {
     ? 0
     : Math.floor(deadlineParsed / 1000);
 
-  const recipientsValid = entries.length > 0 && csvErrors === 0;
+  const recipientsValid = manifest !== null;
   // Deadline must be in the future and after the start (mirrors on-chain checks;
   // MIN_DURATION is still enforced on-chain).
   const nowSec = Math.floor(Date.now() / 1000);
@@ -398,12 +387,14 @@ export default function NewCampaignPage() {
                     placeholder={"0xabc…,120\n0xdef…,80"}
                   />
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-500">
-                      {entries.length} valid
-                      {csvErrors > 0 ? ` · ${csvErrors} invalid line(s)` : ""}
-                      {manifest
-                        ? ` · total ${formatUnits(totalAmount, 18)} (auto)`
-                        : ""}
+                    <span
+                      className={`text-xs ${csvError ? "text-red-500" : "text-slate-500"}`}
+                    >
+                      {csvError
+                        ? csvError
+                        : manifest
+                          ? `${recipientCount} recipients · total ${fmtAmount(totalAmount)} (auto)`
+                          : "Paste address,amount per line (amount in base units)"}
                     </span>
                     <button
                       type="button"
@@ -446,9 +437,9 @@ export default function NewCampaignPage() {
                   <dt className="muted">Type</dt>
                   <dd>{airdropTypeLabel(type)}</dd>
                   <dt className="muted">Recipients</dt>
-                  <dd>{entries.length}</dd>
+                  <dd>{recipientCount}</dd>
                   <dt className="muted">Total (Σ)</dt>
-                  <dd>{formatUnits(totalAmount, 18)}</dd>
+                  <dd>{fmtAmount(totalAmount)}</dd>
                   <dt className="muted">Merkle root</dt>
                   <dd className="font-mono text-xs break-all">{merkleRoot}</dd>
                   <dt className="muted">Fee</dt>
