@@ -33,6 +33,10 @@ contract DropFactory is Ownable {
         SOCIAL
     }
 
+    /// @notice Minimum lead time between campaign creation and its deadline. Prevents a
+    ///         publish-and-instantly-sweep campaign that would mislead would-be claimers.
+    uint256 public constant MIN_DURATION = 1 hours;
+
     /// @notice ERC20 used to pay creation fees.
     IERC20 public feeToken;
 
@@ -177,7 +181,8 @@ contract DropFactory is Ownable {
     /// @param airdropToken     ERC20 distributed to claimers.
     /// @param merkleRoot       Root over `keccak256(abi.encodePacked(index, account, amount))` leaves.
     /// @param totalAmount      Total `airdropToken` funded into the drop.
-    /// @param deadline         Unix time after which claims close and the operator may sweep.
+    /// @param deadline         Unix time after which claims close and the operator may sweep;
+    ///                         must be at least `MIN_DURATION` in the future.
     /// @param identityRegistry zk-X509 IdentityRegistry gating claimers (gate 2).
     /// @return drop            Address of the deployed MerkleDrop.
     function createDrop(
@@ -193,7 +198,7 @@ contract DropFactory is Ownable {
         if (airdropToken == address(0) || identityRegistry == address(0)) revert InvalidAddress();
         if (merkleRoot == bytes32(0)) revert InvalidMerkleRoot();
         if (totalAmount == 0) revert ZeroTotalAmount();
-        if (deadline <= block.timestamp) revert InvalidDeadline();
+        if (deadline < block.timestamp + MIN_DURATION) revert InvalidDeadline();
         // The airdrop token must be a real contract; identityRegistry's authenticity is
         // enforced below by zkFactory.isRegistry (a genuine registry is itself a contract).
         _requireContract(airdropToken);
