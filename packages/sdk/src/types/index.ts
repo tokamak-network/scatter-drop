@@ -18,8 +18,7 @@ export enum AirdropType {
  */
 export enum TokenTier {
   NONE = 0,
-  COMMUNITY = 1,
-  OFFICIAL = 2,
+  ALLOWED = 1,
 }
 
 /** On-chain immutable view of a deployed MerkleDrop campaign. */

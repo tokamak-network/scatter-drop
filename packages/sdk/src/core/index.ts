@@ -57,7 +57,7 @@ export async function isClaimed(
   });
 }
 
-/** Read a token's registry tier from the DropFactory (NONE/COMMUNITY/OFFICIAL). */
+/** Read a token's registry tier from the DropFactory (NONE/ALLOWED). */
 export async function getTokenTier(
   client: PublicClient,
   factory: Address,
@@ -70,28 +70,30 @@ export async function getTokenTier(
     args: [token],
   });
   const n = Number(t);
-  if (n !== TokenTier.NONE && n !== TokenTier.COMMUNITY && n !== TokenTier.OFFICIAL) {
+  if (n !== TokenTier.NONE && n !== TokenTier.ALLOWED) {
     throw new Error(`Unexpected TokenTier ordinal from contract: ${n}`);
   }
   return n;
 }
 
 /**
- * Read the creation fee for a (feeToken, airdropType) pair.
- * `feeToken = address(0)` is the ETH price. Returns 0 when that token isn't
- * configured for the type (i.e. not an accepted payment option).
+ * Compute the creation fee for distributing `totalAmount` of `token`, in that
+ * token. Resolves the token's mode/rate on-chain (PERCENT → totalAmount × bps /
+ * 10000, FLAT → flatFee). The operator must `approve` the factory for
+ * `totalAmount + fee` (the fee is charged on top). Reverts for a FLAT token with
+ * no flat fee configured (same as `createDrop`).
  */
 export async function getFeeOf(
   client: PublicClient,
   factory: Address,
-  feeToken: Address,
-  airdropType: number,
+  token: Address,
+  totalAmount: bigint,
 ): Promise<bigint> {
   return client.readContract({
     address: factory,
     abi: dropFactoryAbi,
     functionName: "feeOf",
-    args: [feeToken, airdropType],
+    args: [token, totalAmount],
   });
 }
 

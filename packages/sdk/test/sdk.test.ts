@@ -3,15 +3,16 @@ import { decodeFunctionData, getAddress, type Address } from "viem";
 import {
   AirdropType,
   TokenTier,
+  FeeMode,
   NATIVE_FEE_TOKEN,
   airdropTypeLabel,
-  buildAddAllowedTokenRequest,
   buildApproveRequest,
   buildClaimRequest,
   buildCreateDropRequest,
-  buildRemoveAllowedTokenRequest,
-  buildSetFeeRequest,
-  buildSetOfficialTokenRequest,
+  buildSetAllowedTokenRequest,
+  buildSetFeeBpsRequest,
+  buildSetFlatFeeRequest,
+  buildSetFeeModeRequest,
   buildWithdrawFeesRequest,
   dropFactoryAbi,
   encodeClaim,
@@ -83,7 +84,7 @@ describe("claim encoding", () => {
 });
 
 describe("factory / erc20 calldata builders", () => {
-  it("buildCreateDropRequest encodes createDrop v2 args (ERC-20 fee, value 0)", () => {
+  it("buildCreateDropRequest encodes the 7-arg createDrop (non-payable, value 0)", () => {
     const req = buildCreateDropRequest(A(7), {
       airdropType: AirdropType.CSV,
       airdropToken: A(2),
@@ -92,21 +93,19 @@ describe("factory / erc20 calldata builders", () => {
       startTime: 1_800_000_000n,
       deadline: 1_900_000_000n,
       identityRegistry: A(3),
-      feeToken: A(9),
-      fee: 5n,
     });
     expect(req.to).toBe(A(7));
-    expect(req.value).toBe(0n);
+    expect(req.value ?? 0n).toBe(0n);
     const d = decodeFunctionData({ abi: dropFactoryAbi, data: req.data });
     expect(d.functionName).toBe("createDrop");
     expect(d.args[0]).toBe(AirdropType.CSV);
     expect(d.args[1]).toBe(A(2));
     expect(d.args[3]).toBe(1000n);
     expect(d.args[6]).toBe(A(3));
-    expect(d.args[7]).toBe(A(9));
+    expect(d.args).toHaveLength(7);
   });
 
-  it("buildCreateDropRequest sends the fee as value when paid in ETH", () => {
+  it("buildCreateDropRequest allows an open (zero) identity registry", () => {
     const req = buildCreateDropRequest(A(7), {
       airdropType: AirdropType.CSV,
       airdropToken: A(2),
@@ -114,13 +113,10 @@ describe("factory / erc20 calldata builders", () => {
       totalAmount: 1000n,
       startTime: 1_800_000_000n,
       deadline: 1_900_000_000n,
-      identityRegistry: A(3),
-      feeToken: NATIVE_FEE_TOKEN,
-      fee: 777n,
+      identityRegistry: NATIVE_FEE_TOKEN, // address(0) = open claim
     });
-    expect(req.value).toBe(777n);
     const d = decodeFunctionData({ abi: dropFactoryAbi, data: req.data });
-    expect(d.args[7]).toBe(NATIVE_FEE_TOKEN);
+    expect(d.args[6]).toBe(NATIVE_FEE_TOKEN);
   });
 
   it("buildCreateDropRequest rejects a native airdrop token", () => {
@@ -133,19 +129,31 @@ describe("factory / erc20 calldata builders", () => {
         startTime: 1_800_000_000n,
         deadline: 1_900_000_000n,
         identityRegistry: A(3),
-        feeToken: NATIVE_FEE_TOKEN,
-        fee: 1n,
       }),
     ).toThrow(/native token/);
   });
 
-  it("buildSetFeeRequest encodes (feeToken, type, amount)", () => {
-    const d = decodeFunctionData({
+  it("fee builders encode per-token mode/rate setters", () => {
+    const bps = decodeFunctionData({
       abi: dropFactoryAbi,
-      data: buildSetFeeRequest(A(7), A(9), AirdropType.SOCIAL, 42n).data,
+      data: buildSetFeeBpsRequest(A(7), A(9), 50).data,
     });
-    expect(d.functionName).toBe("setFee");
-    expect(d.args).toEqual([A(9), AirdropType.SOCIAL, 42n]);
+    expect(bps.functionName).toBe("setFeeBps");
+    expect(bps.args).toEqual([A(9), 50]);
+
+    const flat = decodeFunctionData({
+      abi: dropFactoryAbi,
+      data: buildSetFlatFeeRequest(A(7), A(9), 42n).data,
+    });
+    expect(flat.functionName).toBe("setFlatFee");
+    expect(flat.args).toEqual([A(9), 42n]);
+
+    const mode = decodeFunctionData({
+      abi: dropFactoryAbi,
+      data: buildSetFeeModeRequest(A(7), A(9), FeeMode.FLAT).data,
+    });
+    expect(mode.functionName).toBe("setFeeMode");
+    expect(mode.args).toEqual([A(9), FeeMode.FLAT]);
   });
 
   it("buildWithdrawFeesRequest encodes token + amount", () => {
@@ -175,37 +183,25 @@ describe("events", () => {
   });
 });
 
-describe("token registry builders", () => {
-  it("buildAddAllowedTokenRequest encodes addAllowedToken", () => {
-    const req = buildAddAllowedTokenRequest(A(7), A(2));
-    expect(req.to).toBe(A(7));
-    const d = decodeFunctionData({ abi: dropFactoryAbi, data: req.data });
-    expect(d.functionName).toBe("addAllowedToken");
-    expect(d.args).toEqual([A(2)]);
-  });
-
-  it("buildSetOfficialTokenRequest encodes token + flag", () => {
-    const d = decodeFunctionData({
+describe("token allow-list builder", () => {
+  it("buildSetAllowedTokenRequest encodes token + allowed flag", () => {
+    const on = decodeFunctionData({
       abi: dropFactoryAbi,
-      data: buildSetOfficialTokenRequest(A(7), A(2), true).data,
+      data: buildSetAllowedTokenRequest(A(7), A(2), true).data,
     });
-    expect(d.functionName).toBe("setOfficialToken");
-    expect(d.args).toEqual([A(2), true]);
-  });
+    expect(on.functionName).toBe("setAllowedToken");
+    expect(on.args).toEqual([A(2), true]);
 
-  it("buildRemoveAllowedTokenRequest encodes removeAllowedToken", () => {
-    const d = decodeFunctionData({
+    const off = decodeFunctionData({
       abi: dropFactoryAbi,
-      data: buildRemoveAllowedTokenRequest(A(7), A(2)).data,
+      data: buildSetAllowedTokenRequest(A(7), A(2), false).data,
     });
-    expect(d.functionName).toBe("removeAllowedToken");
-    expect(d.args).toEqual([A(2)]);
+    expect(off.args).toEqual([A(2), false]);
   });
 
   it("TokenTier ordinals match the on-chain enum", () => {
     expect(TokenTier.NONE).toBe(0);
-    expect(TokenTier.COMMUNITY).toBe(1);
-    expect(TokenTier.OFFICIAL).toBe(2);
+    expect(TokenTier.ALLOWED).toBe(1);
   });
 });
 
