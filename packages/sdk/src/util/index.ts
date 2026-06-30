@@ -11,6 +11,8 @@ export function airdropTypeLabel(type: AirdropType): string {
       return "On-chain gated";
     case AirdropType.SOCIAL:
       return "Social / task";
+    default:
+      throw new Error(`Unknown AirdropType: ${type as number}`);
   }
 }
 

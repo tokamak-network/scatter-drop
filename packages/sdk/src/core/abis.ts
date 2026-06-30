@@ -25,11 +25,11 @@ export const merkleDropAbi = [
     outputs: [{ name: "", type: "bool" }],
   },
   { type: "function", name: "sweep", stateMutability: "nonpayable", inputs: [], outputs: [] },
-  { type: "function", name: "token", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
-  { type: "function", name: "merkleRoot", stateMutability: "view", inputs: [], outputs: [{ type: "bytes32" }] },
-  { type: "function", name: "deadline", stateMutability: "view", inputs: [], outputs: [{ type: "uint64" }] },
-  { type: "function", name: "identityRegistry", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
-  { type: "function", name: "operator", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { type: "function", name: "token", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
+  { type: "function", name: "merkleRoot", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "bytes32" }] },
+  { type: "function", name: "deadline", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint64" }] },
+  { type: "function", name: "identityRegistry", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
+  { type: "function", name: "operator", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
 ] as const;
 
 export const dropFactoryAbi = [

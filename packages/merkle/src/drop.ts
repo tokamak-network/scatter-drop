@@ -29,7 +29,12 @@ export function normalizeEntries(entries: AirdropEntry[]): IndexedEntry[] {
     return { account, amount: e.amount };
   });
 
-  normalized.sort((a, b) => (a.account.toLowerCase() < b.account.toLowerCase() ? -1 : 1));
+  normalized.sort((a, b) => {
+    const x = a.account.toLowerCase();
+    const y = b.account.toLowerCase();
+    // Return 0 on equality to satisfy strict weak ordering (engine-stable sort).
+    return x < y ? -1 : x > y ? 1 : 0;
+  });
 
   return normalized.map((e, index) => ({ ...e, index }));
 }

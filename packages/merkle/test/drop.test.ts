@@ -112,6 +112,16 @@ describe("parseCsv", () => {
     ]);
   });
 
+  it("strips a leading UTF-8 BOM", () => {
+    const csv = `﻿address,amount\n${A(1)},100`;
+    expect(parseCsv(csv)).toEqual([{ account: A(1), amount: 100n }]);
+  });
+
+  it("skips a header that appears after blank/comment lines", () => {
+    const csv = ["# recipients", "", "address,amount", `${A(1)},100`].join("\n");
+    expect(parseCsv(csv)).toEqual([{ account: A(1), amount: 100n }]);
+  });
+
   it("rejects bad address and non-integer amount", () => {
     expect(() => parseCsv("0xnotanaddress,100")).toThrow(/invalid address/);
     expect(() => parseCsv(`${A(1)},1.5`)).toThrow(/base-unit integer/);

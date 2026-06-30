@@ -11,7 +11,8 @@ import type { AirdropEntry } from "./types.js";
  */
 export function parseCsv(text: string): AirdropEntry[] {
   const entries: AirdropEntry[] = [];
-  const lines = text.split(/\r?\n/);
+  // Strip a leading UTF-8 BOM (common in Excel/Windows exports) before splitting.
+  const lines = text.replace(/^﻿/, "").split(/\r?\n/);
 
   lines.forEach((raw, i) => {
     const line = raw.trim();
@@ -23,8 +24,9 @@ export function parseCsv(text: string): AirdropEntry[] {
     }
 
     const [addr, amountStr] = cells;
-    // Tolerate a header row.
-    if (i === 0 && addr!.toLowerCase() === "address") return;
+    // Tolerate a header row wherever it appears (not just line 0 — blanks/comments
+    // may precede it). Detect by content rather than position.
+    if (addr!.toLowerCase() === "address" && amountStr!.toLowerCase() === "amount") return;
 
     if (!isAddress(addr!)) {
       throw new Error(`CSV line ${i + 1}: invalid address "${addr}"`);
