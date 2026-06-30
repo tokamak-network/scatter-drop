@@ -150,3 +150,42 @@ a {
     grid-template-columns: repeat(3, 1fr);
   }
 }
+
+/* Print: global rules that hide app chrome (header) and any `.no-print`
+   controls so "Save as PDF" yields a clean document. Tax-document pages wrap
+   their content in `.print-doc` as a semantic marker (no scoped rules needed —
+   hiding the chrome is enough since each doc page renders only its document). */
+@media print {
+  header,
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+    color: #000;
+  }
+  main {
+    padding: 0 !important;
+  }
+  .card {
+    border-color: #ccc;
+  }
+}
+
+table.report {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+table.report th,
+table.report td {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+table.report th {
+  color: var(--color-text-muted);
+  font-weight: 600;
+}

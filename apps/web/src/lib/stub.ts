@@ -18,7 +18,7 @@ export type { ClaimProof };
 export type CampaignStatus = "active" | "ended";
 
 /** Pad a short hex suffix into a valid 20-byte address (stub addresses). */
-const addr = (suffix: string): Address =>
+export const addr = (suffix: string): Address =>
   `0x${suffix.toLowerCase().padStart(40, "0")}` as Address;
 
 export interface Campaign {
@@ -127,7 +127,9 @@ export interface MyClaim {
 export async function listMyClaims(address?: string): Promise<MyClaim[]> {
   if (!address) return [];
   return [
-    { campaignId: "1", campaignName: "Acme Loyalty Drop", amount: "120 ACME", claimed: false },
+    // Campaign 1 already claimed (has a receipt); campaign 2 still available.
+    { campaignId: "1", campaignName: "Acme Loyalty Drop", amount: "120 ACME", claimed: true },
+    { campaignId: "2", campaignName: "DAO Contributor Snapshot", amount: "80 DAO", claimed: false },
   ];
 }
 
@@ -182,11 +184,12 @@ export async function getStubEligibility(
   account?: Address,
 ): Promise<Eligibility> {
   if (!account) return { eligible: false, alreadyClaimed: false };
-  // Campaign 3 is closed → not eligible; others get a sample allocation.
+  // Campaign 3 is closed → not eligible; campaign 1 already claimed (shows the
+  // receipt path); others get a fresh sample allocation (claim path).
   if (campaignId === "3") return { eligible: false, alreadyClaimed: false };
   return {
     eligible: true,
-    alreadyClaimed: false,
+    alreadyClaimed: campaignId === "1",
     claim: {
       index: 0,
       account,

@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useAccount } from "wagmi";
 import { useQuery } from "@tanstack/react-query";
-import { PageHeader, RowLink } from "@/components/ui";
+import { PageHeader } from "@/components/ui";
 import { EmptyState, Loading, ErrorState } from "@/components/states";
 import { ConnectGate } from "@/components/ConnectGate";
 import { listMyClaims } from "@/lib/stub";
@@ -40,12 +41,25 @@ export default function MyClaimsPage() {
         ) : (
           <div className="grid">
             {claims.map((claim) => (
-              <RowLink
-                key={claim.campaignId}
-                href={`/c/${claim.campaignId}`}
-                label={claim.campaignName}
-                detail={`${claim.amount} · ${claim.claimed ? "claimed" : "available"}`}
-              />
+              <div key={claim.campaignId} className="card row">
+                <Link href={`/c/${claim.campaignId}`}>
+                  {claim.campaignName}
+                </Link>
+                <span className="row" style={{ gap: 16 }}>
+                  <span className="muted">
+                    {claim.amount} · {claim.claimed ? "claimed" : "available"}
+                  </span>
+                  {claim.claimed && (
+                    <Link
+                      href={`/c/${claim.campaignId}/receipt`}
+                      className="muted"
+                      style={{ fontSize: 13, textDecoration: "underline" }}
+                    >
+                      Receipt →
+                    </Link>
+                  )}
+                </span>
+              </div>
             ))}
           </div>
         )}

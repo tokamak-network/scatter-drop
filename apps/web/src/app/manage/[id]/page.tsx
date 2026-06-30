@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { PageHeader, Kpi, StubButton } from "@/components/ui";
 import { getCampaign, getParticipantStats } from "@/lib/stub";
 
@@ -37,6 +38,19 @@ export default async function ManageCampaignPage({
         <p className="muted" style={{ fontSize: 13 }}>
           Time-series chart, distribution and CSV export wired up in M6.
         </p>
+      </section>
+
+      <section style={{ marginBottom: 24 }}>
+        <h3>Tax documents</h3>
+        <div className="card">
+          <p className="muted" style={{ marginTop: 0 }}>
+            Distribution report (recipient · amount · time · tx) for accounting
+            and tax filing.
+          </p>
+          <Link className="btn" href={`/manage/${id}/report`}>
+            Distribution report →
+          </Link>
+        </div>
       </section>
 
       <section>
