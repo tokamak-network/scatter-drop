@@ -84,10 +84,10 @@ contract ForkE2ETest is MerkleTestBase {
         feeToken.mint(operator, FEE);
         airdropToken.mint(operator, TOTAL);
 
-        // Allocation tree: leaf0 = customer, leaf1 = other.
-        bytes32 leaf0 = _leaf(0, customer, CUSTOMER_AMT);
+        // Allocation tree: leaf0 = customer, leaf1 = other. leaf0 is inlined to
+        // keep the stack shallow (this fork test is near the local-var limit).
         bytes32 leaf1 = _leaf(1, other, OTHER_AMT);
-        bytes32 root = _hashPair(leaf0, leaf1);
+        bytes32 root = _hashPair(_leaf(0, customer, CUSTOMER_AMT), leaf1);
 
         // deadline comfortably past any MIN_DURATION gate.
         uint64 deadline = uint64(block.timestamp + 30 days);
@@ -99,7 +99,14 @@ contract ForkE2ETest is MerkleTestBase {
         airdropToken.approve(address(factory), TOTAL);
         MerkleDrop drop = MerkleDrop(
             factory.createDrop(
-                CSV, address(airdropToken), root, TOTAL, deadline, USERS_REGISTRY, address(feeToken)
+                CSV,
+                address(airdropToken),
+                root,
+                TOTAL,
+                uint64(block.timestamp),
+                deadline,
+                USERS_REGISTRY,
+                address(feeToken)
             )
         );
         vm.stopPrank();

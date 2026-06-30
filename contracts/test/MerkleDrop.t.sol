@@ -40,6 +40,7 @@ contract MerkleDropTest is MerkleTestBase {
     bytes32 internal constant EXPECTED_ROOT =
         0x2b1d9887b321e5163624cc8f2ea2a0fb04c7f131bee3cd75030cf66cc105efa3;
 
+    uint64 internal startTime;
     uint64 internal deadline;
     bytes32 internal root;
     bytes32[] internal proof0; // inclusion proof for leaf index 0
@@ -50,6 +51,7 @@ contract MerkleDropTest is MerkleTestBase {
     function setUp() public {
         // Anchor time so deadline math is unambiguous.
         vm.warp(1_000_000);
+        startTime = uint64(block.timestamp); // claims open immediately
         deadline = uint64(block.timestamp + 30 days);
 
         // Rebuild the tree with the agreed leaf encoding + sorted-pair hashing.
@@ -65,7 +67,7 @@ contract MerkleDropTest is MerkleTestBase {
         token = new MockERC20("Drop", "DRP", 18);
         registry = new MockIdentityRegistry();
         drop = new MerkleDrop(
-            ERC20(address(token)), root, deadline, IIdentityRegistry(address(registry)), OPERATOR
+            ERC20(address(token)), root, startTime, deadline, IIdentityRegistry(address(registry)), OPERATOR
         );
 
         // Fund the drop with exactly the total allocation.
@@ -83,6 +85,7 @@ contract MerkleDropTest is MerkleTestBase {
         assertEq(drop.factory(), address(this));
         assertEq(address(drop.token()), address(token));
         assertEq(drop.merkleRoot(), root);
+        assertEq(drop.startTime(), startTime);
         assertEq(drop.deadline(), deadline);
         assertEq(address(drop.identityRegistry()), address(registry));
         assertEq(drop.operator(), OPERATOR);
@@ -90,18 +93,22 @@ contract MerkleDropTest is MerkleTestBase {
 
     function test_Constructor_RevertZeroToken() public {
         vm.expectRevert(MerkleDrop.ZeroAddress.selector);
-        new MerkleDrop(ERC20(address(0)), root, deadline, IIdentityRegistry(address(registry)), OPERATOR);
+        new MerkleDrop(
+            ERC20(address(0)), root, startTime, deadline, IIdentityRegistry(address(registry)), OPERATOR
+        );
     }
 
     function test_Constructor_RevertZeroRegistry() public {
         vm.expectRevert(MerkleDrop.ZeroAddress.selector);
-        new MerkleDrop(ERC20(address(token)), root, deadline, IIdentityRegistry(address(0)), OPERATOR);
+        new MerkleDrop(
+            ERC20(address(token)), root, startTime, deadline, IIdentityRegistry(address(0)), OPERATOR
+        );
     }
 
     function test_Constructor_RevertZeroOperator() public {
         vm.expectRevert(MerkleDrop.ZeroAddress.selector);
         new MerkleDrop(
-            ERC20(address(token)), root, deadline, IIdentityRegistry(address(registry)), address(0)
+            ERC20(address(token)), root, startTime, deadline, IIdentityRegistry(address(registry)), address(0)
         );
     }
 
@@ -109,7 +116,9 @@ contract MerkleDropTest is MerkleTestBase {
         // A non-zero address with no code is rejected (solmate would otherwise
         // silently treat transfers to it as succeeding).
         vm.expectRevert(MerkleDrop.NotAContract.selector);
-        new MerkleDrop(ERC20(address(0xDEAD)), root, deadline, IIdentityRegistry(address(registry)), OPERATOR);
+        new MerkleDrop(
+            ERC20(address(0xDEAD)), root, startTime, deadline, IIdentityRegistry(address(registry)), OPERATOR
+        );
     }
 
     function test_Constructor_RevertDeadlineInPast() public {
@@ -117,7 +126,21 @@ contract MerkleDropTest is MerkleTestBase {
         new MerkleDrop(
             ERC20(address(token)),
             root,
-            uint64(block.timestamp),
+            startTime,
+            uint64(block.timestamp), // deadline == now → not in the future
+            IIdentityRegistry(address(registry)),
+            OPERATOR
+        );
+    }
+
+    function test_Constructor_RevertInvalidWindow() public {
+        // deadline must be strictly after startTime (non-empty claim window).
+        vm.expectRevert(MerkleDrop.InvalidWindow.selector);
+        new MerkleDrop(
+            ERC20(address(token)),
+            root,
+            deadline, // startTime == deadline
+            deadline,
             IIdentityRegistry(address(registry)),
             OPERATOR
         );
@@ -160,6 +183,19 @@ contract MerkleDropTest is MerkleTestBase {
         vm.prank(ACC0);
         vm.expectRevert(MerkleDrop.ClaimClosed.selector);
         drop.claim(0, ACC0, AMT0, proof0);
+    }
+
+    function test_Claim_RevertNotStarted() public {
+        // A drop whose window hasn't opened yet rejects claims.
+        uint64 future = uint64(block.timestamp + 1 days);
+        MerkleDrop pending = new MerkleDrop(
+            ERC20(address(token)), root, future, deadline, IIdentityRegistry(address(registry)), OPERATOR
+        );
+        token.mint(address(pending), TOTAL);
+
+        vm.prank(ACC0);
+        vm.expectRevert(MerkleDrop.ClaimNotStarted.selector);
+        pending.claim(0, ACC0, AMT0, proof0);
     }
 
     function test_Claim_RevertNotSelfClaim() public {
