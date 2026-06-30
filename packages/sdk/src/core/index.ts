@@ -7,7 +7,16 @@ export {
   dropFactoryAbi,
   identityRegistryAbi,
   registryFactoryAbi,
+  erc20Abi,
 } from "./abis.js";
+
+export {
+  ZK_X509,
+  getZkX509,
+  parseDeployment,
+  type ZkX509Addresses,
+  type ScatterDropDeployment,
+} from "./addresses.js";
 
 /** Read the immutable on-chain config of a deployed MerkleDrop campaign. */
 export async function getCampaignInfo(
