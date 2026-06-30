@@ -7,7 +7,6 @@ import {
   dropFactoryAbi,
   identityRegistryAbi,
   merkleDropAbi,
-  type AirdropType,
   type ScatterDropDeployment,
 } from "@tokamak-network/scatter-drop-sdk";
 import { fork } from "./wagmi";
@@ -69,19 +68,105 @@ export function useDeployment() {
   });
 }
 
-/** DropFactory.feeOf(feeToken, type) — live creation fee (v2, 2D). */
-export function useFeeOf(
+// feeModeOf/feeBpsOf are public views on DropFactory but omitted from the SDK
+// abi (which exposes the computed feeOf + defaults); read them with a minimal abi.
+const feeConfigAbi = [
+  {
+    type: "function",
+    name: "feeModeOf",
+    stateMutability: "view",
+    inputs: [{ type: "address" }],
+    outputs: [{ type: "uint8" }],
+  },
+  {
+    type: "function",
+    name: "feeBpsOf",
+    stateMutability: "view",
+    inputs: [{ type: "address" }],
+    outputs: [{ type: "uint16" }],
+  },
+] as const;
+
+/** DropFactory.feeOf(token, totalAmount) — computed creation fee (W22, % or flat). */
+export function useComputedFee(
   factory: Address | undefined,
-  feeToken: Address | undefined,
-  type: AirdropType,
+  token: Address | undefined,
+  totalAmount: bigint,
 ) {
   return useReadContract({
     address: factory,
     abi: dropFactoryAbi,
     functionName: "feeOf",
-    args: feeToken ? [feeToken, type] : undefined,
+    args: token ? [token, totalAmount] : undefined,
     chainId: fork.id,
-    query: { enabled: !!factory && !!feeToken },
+    query: { enabled: !!factory && !!token && totalAmount > 0n },
+  });
+}
+
+/** DropFactory.feeModeOf(token) — 0 PERCENT / 1 FLAT (default-aware). */
+export function useFeeModeOf(
+  factory: Address | undefined,
+  token: Address | undefined,
+) {
+  return useReadContract({
+    address: factory,
+    abi: feeConfigAbi,
+    functionName: "feeModeOf",
+    args: token ? [token] : undefined,
+    chainId: fork.id,
+    query: { enabled: !!factory && !!token },
+  });
+}
+
+/** DropFactory.feeBpsOf(token) — percent rate in bps (default-aware). */
+export function useFeeBpsOf(
+  factory: Address | undefined,
+  token: Address | undefined,
+) {
+  return useReadContract({
+    address: factory,
+    abi: feeConfigAbi,
+    functionName: "feeBpsOf",
+    args: token ? [token] : undefined,
+    chainId: fork.id,
+    query: { enabled: !!factory && !!token },
+  });
+}
+
+/** DropFactory.flatFee(token) — flat fee amount (base units). */
+export function useFlatFee(
+  factory: Address | undefined,
+  token: Address | undefined,
+) {
+  return useReadContract({
+    address: factory,
+    abi: dropFactoryAbi,
+    functionName: "flatFee",
+    args: token ? [token] : undefined,
+    chainId: fork.id,
+    query: { enabled: !!factory && !!token },
+  });
+}
+
+/** DropFactory.defaultFeeMode() — platform default fee mode. */
+export function useDefaultFeeMode(factory: Address | undefined) {
+  return useReadContract({
+    address: factory,
+    abi: dropFactoryAbi,
+    functionName: "defaultFeeMode",
+    chainId: fork.id,
+    query: { enabled: !!factory },
+  });
+}
+
+/** DropFactory.defaultFeeBps() — platform default percent rate (bps). */
+export function useDefaultFeeBps(factory: Address | undefined) {
+  return useReadContract({
+    address: factory,
+    abi: dropFactoryAbi,
+    functionName: "defaultFeeBps",
+    chainId: fork.id,
+    query: { enabled: !!factory },
   });
 }
 
@@ -106,7 +191,7 @@ export function useErc20Decimals(token: Address | undefined) {
   });
 }
 
-/** DropFactory.tokenTier(token) — 0 NONE / 1 COMMUNITY / 2 OFFICIAL. */
+/** DropFactory.tokenTier(token) — 0 NONE / 1 ALLOWED (admin-curated). */
 export function useTokenTier(
   factory: Address | undefined,
   token: Address | undefined,

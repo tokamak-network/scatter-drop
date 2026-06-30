@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useAccount } from "wagmi";
 import { useQuery } from "@tanstack/react-query";
-import { formatUnits } from "viem";
+import { formatUnits, zeroAddress } from "viem";
 import {
   buildClaimRequest,
   isVerificationValid,
@@ -29,8 +29,10 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
     queryFn: () => getStubEligibility(campaign.id, address),
     enabled: !!address,
   });
+  // W24: identityRegistry == 0 means an open campaign — no identity check.
+  const gateOff = campaign.identityRegistry === zeroAddress;
   const { data: verifiedUntil, isLoading: gateLoading } = useVerifiedUntil(
-    campaign.identityRegistry,
+    gateOff ? undefined : campaign.identityRegistry,
     address,
   );
   const { data: claimedOnChain, isLoading: claimLoading } = useIsClaimed(
@@ -39,7 +41,8 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
   );
 
   const verified =
-    verifiedUntil !== undefined && isVerificationValid(verifiedUntil, now);
+    gateOff ||
+    (verifiedUntil !== undefined && isVerificationValid(verifiedUntil, now));
   const notStarted = campaign.startTimeUnix > now;
   const ended = now > campaign.deadlineUnix;
   const windowOpen = !notStarted && !ended;
@@ -51,7 +54,9 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
   // "Not eligible" / enable Claim prematurely.
   const isLoading =
     !!address &&
-    (eligLoading || gateLoading || (!!elig?.eligible && claimLoading));
+    (eligLoading ||
+      (!gateOff && gateLoading) ||
+      (!!elig?.eligible && claimLoading));
 
   const canClaim =
     !isLoading &&
@@ -147,8 +152,9 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
               disabled={!canClaim}
             />
             <p className="text-[11px] text-slate-500 font-mono mt-2">
-              Requires (identity verified) AND (eligible) AND (window open).
-              Self-claim only.
+              {gateOff
+                ? "Open claim (no identity check) AND eligible AND window open. Self-claim only."
+                : "Requires (identity verified) AND (eligible) AND (window open). Self-claim only."}
             </p>
             {claimedOnChain && (
               <Link

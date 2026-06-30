@@ -1,16 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { formatUnits, isAddress, type Address, type Hex } from "viem";
+import {
+  formatUnits,
+  isAddress,
+  zeroAddress,
+  type Address,
+  type Hex,
+} from "viem";
 import {
   AirdropType,
   airdropTypeLabel,
-  buildAddAllowedTokenRequest,
   buildApproveRequest,
   buildCreateDropRequest,
   buildDrop,
   getZkX509,
-  NATIVE_FEE_TOKEN,
   parseCsv,
   TokenTier,
   type DropManifest,
@@ -23,9 +27,9 @@ import { TxButton } from "@/components/TxButton";
 import type { SnapshotManifest } from "@/lib/useSnapshotJob";
 import {
   deploymentIssue,
+  useComputedFee,
   useDeployment,
   useErc20Decimals,
-  useFeeOf,
   useTokenTier,
 } from "@/lib/contracts";
 
@@ -89,27 +93,21 @@ export default function NewCampaignPage() {
   const [csv, setCsv] = useState("");
   const [startDate, setStartDate] = useState("");
   const [deadline, setDeadline] = useState("");
-  const [feeToken, setFeeToken] = useState<Address>(NATIVE_FEE_TOKEN);
+  // W24: identity gate is optional. Off → open claim (identityRegistry = 0).
+  const [identityRequired, setIdentityRequired] = useState(true);
 
   const registryAddr = (registry || registries?.usersRegistry) as
     | Address
     | undefined;
   const tokenValid = isAddress(token);
 
-  // Token registry tier (createDrop requires the airdrop token to be allowed).
+  // Admin-curated allow-list: createDrop requires tokenTier == ALLOWED.
+  // Operators can't self-register tokens (W23) — they request the admin.
   const { data: tier } = useTokenTier(
     factory,
     tokenValid ? (token as Address) : undefined,
   );
-  const tierAllowed = tier !== undefined && Number(tier) !== TokenTier.NONE;
-  const addTokenReq =
-    factory && tokenValid && tier !== undefined && !tierAllowed
-      ? buildAddAllowedTokenRequest(factory, token as Address)
-      : null;
-
-  // Fee paid in the selected token (ETH native or an ERC-20 like TON).
-  const isEthFee = feeToken === NATIVE_FEE_TOKEN;
-  const { data: fee } = useFeeOf(factory, feeToken, type);
+  const tierAllowed = tier !== undefined && Number(tier) === TokenTier.ALLOWED;
 
   // Debounce parsing/Merkle build so large lists don't rebuild on every keystroke.
   const [parsed, setParsed] = useState<{
@@ -130,6 +128,15 @@ export default function NewCampaignPage() {
   const recipientCount = activeManifest?.count ?? 0;
   const totalAmount = activeManifest ? BigInt(activeManifest.totalAmount) : 0n;
   const merkleRoot = (activeManifest?.merkleRoot ?? `0x${"0".repeat(64)}`) as Hex;
+
+  // W22: fee = computed on the airdrop token (percent of total or flat). The
+  // operator deposits total + fee (on-top); pool gets total, vault gets fee.
+  const { data: fee } = useComputedFee(
+    factory,
+    tokenValid ? (token as Address) : undefined,
+    totalAmount,
+  );
+  const totalDeposit = totalAmount + (fee ?? 0n);
 
   // Token decimals for human-readable display (amounts in CSV are base units).
   const { data: decimals } = useErc20Decimals(
@@ -155,28 +162,26 @@ export default function NewCampaignPage() {
   const nowSec = Math.floor(Date.now() / 1000);
   const windowValid =
     deadlineUnix > nowSec && (startUnix === 0 || deadlineUnix > startUnix);
-  // ERC-20 fee must be configured (> 0n) or createDrop reverts FeeNotConfigured.
-  const feeValid = fee !== undefined && (isEthFee || fee > 0n);
+  // Identity gate satisfied: either off (open claim) or a registry is chosen.
+  const identityOk = !identityRequired || !!registryAddr;
+  const feeValid = fee !== undefined;
   const ready =
     !!factory &&
     tokenValid &&
     tierAllowed &&
     recipientsValid &&
     windowValid &&
-    !!registryAddr &&
+    identityOk &&
     feeValid;
 
+  // On-top: a single approval of the airdrop token for total + fee. Gate on the
+  // fee being resolved so we never approve total-only (which would under-fund).
   const approveTokenReq =
-    factory && tokenValid && totalAmount > 0n
-      ? buildApproveRequest(token as Address, factory, totalAmount)
-      : null;
-  // ERC-20 fee path needs an approval of the fee token for the fee amount.
-  const approveFeeReq =
-    factory && !isEthFee && fee
-      ? buildApproveRequest(feeToken, factory, fee)
+    factory && tokenValid && fee !== undefined && totalDeposit > 0n
+      ? buildApproveRequest(token as Address, factory, totalDeposit)
       : null;
   const createReq =
-    ready && registryAddr
+    ready && factory
       ? buildCreateDropRequest(factory, {
           airdropType: type,
           airdropToken: token as Address,
@@ -184,15 +189,14 @@ export default function NewCampaignPage() {
           totalAmount,
           startTime: BigInt(startUnix),
           deadline: BigInt(deadlineUnix),
-          identityRegistry: registryAddr,
-          feeToken,
-          fee,
+          identityRegistry:
+            identityRequired && registryAddr ? registryAddr : zeroAddress,
         })
       : null;
 
   const canNext =
     step === 0 ||
-    (step === 1 && tokenValid && !!registryAddr && name.trim().length > 0) ||
+    (step === 1 && tokenValid && identityOk && name.trim().length > 0) ||
     step === 2 ||
     (step === 3 && recipientsValid && windowValid) ||
     step === 4;
@@ -260,7 +264,7 @@ export default function NewCampaignPage() {
             {step === 1 && (
               <div className="space-y-4">
                 <h2 className="text-lg font-bold text-slate-200">
-                  Basics &amp; customer CA registry
+                  Basics &amp; eligibility gate
                 </h2>
                 <Field label="Campaign name">
                   <input
@@ -289,94 +293,91 @@ export default function NewCampaignPage() {
                     <span className="text-xs text-red-500">Invalid address.</span>
                   )}
                   {tokenValid && tier !== undefined && (
-                    <div className="flex items-center gap-2 pt-1">
-                      <span
-                        className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
-                          Number(tier) === TokenTier.OFFICIAL
-                            ? "bg-emerald-950/40 text-emerald-600 border-emerald-900/40"
-                            : Number(tier) === TokenTier.COMMUNITY
-                              ? "bg-indigo-950/40 text-indigo-400 border-indigo-900/40"
-                              : "bg-amber-950/20 text-amber-600 border-amber-500/20"
-                        }`}
-                      >
-                        {Number(tier) === TokenTier.OFFICIAL
-                          ? "OFFICIAL"
-                          : Number(tier) === TokenTier.COMMUNITY
-                            ? "COMMUNITY"
-                            : "NOT REGISTERED"}
-                      </span>
-                      {!tierAllowed && (
-                        <TxButton
-                          request={addTokenReq}
-                          label="+ Add token to registry"
-                          disabled={!addTokenReq}
-                        />
-                      )}
-                    </div>
+                    <span
+                      className={`inline-block text-[10px] font-mono font-bold px-2 py-0.5 mt-1 rounded border ${
+                        tierAllowed
+                          ? "bg-emerald-950/40 text-emerald-600 border-emerald-900/40"
+                          : "bg-amber-950/20 text-amber-600 border-amber-500/20"
+                      }`}
+                    >
+                      {tierAllowed ? "ALLOWED" : "NOT ALLOWED"}
+                    </span>
                   )}
                   {tokenValid && tier !== undefined && !tierAllowed && (
                     <span className="text-[11px] text-slate-500">
-                      The airdrop token must be registered (community self-add or
-                      admin-official) before a campaign can be created.
+                      This token isn&apos;t on the platform allow-list. Ask the
+                      admin to add it before creating a campaign.
                     </span>
                   )}
                 </Field>
-                <Field label="Customer CA registry *">
-                  <select
-                    className="input"
-                    value={registryAddr ?? ""}
-                    onChange={(e) => setRegistry(e.target.value as Address)}
-                  >
-                    {registries?.usersRegistry && (
-                      <option value={registries.usersRegistry}>
-                        Users registry (standard)
-                      </option>
-                    )}
-                    {registries?.relayersRegistry && (
-                      <option value={registries.relayersRegistry}>
-                        Relayers registry
-                      </option>
-                    )}
-                  </select>
+
+                <Field label="Customer identity gate (W24)">
+                  <label className="flex items-center gap-2 text-sm text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={identityRequired}
+                      onChange={(e) => setIdentityRequired(e.target.checked)}
+                    />
+                    Require customers to be identity-verified to claim
+                  </label>
+                  <span className="text-[11px] text-slate-500">
+                    {identityRequired
+                      ? "Claims require a valid zk-X509 verification at claim time."
+                      : "Open claim — anyone in the recipient list can claim (no identity check)."}
+                  </span>
                 </Field>
+
+                {identityRequired && (
+                  <Field label="Customer CA registry *">
+                    <select
+                      className="input"
+                      value={registryAddr ?? ""}
+                      onChange={(e) => setRegistry(e.target.value as Address)}
+                    >
+                      {registries?.usersRegistry && (
+                        <option value={registries.usersRegistry}>
+                          Users registry (standard)
+                        </option>
+                      )}
+                      {registries?.relayersRegistry && (
+                        <option value={registries.relayersRegistry}>
+                          Relayers registry
+                        </option>
+                      )}
+                    </select>
+                  </Field>
+                )}
               </div>
             )}
 
             {step === 2 && (
               <div className="space-y-4">
                 <h2 className="text-lg font-bold text-slate-200">
-                  Eligibility type &amp; fee
+                  List source
                 </h2>
                 <div className="grid gap-2">
                   {TYPES.map((t) => (
                     <label
                       key={t}
-                      className={`flex justify-between items-center p-3 rounded-lg border cursor-pointer text-sm ${
+                      className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer text-sm ${
                         type === t
                           ? "border-emerald-500 bg-emerald-500/5"
                           : "border-slate-800 bg-slate-950"
                       }`}
                     >
-                      <span className="flex items-center gap-2">
-                        <input
-                          type="radio"
-                          checked={type === t}
-                          onChange={() => setType(t)}
-                        />
-                        {airdropTypeLabel(t)}
-                      </span>
-                      <span className="text-xs font-mono text-slate-400">
-                        Fee:{" "}
-                        {fee !== undefined && type === t
-                          ? `${formatUnits(fee, 18)} ${isEthFee ? "ETH" : "tokens"}`
-                          : "—"}
-                      </span>
+                      <input
+                        type="radio"
+                        checked={type === t}
+                        onChange={() => setType(t)}
+                      />
+                      {airdropTypeLabel(t)}
                     </label>
                   ))}
                 </div>
                 <p className="text-xs text-slate-500 font-mono">
-                  v1 core path: CSV → Merkle → immediate. Choose the fee payment
-                  token (ETH or an ERC-20 like TON) in the final step.
+                  Eligibility is one Merkle list; the type is how the list is
+                  built (CSV, on-chain snapshot, …). The platform fee is charged
+                  on the airdrop token and shown at the final step.
                 </p>
               </div>
             )}
@@ -454,64 +455,42 @@ export default function NewCampaignPage() {
                   <dd>{recipientCount}</dd>
                   <dt className="muted">Total (Σ)</dt>
                   <dd>{fmtAmount(totalAmount)}</dd>
+                  <dt className="muted">Identity gate</dt>
+                  <dd>{identityRequired ? "Required (zk-X509)" : "Open claim"}</dd>
                   <dt className="muted">Merkle root</dt>
                   <dd className="font-mono text-xs break-all">{merkleRoot}</dd>
-                  <dt className="muted">Fee</dt>
-                  <dd>
-                    {fee !== undefined
-                      ? `${formatUnits(fee, 18)} ${isEthFee ? "ETH" : "tokens"}`
-                      : "…"}
+                  <dt className="muted">Distribution (pool)</dt>
+                  <dd>{fmtAmount(totalAmount)}</dd>
+                  <dt className="muted">Platform fee</dt>
+                  <dd>{fee !== undefined ? fmtAmount(fee) : "…"}</dd>
+                  <dt className="muted">Total deposit</dt>
+                  <dd className="font-semibold text-slate-100">
+                    {fee !== undefined ? fmtAmount(totalDeposit) : "…"}
                   </dd>
                 </dl>
 
-                <div className="space-y-1">
-                  <span className="label">Fee payment token</span>
-                  <div className="flex gap-2">
-                    <FeeOption
-                      active={isEthFee}
-                      onClick={() => setFeeToken(NATIVE_FEE_TOKEN)}
-                      label="ETH"
-                    />
-                    {dep.feeToken && (
-                      <FeeOption
-                        active={!isEthFee}
-                        onClick={() => setFeeToken(dep.feeToken as Address)}
-                        label="ERC-20 (e.g. TON — discounted)"
-                      />
-                    )}
-                  </div>
-                </div>
-
                 <p className="text-xs text-slate-500 font-mono">
-                  Guided: {isEthFee ? "" : "approve the fee token, "}approve the
-                  distribution token, then createDrop (fee{" "}
-                  {isEthFee ? "as ETH msg.value" : "pulled via transferFrom"} +
-                  token deposit + deploy).
+                  On-top fee: you deposit total + fee in the airdrop token (one
+                  approval). The pool gets the full distribution; the platform
+                  vault gets the fee. Then createDrop deploys the campaign.
                 </p>
                 <div className="grid gap-2">
-                  {!isEthFee && (
-                    <TxButton
-                      request={approveFeeReq}
-                      label="1. Approve fee token"
-                      disabled={!approveFeeReq}
-                    />
-                  )}
                   <TxButton
                     request={approveTokenReq}
-                    label={`${isEthFee ? "1" : "2"}. Approve distribution token`}
+                    label="1. Approve token (total + fee)"
                     disabled={!approveTokenReq}
                   />
                   <TxButton
                     request={createReq}
-                    label={`${isEthFee ? "2" : "3"}. Create campaign`}
+                    label="2. Create campaign"
                     primary
                     disabled={!createReq}
                   />
                 </div>
                 {!ready && (
                   <p className="text-xs text-amber-600">
-                    Complete all steps (token, registry, recipients, deadline)
-                    to enable creation.
+                    Complete all steps (allowed token, identity gate, recipients,
+                    deadline) to enable creation.
                   </p>
                 )}
               </div>
@@ -555,29 +534,5 @@ function Field({
       <span className="label">{label}</span>
       {children}
     </label>
-  );
-}
-
-function FeeOption({
-  active,
-  onClick,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex-1 px-3 py-2 rounded-lg border text-xs font-mono transition ${
-        active
-          ? "border-emerald-500 bg-emerald-500/5 text-slate-100"
-          : "border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200"
-      }`}
-    >
-      {label}
-    </button>
   );
 }
