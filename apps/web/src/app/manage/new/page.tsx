@@ -317,7 +317,7 @@ export default function NewCampaignPage() {
                       )}
                     </div>
                   )}
-                  {tokenValid && !tierAllowed && (
+                  {tokenValid && tier !== undefined && !tierAllowed && (
                     <span className="text-[11px] text-slate-500">
                       The airdrop token must be registered (community self-add or
                       admin-official) before a campaign can be created.
