@@ -8,6 +8,7 @@ import {
   buildApproveRequest,
   buildCreateDropRequest,
   getZkX509,
+  NATIVE_FEE_TOKEN,
 } from "@tokamak-network/scatter-drop-sdk";
 import { PageHeader } from "@/components/ui";
 import { ConnectGate } from "@/components/ConnectGate";
@@ -27,7 +28,6 @@ const ZERO_ROOT: Hex = `0x${"0".repeat(64)}`;
 export default function NewCampaignPage() {
   const { data: dep, isLoading: depLoading } = useDeployment();
   const factory = dep?.dropFactory;
-  const feeToken = dep?.feeToken;
   const registries = dep ? getZkX509(dep.chainId) : undefined;
   const depIssue = deploymentIssue(dep, depLoading);
 
@@ -37,7 +37,8 @@ export default function NewCampaignPage() {
   const [amount, setAmount] = useState("");
   const [deadline, setDeadline] = useState("");
 
-  const { data: fee } = useFeeOf(factory, type);
+  // v2: pay the creation fee in ETH (native). Phase-4 redesign adds a fee-token selector.
+  const { data: fee } = useFeeOf(factory, NATIVE_FEE_TOKEN, type);
 
   const tokenValid = isAddress(token);
   const amountValid = isPositiveDecimal(amount);
@@ -53,26 +54,25 @@ export default function NewCampaignPage() {
 
   const totalAmount = amountValid ? parseUnits(amount, 18) : 0n;
 
-  // `fee` truthy ⇒ defined and > 0n; a zero fee needs no approval.
-  const approveFeeReq =
-    factory && feeToken && fee
-      ? buildApproveRequest(feeToken, factory, fee)
-      : null;
   const approveTokenReq =
     factory && tokenValid && amountValid
       ? buildApproveRequest(token as Address, factory, totalAmount)
       : null;
-  const createReq = ready
-    ? buildCreateDropRequest(factory, {
-        airdropType: type,
-        airdropToken: token as Address,
-        // merkleRoot comes from the CSV/snapshot pipeline in M6; zero placeholder.
-        merkleRoot: ZERO_ROOT,
-        totalAmount,
-        deadline: BigInt(deadlineUnix),
-        identityRegistry: registryAddr,
-      })
-    : null;
+  const createReq =
+    ready && registryAddr && fee !== undefined
+      ? buildCreateDropRequest(factory, {
+          airdropType: type,
+          airdropToken: token as Address,
+          // merkleRoot comes from the CSV/snapshot pipeline in M6; zero placeholder.
+          merkleRoot: ZERO_ROOT,
+          totalAmount,
+          deadline: BigInt(deadlineUnix),
+          identityRegistry: registryAddr,
+          // ETH fee path: fee becomes msg.value (handled by the SDK builder).
+          feeToken: NATIVE_FEE_TOKEN,
+          fee,
+        })
+      : null;
 
   return (
     <>
@@ -175,14 +175,13 @@ export default function NewCampaignPage() {
             <div className="card">
               <h3 style={{ marginTop: 0 }}>Approve &amp; create</h3>
               <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
-                Approve the fee token and the distribution token to the factory,
-                then create. The Merkle root is generated from your CSV in M6
-                (zero placeholder).
+                Approve the distribution token to the factory, then create (the
+                creation fee is paid in ETH). The Merkle root is generated from
+                your CSV in M6 (zero placeholder).
               </p>
               <div style={{ display: "grid", gap: 8 }}>
-                <TxButton request={approveFeeReq} label="1. Approve fee token" disabled={!approveFeeReq} />
-                <TxButton request={approveTokenReq} label="2. Approve distribution token" disabled={!approveTokenReq} />
-                <TxButton request={createReq} label="3. Create campaign" primary disabled={!createReq} />
+                <TxButton request={approveTokenReq} label="1. Approve distribution token" disabled={!approveTokenReq} />
+                <TxButton request={createReq} label="2. Create campaign" primary disabled={!createReq} />
               </div>
             </div>
           </div>

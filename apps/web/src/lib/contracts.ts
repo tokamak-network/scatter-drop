@@ -40,15 +40,19 @@ export function useDeployment() {
   });
 }
 
-/** DropFactory.feeOf(type) — live creation fee for an airdrop type. */
-export function useFeeOf(factory: Address | undefined, type: AirdropType) {
+/** DropFactory.feeOf(feeToken, type) — live creation fee (v2, 2D). */
+export function useFeeOf(
+  factory: Address | undefined,
+  feeToken: Address | undefined,
+  type: AirdropType,
+) {
   return useReadContract({
     address: factory,
     abi: dropFactoryAbi,
     functionName: "feeOf",
-    args: [type],
+    args: feeToken ? [feeToken, type] : undefined,
     chainId: fork.id,
-    query: { enabled: !!factory },
+    query: { enabled: !!factory && !!feeToken },
   });
 }
 
