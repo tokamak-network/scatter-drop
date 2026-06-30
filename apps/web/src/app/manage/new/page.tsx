@@ -158,6 +158,8 @@ export default function NewCampaignPage() {
   const nowSec = Math.floor(Date.now() / 1000);
   const windowValid =
     deadlineUnix > nowSec && (startUnix === 0 || deadlineUnix > startUnix);
+  // ERC-20 fee must be configured (> 0n) or createDrop reverts FeeNotConfigured.
+  const feeValid = fee !== undefined && (isEthFee || fee > 0n);
   const ready =
     !!factory &&
     tokenValid &&
@@ -165,7 +167,7 @@ export default function NewCampaignPage() {
     recipientsValid &&
     windowValid &&
     !!registryAddr &&
-    fee !== undefined;
+    feeValid;
 
   const approveTokenReq =
     factory && tokenValid && totalAmount > 0n
@@ -193,11 +195,7 @@ export default function NewCampaignPage() {
 
   const canNext =
     step === 0 ||
-    (step === 1 &&
-      tokenValid &&
-      tierAllowed &&
-      !!registryAddr &&
-      name.trim().length > 0) ||
+    (step === 1 && tokenValid && !!registryAddr && name.trim().length > 0) ||
     step === 2 ||
     (step === 3 && recipientsValid && windowValid) ||
     step === 4;
