@@ -41,6 +41,12 @@ export function buildClaimRequest(drop: Address, claim: ClaimProof): TxRequest {
   return { to: getAddress(drop), data: encodeClaim(claim) };
 }
 
+/** Token fee pricing mode. MUST match the Solidity `enum FeeMode`. */
+export enum FeeMode {
+  PERCENT = 0,
+  FLAT = 1,
+}
+
 /** Parameters for `DropFactory.createDrop` (operator creates a campaign). */
 export interface CreateDropParams {
   airdropType: AirdropType;
@@ -51,34 +57,28 @@ export interface CreateDropParams {
   startTime: bigint;
   /** Unix seconds the claim window closes. On-chain: deadline - startTime ≥ MIN_DURATION. */
   deadline: bigint;
-  identityRegistry: Address;
-  /** Fee payment token. `NATIVE_FEE_TOKEN` (address(0)) = pay the fee in ETH. */
-  feeToken: Address;
   /**
-   * The creation fee for this (feeToken, type), from `feeOf(feeToken, type)`.
-   * Required when `feeToken` is native (ETH) — it becomes msg.value. For ERC-20
-   * fees it is ignored (the factory pulls via transferFrom after approve).
+   * Customer identity gate (W24). A zk-X509 IdentityRegistry to require, or
+   * `address(0)` for an open campaign (no identity check at claim).
    */
-  fee?: bigint;
+  identityRegistry: Address;
 }
 
 /**
- * Build a `DropFactory.createDrop(...)` transaction request (payable).
+ * Build a `DropFactory.createDrop(...)` request (non-payable, 7-arg).
  *
- * - **ETH fee** (`feeToken == NATIVE_FEE_TOKEN`): pass `fee`; it is sent as msg.value.
- * - **ERC-20 fee**: first `approve` the factory for `fee` (feeToken) and for
- *   `totalAmount` (airdropToken) — see {@link buildApproveRequest}; value stays 0.
+ * The fee is charged in the airdrop token, on top of `totalAmount`: before this,
+ * `approve` the factory for `totalAmount + fee` (see {@link buildApproveRequest};
+ * compute `fee` off-chain via `feeOf(token, totalAmount)` / {@link computeFee}).
+ * `identityRegistry` may be `address(0)` for an open (no-gate) campaign.
  */
 export function buildCreateDropRequest(factory: Address, params: CreateDropParams): TxRequest {
   // The airdrop token is escrowed via ERC-20 transferFrom (approve-first), not
-  // msg.value. A native airdrop token would be silently underfunded — reject it
-  // so the caller can't build a doomed/underfunded createDrop.
+  // msg.value — a native airdrop token would be silently underfunded.
   const airdropToken = getAddress(params.airdropToken);
   if (airdropToken === NATIVE_FEE_TOKEN) {
     throw new Error("airdropToken cannot be the native token (address(0)); use an ERC-20");
   }
-  const feeToken = getAddress(params.feeToken);
-  const isEth = feeToken === NATIVE_FEE_TOKEN;
   return {
     to: getAddress(factory),
     data: encodeFunctionData({
@@ -92,30 +92,59 @@ export function buildCreateDropRequest(factory: Address, params: CreateDropParam
         params.startTime,
         params.deadline,
         getAddress(params.identityRegistry),
-        feeToken,
       ],
     }),
-    value: isEth ? (params.fee ?? 0n) : 0n,
   };
 }
 
-/**
- * Build `DropFactory.setFee(feeToken, type, amount)` — admin sets the per-(token,type)
- * creation fee. `feeToken = NATIVE_FEE_TOKEN` configures the ETH price; a cheaper
- * amount for one token (e.g. TON) is how a discount is offered. Admin-only on-chain.
- */
-export function buildSetFeeRequest(
-  factory: Address,
-  feeToken: Address,
-  airdropType: AirdropType,
-  amount: bigint,
-): TxRequest {
+/** Build `DropFactory.setDefaultFeeMode(mode)` — admin sets the global default mode. */
+export function buildSetDefaultFeeModeRequest(factory: Address, mode: FeeMode): TxRequest {
+  return {
+    to: getAddress(factory),
+    data: encodeFunctionData({ abi: dropFactoryAbi, functionName: "setDefaultFeeMode", args: [mode] }),
+  };
+}
+
+/** Build `DropFactory.setFeeMode(token, mode)` — admin sets a token's fee mode (PERCENT/FLAT). */
+export function buildSetFeeModeRequest(factory: Address, token: Address, mode: FeeMode): TxRequest {
   return {
     to: getAddress(factory),
     data: encodeFunctionData({
       abi: dropFactoryAbi,
-      functionName: "setFee",
-      args: [getAddress(feeToken), airdropType, amount],
+      functionName: "setFeeMode",
+      args: [getAddress(token), mode],
+    }),
+  };
+}
+
+/** Build `DropFactory.setDefaultFeeBps(bps)` — admin sets the global default PERCENT rate. */
+export function buildSetDefaultFeeBpsRequest(factory: Address, bps: number): TxRequest {
+  return {
+    to: getAddress(factory),
+    data: encodeFunctionData({ abi: dropFactoryAbi, functionName: "setDefaultFeeBps", args: [bps] }),
+  };
+}
+
+/** Build `DropFactory.setFeeBps(token, bps)` — admin sets a token's PERCENT rate (basis points). */
+export function buildSetFeeBpsRequest(factory: Address, token: Address, bps: number): TxRequest {
+  return {
+    to: getAddress(factory),
+    data: encodeFunctionData({
+      abi: dropFactoryAbi,
+      functionName: "setFeeBps",
+      args: [getAddress(token), bps],
+    }),
+  };
+}
+
+/** Build `DropFactory.setFlatFee(token, amount)` — admin sets a token's FLAT per-campaign fee. */
+export function buildSetFlatFeeRequest(factory: Address, token: Address, amount: bigint): TxRequest {
+  return {
+    to: getAddress(factory),
+    data: encodeFunctionData({
+      abi: dropFactoryAbi,
+      functionName: "setFlatFee",
+      args: [getAddress(token), amount],
     }),
   };
 }
@@ -155,50 +184,21 @@ export function buildApproveRequest(token: Address, spender: Address, amount: bi
 }
 
 /**
- * Build `DropFactory.addAllowedToken(token)` — a verified operator self-registers
- * an airdrop token (COMMUNITY tier, no admin approval needed).
+ * Build `DropFactory.setAllowedToken(token, allowed)` — admin curates the airdrop
+ * token allow-list (ALLOWED / NONE). Admin-only on-chain. There is no operator
+ * self-registration: supported tokens are entirely the platform admin's curation.
  */
-export function buildAddAllowedTokenRequest(factory: Address, token: Address): TxRequest {
-  return {
-    to: getAddress(factory),
-    data: encodeFunctionData({
-      abi: dropFactoryAbi,
-      functionName: "addAllowedToken",
-      args: [getAddress(token)],
-    }),
-  };
-}
-
-/**
- * Build `DropFactory.setOfficialToken(token, official)` — admin marks a token
- * OFFICIAL (top of list) or downgrades it. Admin-only on-chain.
- */
-export function buildSetOfficialTokenRequest(
+export function buildSetAllowedTokenRequest(
   factory: Address,
   token: Address,
-  official: boolean,
+  allowed: boolean,
 ): TxRequest {
   return {
     to: getAddress(factory),
     data: encodeFunctionData({
       abi: dropFactoryAbi,
-      functionName: "setOfficialToken",
-      args: [getAddress(token), official],
-    }),
-  };
-}
-
-/**
- * Build `DropFactory.removeAllowedToken(token)` — admin removes a token from the
- * registry (→ NONE), e.g. a malicious/impersonating token. Admin-only on-chain.
- */
-export function buildRemoveAllowedTokenRequest(factory: Address, token: Address): TxRequest {
-  return {
-    to: getAddress(factory),
-    data: encodeFunctionData({
-      abi: dropFactoryAbi,
-      functionName: "removeAllowedToken",
-      args: [getAddress(token)],
+      functionName: "setAllowedToken",
+      args: [getAddress(token), allowed],
     }),
   };
 }
