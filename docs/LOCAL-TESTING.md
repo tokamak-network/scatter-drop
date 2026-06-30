@@ -64,6 +64,42 @@ pnpm --filter @scatter-drop/web dev
 - 🔄 **Explore 캠페인 목록**(getLogs) — PR #25 머지 후 라이브 (그 전엔 stub)
 - 🔄 **다토큰 수수료(ETH/TON 할인)** — PR #26(W19) 머지 후
 
+## 기능·메뉴 테스트 체크리스트 (페르소나별)
+전체 메뉴·기능 설명은 **`docs/FRONTEND-IA.md`**. 아래는 지금 포크에서 클릭해볼 항목.
+
+### 🙋 고객 (Claimer) — 받는 사람
+| 메뉴 | 기능 | 테스트 | 지금? |
+|------|------|--------|:---:|
+| Explore `/campaigns` | 전체 캠페인 둘러보기 | 데모 캠페인 카드 보이는지 | 🔄 #25 후 |
+| 캠페인 상세 `/c/[id]` | 신원게이트 + 자격확인 + claim | 데모 고객(anvil#1)으로 claim 1000토큰 | ✅ |
+| | 신원 미검증 차단 | 검증 안 한 지갑 → "신원 인증 필요" | ✅ |
+| My Claims `/claim` | 내 클레임 현황 | 연결 지갑 기준 표시 | ✅(보조) |
+
+### 👤 운영자 (Operator) — 캠페인 만드는 사람
+| 메뉴 | 기능 | 테스트 | 지금? |
+|------|------|--------|:---:|
+| Manage `/manage` | 내가 만든 캠페인 | 목록·통계 | ✅ |
+| New Campaign `/manage/new` | 생성 마법사 | Step1 기본정보→자격(CSV)→배포방식→결제 | ✅ |
+| | createDrop 실행 | approve→createDrop 실 tx | ✅ |
+| | 토큰 등록(없으면 추가) | "+토큰추가"(addAllowedToken) | 🔄 W19-FE 후 |
+| | 납부토큰 선택(ETH/TON 할인) | 결제 단계 토큰 셀렉터 | 🔄 W19 후 |
+| 캠페인 관리 `/manage/[id]` | Overview/Participants/Sweep | 통계·잔여회수 | ✅ |
+| 세금문서 `/manage/[id]/report` | 분배내역 CSV/PDF | 다운로드 | ✅ |
+
+### 🛠 어드민 (Platform Admin)
+| 메뉴 | 기능 | 테스트 | 지금? |
+|------|------|--------|:---:|
+| `/admin/funds` | 종류별 수수료 설정 | setFee | ✅ (다토큰은 🔄 W19) |
+| `/admin/operator` | 운영자 CA 레지스트리 | setOperatorRegistry | ✅ |
+| `/admin/vault` | 수수료 볼트 조회·출금 | collectedFees / withdrawFees→treasury | ✅ |
+| `/admin/tokens` | 토큰 등록부 관리 | OFFICIAL 지정/제거 | 🔄 W19-FE 후 |
+| `/admin/campaigns` | 전체 캠페인 모니터 | 개수·캠페인별 | ✅(read) |
+
+> ✅=지금 클릭 가능, 🔄=해당 PR 머지 후. (Explore=#25, 다토큰수수료·토큰UI=W19/#26)
+
+### 데모 시드 값 (claim 테스트용)
+- 데모 drop: 출력의 `drop` 주소 / 고객 anvil#1 `0x7099…79C8`, 금액 1000e18, proof는 dev-fork 출력 참조.
+
 ## 트러블슈팅
 - `SEPOLIA_RPC_URL` 없음 → §0 env 복사 확인.
 - 프론트가 빈 화면/에러 → `apps/web/.env.local` 주소가 최신 배포(`deployments/11155111.json`)와 일치하는지.
