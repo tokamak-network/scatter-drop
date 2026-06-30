@@ -120,13 +120,15 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
             Claim requires (identity verified) AND (eligible). Self-claim only.
           </p>
 
-          <Link
-            href={`/c/${campaign.id}/receipt`}
-            className="muted"
-            style={{ fontSize: 13, textDecoration: "underline" }}
-          >
-            Tax receipt →
-          </Link>
+          {eligState === "claimed" && (
+            <Link
+              href={`/c/${campaign.id}/receipt`}
+              className="muted"
+              style={{ fontSize: 13, textDecoration: "underline" }}
+            >
+              Tax receipt →
+            </Link>
+          )}
         </div>
       </ConnectGate>
     </div>

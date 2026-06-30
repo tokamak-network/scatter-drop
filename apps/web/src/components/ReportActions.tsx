@@ -21,7 +21,9 @@ export function ReportActions({
     a.href = url;
     a.download = filename;
     a.click();
-    URL.revokeObjectURL(url);
+    // Defer revoke so the download starts reliably across browsers
+    // (synchronous revoke can cancel it in iOS Safari / older browsers).
+    setTimeout(() => URL.revokeObjectURL(url), 100);
   }
 
   return (

@@ -42,12 +42,12 @@ export default async function DistributionReportPage({
         <tbody>
           {rows.map((r) => (
             <tr key={r.tx}>
-              <td style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
+              <td style={{ fontFamily: "var(--font-mono)", fontSize: 12, wordBreak: "break-all" }}>
                 {r.recipient}
               </td>
               <td>{r.amount}</td>
               <td>{r.claimedAt}</td>
-              <td style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
+              <td style={{ fontFamily: "var(--font-mono)", fontSize: 12, wordBreak: "break-all" }}>
                 {r.tx}
               </td>
             </tr>

@@ -72,7 +72,7 @@ export async function getClaimReceipt(
 /** Build a CSV string from a header row + data rows (RFC-4180 escaping). */
 export function toCsv(headers: string[], rows: string[][]): string {
   const escape = (v: string) =>
-    /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+    /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
   const lines = [headers, ...rows].map((r) => r.map(escape).join(","));
   return lines.join("\r\n");
 }

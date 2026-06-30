@@ -49,13 +49,15 @@ export default function MyClaimsPage() {
                   <span className="muted">
                     {claim.amount} · {claim.claimed ? "claimed" : "available"}
                   </span>
-                  <Link
-                    href={`/c/${claim.campaignId}/receipt`}
-                    className="muted"
-                    style={{ fontSize: 13, textDecoration: "underline" }}
-                  >
-                    Receipt →
-                  </Link>
+                  {claim.claimed && (
+                    <Link
+                      href={`/c/${claim.campaignId}/receipt`}
+                      className="muted"
+                      style={{ fontSize: 13, textDecoration: "underline" }}
+                    >
+                      Receipt →
+                    </Link>
+                  )}
                 </span>
               </div>
             ))}
