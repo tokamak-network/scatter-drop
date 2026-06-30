@@ -24,14 +24,20 @@ export interface ScatterDropDeployment {
   treasury?: Address;
 }
 
+/** zk-X509 on Sepolia (mirrored by the local fork). */
+const SEPOLIA_ZK_X509: ZkX509Addresses = {
+  registryFactory: getAddress("0x9e937dF6ac0E85979622519068412A518fa085d9"),
+  usersRegistry: getAddress("0x3cF6A96f1970053ffDf957074F988aD53D13ada3"),
+  relayersRegistry: getAddress("0x9fDE6182B1fd10F2eDfE15b704FE95787C170914"),
+};
+
 /** Known zk-X509 deployments keyed by chainId. */
 export const ZK_X509: Record<number, ZkX509Addresses> = {
   // Sepolia
-  11155111: {
-    registryFactory: getAddress("0x9e937dF6ac0E85979622519068412A518fa085d9"),
-    usersRegistry: getAddress("0x3cF6A96f1970053ffDf957074F988aD53D13ada3"),
-    relayersRegistry: getAddress("0x9fDE6182B1fd10F2eDfE15b704FE95787C170914"),
-  },
+  11155111: SEPOLIA_ZK_X509,
+  // Local anvil fork of Sepolia (dev-fork.sh labels it 31337) — same on-chain
+  // state, so the same registry addresses resolve.
+  31337: SEPOLIA_ZK_X509,
 };
 
 /** Look up zk-X509 addresses for a chain, or undefined if unknown. */

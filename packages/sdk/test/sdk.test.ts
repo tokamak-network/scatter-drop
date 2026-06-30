@@ -216,6 +216,12 @@ describe("addresses", () => {
     expect(z.usersRegistry).toBe("0x3cF6A96f1970053ffDf957074F988aD53D13ada3");
   });
 
+  it("resolves the local fork chainId 31337 to the Sepolia registries", () => {
+    const z = getZkX509(31337)!;
+    expect(z.registryFactory).toBe("0x9e937dF6ac0E85979622519068412A518fa085d9");
+    expect(z.usersRegistry).toBe("0x3cF6A96f1970053ffDf957074F988aD53D13ada3");
+  });
+
   it("returns undefined for unknown chains", () => {
     expect(getZkX509(999)).toBeUndefined();
   });
