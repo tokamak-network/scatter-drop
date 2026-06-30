@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
 import { DropFactory } from "../../src/DropFactory.sol";
 import { MerkleDrop } from "../../src/MerkleDrop.sol";
 import { IIdentityRegistry } from "../../src/interfaces/IIdentityRegistry.sol";
@@ -76,11 +74,12 @@ contract ForkE2ETest is MerkleTestBase {
         MockERC20 airdropToken = new MockERC20("Drop", "DROP", 18);
 
         vm.prank(admin);
-        DropFactory factory = new DropFactory(
-            admin, IERC20(address(feeToken)), USERS_REGISTRY, IRegistryFactoryLike(ZK_FACTORY), treasury
-        );
-        vm.prank(admin);
-        factory.setFee(CSV, FEE);
+        DropFactory factory =
+            new DropFactory(admin, USERS_REGISTRY, IRegistryFactoryLike(ZK_FACTORY), treasury);
+        vm.startPrank(admin);
+        factory.setFee(address(feeToken), CSV, FEE);
+        factory.setOfficialToken(address(airdropToken), true); // register the airdrop token
+        vm.stopPrank();
 
         feeToken.mint(operator, FEE);
         airdropToken.mint(operator, TOTAL);
@@ -98,8 +97,11 @@ contract ForkE2ETest is MerkleTestBase {
         vm.startPrank(operator);
         feeToken.approve(address(factory), FEE);
         airdropToken.approve(address(factory), TOTAL);
-        MerkleDrop drop =
-            MerkleDrop(factory.createDrop(CSV, address(airdropToken), root, TOTAL, deadline, USERS_REGISTRY));
+        MerkleDrop drop = MerkleDrop(
+            factory.createDrop(
+                CSV, address(airdropToken), root, TOTAL, deadline, USERS_REGISTRY, address(feeToken)
+            )
+        );
         vm.stopPrank();
 
         assertEq(airdropToken.balanceOf(address(drop)), TOTAL);

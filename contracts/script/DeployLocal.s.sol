@@ -2,7 +2,6 @@
 pragma solidity 0.8.28;
 
 import { Script, console2 } from "forge-std/Script.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { DropFactory } from "../src/DropFactory.sol";
 import { IRegistryFactoryLike } from "../src/interfaces/IRegistryFactoryLike.sol";
@@ -69,15 +68,12 @@ contract DeployLocal is Script {
         MockRegistryFactory zkFactory = new MockRegistryFactory();
         zkFactory.setRegistry(address(customerRegistry), true);
 
-        // The factory itself, then its CSV fee tier.
+        // The factory itself, then its CSV fee tier (in the fee token) and the registered token.
         DropFactory factory = new DropFactory(
-            deployer,
-            IERC20(address(feeToken)),
-            address(operatorRegistry),
-            IRegistryFactoryLike(address(zkFactory)),
-            treasury
+            deployer, address(operatorRegistry), IRegistryFactoryLike(address(zkFactory)), treasury
         );
-        factory.setFee(CSV, feeAmount);
+        factory.setFee(address(feeToken), CSV, feeAmount);
+        factory.setOfficialToken(address(airdropToken), true); // register the demo airdrop token
 
         // Verify the operator (deployer) and the demo customer well past any deadline.
         operatorRegistry.setVerifiedUntil(deployer, type(uint64).max);

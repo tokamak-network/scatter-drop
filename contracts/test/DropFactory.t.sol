@@ -3,7 +3,6 @@ pragma solidity 0.8.28;
 
 import { Test } from "forge-std/Test.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { DropFactory } from "../src/DropFactory.sol";
 import { MerkleDrop } from "../src/MerkleDrop.sol";
@@ -13,12 +12,18 @@ import { MockIdentityRegistry } from "./mocks/MockIdentityRegistry.sol";
 import { MockRegistryFactory } from "./mocks/MockRegistryFactory.sol";
 import { MockFeeOnTransferERC20 } from "./mocks/MockFeeOnTransferERC20.sol";
 
+/// @dev Contract with no `receive`/`fallback`, so a value-bearing call to it fails — used to
+///      exercise the ETH-withdrawal failure path.
+contract NoReceive { }
+
 contract DropFactoryTest is Test {
     DropFactory internal factory;
     MockERC20 internal feeToken;
     MockERC20 internal airdropToken;
     MockIdentityRegistry internal opReg;
     MockRegistryFactory internal zkFactory;
+
+    address internal constant ETH = address(0);
 
     address internal admin = makeAddr("admin");
     address internal operator = makeAddr("operator");
@@ -27,22 +32,12 @@ contract DropFactoryTest is Test {
 
     bytes32 internal constant ROOT = keccak256("root");
     uint256 internal constant TOTAL = 1_000 ether;
-    uint256 internal constant CSV_FEE = 10 ether;
+    uint256 internal constant CSV_FEE = 10 ether; // ERC20 fee
+    uint256 internal constant ETH_FEE = 0.01 ether;
 
     uint64 internal deadline;
 
-    /// @dev Mirror of DropFactory.DropCreated so tests can `vm.expectEmit` against it.
-    event DropCreated(
-        address indexed drop,
-        address indexed operator,
-        DropFactory.AirdropType indexed airdropType,
-        address airdropToken,
-        address identityRegistry,
-        bytes32 merkleRoot,
-        uint256 totalAmount,
-        uint64 deadline,
-        uint256 fee
-    );
+    event AllowedTokenSet(address indexed token, DropFactory.TokenTier tier, address indexed caller);
 
     function setUp() public {
         feeToken = new MockERC20("Fee", "FEE", 18);
@@ -51,22 +46,24 @@ contract DropFactoryTest is Test {
         zkFactory = new MockRegistryFactory();
         zkFactory.setRegistry(custReg, true);
 
-        factory = new DropFactory(admin, IERC20(address(feeToken)), address(opReg), zkFactory, treasury);
+        factory = new DropFactory(admin, address(opReg), zkFactory, treasury);
 
-        vm.prank(admin);
-        factory.setFee(uint8(DropFactory.AirdropType.CSV), CSV_FEE);
+        vm.startPrank(admin);
+        factory.setFee(address(feeToken), uint8(DropFactory.AirdropType.CSV), CSV_FEE);
+        factory.setFee(ETH, uint8(DropFactory.AirdropType.CSV), ETH_FEE);
+        factory.setOfficialToken(address(airdropToken), true); // airdrop token registered
+        vm.stopPrank();
 
         deadline = uint64(block.timestamp + 7 days);
     }
 
     // -- helpers ---------------------------------------------------------
 
-    /// @dev Mark `who` as a verified operator far into the future.
     function _verifyOperator(address who) internal {
         opReg.setVerifiedUntil(who, uint64(block.timestamp + 365 days));
     }
 
-    /// @dev Fund `who` with fee + airdrop tokens and approve the factory.
+    /// @dev Fund `who` with the ERC20 fee + airdrop tokens and approve the factory.
     function _fund(address who, uint256 fee, uint256 total) internal {
         feeToken.mint(who, fee);
         airdropToken.mint(who, total);
@@ -76,18 +73,19 @@ contract DropFactoryTest is Test {
         vm.stopPrank();
     }
 
-    /// @dev Create a TOTAL-sized drop of `airdropType` for `who` against the standard registry.
-    ///      Caller is responsible for funding/approving `who` first (see `_fund`).
+    /// @dev Create a TOTAL-sized drop of `airdropType` for `who`, paying the ERC20 fee.
     function _create(uint8 airdropType, address who) internal returns (address drop) {
         vm.prank(who);
-        drop = factory.createDrop(airdropType, address(airdropToken), ROOT, TOTAL, deadline, custReg);
+        drop = factory.createDrop(
+            airdropType, address(airdropToken), ROOT, TOTAL, deadline, custReg, address(feeToken)
+        );
     }
 
     function _createCsv(address who) internal returns (address drop) {
         return _create(uint8(DropFactory.AirdropType.CSV), who);
     }
 
-    // -- createDrop: happy path & wiring ---------------------------------
+    // -- createDrop: happy path & wiring (ERC20 fee) ---------------------
 
     function test_createDrop_wiresDropAndMovesFunds() public {
         _verifyOperator(operator);
@@ -113,13 +111,44 @@ contract DropFactoryTest is Test {
         assertEq(factory.allDrops()[0], drop, "allDrops");
     }
 
+    function test_createDrop_payWithEth() public {
+        _verifyOperator(operator);
+        airdropToken.mint(operator, TOTAL);
+        vm.prank(operator);
+        airdropToken.approve(address(factory), TOTAL);
+        vm.deal(operator, ETH_FEE);
+
+        vm.prank(operator);
+        address drop = factory.createDrop{ value: ETH_FEE }(
+            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, deadline, custReg, ETH
+        );
+
+        assertEq(airdropToken.balanceOf(drop), TOTAL);
+        assertEq(factory.collectedFees(ETH), ETH_FEE, "eth fee accrued");
+        assertEq(address(factory).balance, ETH_FEE, "factory holds eth");
+    }
+
+    function test_createDrop_payWithEthZeroFeeType() public {
+        // SOCIAL has no ETH price (0); paying ETH with value 0 succeeds (free).
+        _verifyOperator(operator);
+        airdropToken.mint(operator, TOTAL);
+        vm.prank(operator);
+        airdropToken.approve(address(factory), TOTAL);
+
+        vm.prank(operator);
+        address drop = factory.createDrop(
+            uint8(DropFactory.AirdropType.SOCIAL), address(airdropToken), ROOT, TOTAL, deadline, custReg, ETH
+        );
+        assertEq(airdropToken.balanceOf(drop), TOTAL);
+        assertEq(factory.collectedFees(ETH), 0);
+    }
+
     function test_createDrop_emitsDropCreated() public {
         _verifyOperator(operator);
         _fund(operator, CSV_FEE, TOTAL);
 
-        // Drop address (topic1) is unknown pre-deploy; verify operator/type topics + full data payload.
         vm.expectEmit(false, true, true, true, address(factory));
-        emit DropCreated(
+        emit DropFactory.DropCreated(
             address(0),
             operator,
             DropFactory.AirdropType.CSV,
@@ -133,57 +162,85 @@ contract DropFactoryTest is Test {
         _createCsv(operator);
     }
 
-    function test_createDrop_zeroFeeType_skipsFeePull() public {
-        // SOCIAL fee left at 0 → no feeToken transfer required.
-        _verifyOperator(operator);
-        _fund(operator, 0, TOTAL);
-        address drop = _create(uint8(DropFactory.AirdropType.SOCIAL), operator);
-
-        assertEq(airdropToken.balanceOf(drop), TOTAL);
-        assertEq(factory.collectedFees(address(feeToken)), 0, "no fee accrued");
-    }
-
-    // -- createDrop: gate 1 (operator verification) ----------------------
+    // -- createDrop: gate 1 ----------------------------------------------
 
     function test_createDrop_revertsWhenOperatorUnverified() public {
-        _fund(operator, CSV_FEE, TOTAL); // not verified
+        _fund(operator, CSV_FEE, TOTAL);
         vm.prank(operator);
         vm.expectRevert(DropFactory.OperatorNotVerified.selector);
         factory.createDrop(
-            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, deadline, custReg
+            uint8(DropFactory.AirdropType.CSV),
+            address(airdropToken),
+            ROOT,
+            TOTAL,
+            deadline,
+            custReg,
+            address(feeToken)
         );
     }
 
     function test_createDrop_revertsWhenOperatorVerificationExpired() public {
-        opReg.setVerifiedUntil(operator, uint64(block.timestamp)); // valid only "now"
+        opReg.setVerifiedUntil(operator, uint64(block.timestamp));
         _fund(operator, CSV_FEE, TOTAL);
-        vm.warp(block.timestamp + 1); // now strictly past verifiedUntil
+        vm.warp(block.timestamp + 1);
         vm.prank(operator);
         vm.expectRevert(DropFactory.OperatorNotVerified.selector);
         factory.createDrop(
-            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, deadline, custReg
+            uint8(DropFactory.AirdropType.CSV),
+            address(airdropToken),
+            ROOT,
+            TOTAL,
+            deadline,
+            custReg,
+            address(feeToken)
         );
     }
 
     function test_createDrop_succeedsWhenVerifiedUntilEqualsNow() public {
-        // verifiedUntil >= block.timestamp is the pass condition (boundary inclusive).
         opReg.setVerifiedUntil(operator, uint64(block.timestamp));
         _fund(operator, CSV_FEE, TOTAL);
         address drop = _createCsv(operator);
         assertTrue(drop != address(0));
     }
 
-    // -- createDrop: customer registry validation ------------------------
+    // -- createDrop: registry / token allow-list -------------------------
 
     function test_createDrop_revertsWhenRegistryNotStandard() public {
         _verifyOperator(operator);
         _fund(operator, CSV_FEE, TOTAL);
-        address fakeReg = makeAddr("fakeReg"); // never registered in zkFactory
+        address fakeReg = makeAddr("fakeReg");
         vm.prank(operator);
         vm.expectRevert(DropFactory.NotAStandardRegistry.selector);
         factory.createDrop(
-            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, deadline, fakeReg
+            uint8(DropFactory.AirdropType.CSV),
+            address(airdropToken),
+            ROOT,
+            TOTAL,
+            deadline,
+            fakeReg,
+            address(feeToken)
         );
+    }
+
+    function test_createDrop_revertsWhenTokenNotAllowed() public {
+        MockERC20 fresh = new MockERC20("Unlisted", "UNL", 18);
+        _verifyOperator(operator);
+        fresh.mint(operator, TOTAL);
+        feeToken.mint(operator, CSV_FEE);
+        vm.startPrank(operator);
+        fresh.approve(address(factory), TOTAL);
+        feeToken.approve(address(factory), CSV_FEE);
+        vm.expectRevert(DropFactory.TokenNotAllowed.selector);
+        factory.createDrop(
+            uint8(DropFactory.AirdropType.CSV),
+            address(fresh),
+            ROOT,
+            TOTAL,
+            deadline,
+            custReg,
+            address(feeToken)
+        );
+        vm.stopPrank();
     }
 
     // -- createDrop: input validation ------------------------------------
@@ -193,14 +250,16 @@ contract DropFactoryTest is Test {
         _fund(operator, CSV_FEE, TOTAL);
         vm.prank(operator);
         vm.expectRevert(DropFactory.InvalidAirdropType.selector);
-        factory.createDrop(4, address(airdropToken), ROOT, TOTAL, deadline, custReg);
+        factory.createDrop(4, address(airdropToken), ROOT, TOTAL, deadline, custReg, address(feeToken));
     }
 
     function test_createDrop_revertsOnZeroToken() public {
         _verifyOperator(operator);
         vm.prank(operator);
         vm.expectRevert(DropFactory.InvalidAddress.selector);
-        factory.createDrop(uint8(DropFactory.AirdropType.CSV), address(0), ROOT, TOTAL, deadline, custReg);
+        factory.createDrop(
+            uint8(DropFactory.AirdropType.CSV), address(0), ROOT, TOTAL, deadline, custReg, address(feeToken)
+        );
     }
 
     function test_createDrop_revertsOnZeroRegistry() public {
@@ -208,7 +267,13 @@ contract DropFactoryTest is Test {
         vm.prank(operator);
         vm.expectRevert(DropFactory.InvalidAddress.selector);
         factory.createDrop(
-            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, deadline, address(0)
+            uint8(DropFactory.AirdropType.CSV),
+            address(airdropToken),
+            ROOT,
+            TOTAL,
+            deadline,
+            address(0),
+            address(feeToken)
         );
     }
 
@@ -217,7 +282,13 @@ contract DropFactoryTest is Test {
         vm.prank(operator);
         vm.expectRevert(DropFactory.InvalidMerkleRoot.selector);
         factory.createDrop(
-            uint8(DropFactory.AirdropType.CSV), address(airdropToken), bytes32(0), TOTAL, deadline, custReg
+            uint8(DropFactory.AirdropType.CSV),
+            address(airdropToken),
+            bytes32(0),
+            TOTAL,
+            deadline,
+            custReg,
+            address(feeToken)
         );
     }
 
@@ -226,7 +297,13 @@ contract DropFactoryTest is Test {
         vm.prank(operator);
         vm.expectRevert(DropFactory.ZeroTotalAmount.selector);
         factory.createDrop(
-            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, 0, deadline, custReg
+            uint8(DropFactory.AirdropType.CSV),
+            address(airdropToken),
+            ROOT,
+            0,
+            deadline,
+            custReg,
+            address(feeToken)
         );
     }
 
@@ -240,19 +317,25 @@ contract DropFactoryTest is Test {
             ROOT,
             TOTAL,
             uint64(block.timestamp),
-            custReg
+            custReg,
+            address(feeToken)
         );
     }
 
     function test_createDrop_revertsWhenDeadlineBeforeMinDuration() public {
         _verifyOperator(operator);
         _fund(operator, CSV_FEE, TOTAL);
-        // Just under MIN_DURATION in the future.
         uint64 tooSoon = uint64(block.timestamp + factory.MIN_DURATION() - 1);
         vm.prank(operator);
         vm.expectRevert(DropFactory.InvalidDeadline.selector);
         factory.createDrop(
-            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, tooSoon, custReg
+            uint8(DropFactory.AirdropType.CSV),
+            address(airdropToken),
+            ROOT,
+            TOTAL,
+            tooSoon,
+            custReg,
+            address(feeToken)
         );
     }
 
@@ -262,61 +345,262 @@ contract DropFactoryTest is Test {
         uint64 atMin = uint64(block.timestamp + factory.MIN_DURATION());
         vm.prank(operator);
         address drop = factory.createDrop(
-            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, atMin, custReg
+            uint8(DropFactory.AirdropType.CSV),
+            address(airdropToken),
+            ROOT,
+            TOTAL,
+            atMin,
+            custReg,
+            address(feeToken)
         );
         assertTrue(drop != address(0));
     }
 
-    function test_createDrop_revertsWhenFeeSetButTokenUnset() public {
-        // Deploy a factory whose fee token is zero, then set a non-zero fee.
-        DropFactory f = new DropFactory(admin, IERC20(address(0)), address(opReg), zkFactory, treasury);
-        vm.prank(admin);
-        f.setFee(uint8(DropFactory.AirdropType.CSV), CSV_FEE);
-
+    function test_createDrop_revertsOnEoaAirdropToken() public {
+        // EOA airdrop token is rejected by the contract check, which runs before the tier guard.
         _verifyOperator(operator);
-        airdropToken.mint(operator, TOTAL);
         vm.prank(operator);
-        airdropToken.approve(address(f), TOTAL);
-
-        vm.prank(operator);
-        vm.expectRevert(DropFactory.FeeTokenNotSet.selector);
-        f.createDrop(
-            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, deadline, custReg
+        vm.expectRevert(DropFactory.NotAContract.selector);
+        factory.createDrop(
+            uint8(DropFactory.AirdropType.CSV),
+            makeAddr("eoa"),
+            ROOT,
+            TOTAL,
+            deadline,
+            custReg,
+            address(feeToken)
         );
     }
 
-    // -- per-type fee accrual --------------------------------------------
+    // -- createDrop: fee branches ----------------------------------------
 
-    function test_feeOf_perTypeAndAccrual() public {
-        uint256 snapFee = 25 ether;
-        vm.prank(admin);
-        factory.setFee(uint8(DropFactory.AirdropType.ONCHAIN_SNAPSHOT), snapFee);
-
-        assertEq(factory.feeOf(uint8(DropFactory.AirdropType.CSV)), CSV_FEE);
-        assertEq(factory.feeOf(uint8(DropFactory.AirdropType.ONCHAIN_SNAPSHOT)), snapFee);
-        assertEq(factory.feeOf(uint8(DropFactory.AirdropType.SOCIAL)), 0);
-
+    function test_createDrop_erc20_revertsWhenEthSent() public {
         _verifyOperator(operator);
-        // One CSV drop + one SNAPSHOT drop → vault should hold both fees.
         _fund(operator, CSV_FEE, TOTAL);
-        _createCsv(operator);
-
-        _fund(operator, snapFee, TOTAL);
-        _create(uint8(DropFactory.AirdropType.ONCHAIN_SNAPSHOT), operator);
-
-        assertEq(factory.collectedFees(address(feeToken)), CSV_FEE + snapFee);
+        vm.deal(operator, 1 ether);
+        vm.prank(operator);
+        vm.expectRevert(DropFactory.IncorrectFee.selector);
+        factory.createDrop{ value: 1 }(
+            uint8(DropFactory.AirdropType.CSV),
+            address(airdropToken),
+            ROOT,
+            TOTAL,
+            deadline,
+            custReg,
+            address(feeToken)
+        );
     }
 
-    // -- admin: access control -------------------------------------------
+    function test_createDrop_erc20_revertsWhenFeeNotConfigured() public {
+        // A registered airdrop token but an unpriced fee token (SOCIAL has no ERC20 price).
+        _verifyOperator(operator);
+        _fund(operator, CSV_FEE, TOTAL);
+        vm.prank(operator);
+        vm.expectRevert(DropFactory.FeeNotConfigured.selector);
+        factory.createDrop(
+            uint8(DropFactory.AirdropType.SOCIAL),
+            address(airdropToken),
+            ROOT,
+            TOTAL,
+            deadline,
+            custReg,
+            address(feeToken)
+        );
+    }
+
+    function test_createDrop_eth_revertsOnWrongValue() public {
+        _verifyOperator(operator);
+        airdropToken.mint(operator, TOTAL);
+        vm.prank(operator);
+        airdropToken.approve(address(factory), TOTAL);
+        vm.deal(operator, 1 ether);
+        vm.prank(operator);
+        vm.expectRevert(DropFactory.IncorrectFee.selector);
+        factory.createDrop{ value: ETH_FEE - 1 }(
+            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, deadline, custReg, ETH
+        );
+    }
+
+    function test_createDrop_revertsOnFeeOnTransferAirdropToken() public {
+        MockFeeOnTransferERC20 fot = new MockFeeOnTransferERC20("Tax", "TAX", 100);
+        vm.prank(admin);
+        factory.setOfficialToken(address(fot), true);
+        _verifyOperator(operator);
+        fot.mint(operator, TOTAL);
+        vm.prank(operator);
+        fot.approve(address(factory), TOTAL);
+        // SOCIAL + ETH (value 0) isolates the airdrop-funding receipt check.
+        vm.prank(operator);
+        vm.expectRevert(DropFactory.IncorrectAmountReceived.selector);
+        factory.createDrop(
+            uint8(DropFactory.AirdropType.SOCIAL), address(fot), ROOT, TOTAL, deadline, custReg, ETH
+        );
+    }
+
+    function test_createDrop_revertsOnFeeOnTransferFeeToken() public {
+        MockFeeOnTransferERC20 fot = new MockFeeOnTransferERC20("TaxFee", "TXF", 50);
+        vm.prank(admin);
+        factory.setFee(address(fot), uint8(DropFactory.AirdropType.CSV), CSV_FEE);
+
+        _verifyOperator(operator);
+        fot.mint(operator, CSV_FEE);
+        airdropToken.mint(operator, TOTAL);
+        vm.startPrank(operator);
+        fot.approve(address(factory), CSV_FEE);
+        airdropToken.approve(address(factory), TOTAL);
+        vm.expectRevert(DropFactory.IncorrectAmountReceived.selector);
+        factory.createDrop(
+            uint8(DropFactory.AirdropType.CSV),
+            address(airdropToken),
+            ROOT,
+            TOTAL,
+            deadline,
+            custReg,
+            address(fot)
+        );
+        vm.stopPrank();
+    }
+
+    // -- fees: 2D accrual & views ----------------------------------------
+
+    function test_feeOf_perFeeTokenAndType() public view {
+        assertEq(factory.feeOf(address(feeToken), uint8(DropFactory.AirdropType.CSV)), CSV_FEE);
+        assertEq(factory.feeOf(ETH, uint8(DropFactory.AirdropType.CSV)), ETH_FEE);
+        assertEq(factory.feeOf(address(feeToken), uint8(DropFactory.AirdropType.SOCIAL)), 0);
+    }
+
+    function test_collectedFees_keyedByFeeToken() public {
+        _verifyOperator(operator);
+        // ERC20-paid drop
+        _fund(operator, CSV_FEE, TOTAL);
+        _createCsv(operator);
+        // ETH-paid drop
+        airdropToken.mint(operator, TOTAL);
+        vm.prank(operator);
+        airdropToken.approve(address(factory), TOTAL);
+        vm.deal(operator, ETH_FEE);
+        vm.prank(operator);
+        factory.createDrop{ value: ETH_FEE }(
+            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, deadline, custReg, ETH
+        );
+
+        assertEq(factory.collectedFees(address(feeToken)), CSV_FEE);
+        assertEq(factory.collectedFees(ETH), ETH_FEE);
+    }
+
+    function test_setFee_onlyOwner() public {
+        vm.prank(operator);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, operator));
+        factory.setFee(address(feeToken), uint8(DropFactory.AirdropType.CSV), 1);
+    }
+
+    // -- token registry --------------------------------------------------
+
+    function test_addAllowedToken_byVerifiedOperator_setsCommunity() public {
+        MockERC20 t = new MockERC20("T", "T", 18);
+        _verifyOperator(operator);
+        vm.expectEmit(true, true, false, true, address(factory));
+        emit AllowedTokenSet(address(t), DropFactory.TokenTier.COMMUNITY, operator);
+        vm.prank(operator);
+        factory.addAllowedToken(address(t));
+        assertEq(uint8(factory.tokenTier(address(t))), uint8(DropFactory.TokenTier.COMMUNITY));
+        assertTrue(factory.isAllowed(address(t)));
+    }
+
+    function test_addAllowedToken_revertsWhenOperatorUnverified() public {
+        MockERC20 t = new MockERC20("T", "T", 18);
+        vm.prank(operator);
+        vm.expectRevert(DropFactory.OperatorNotVerified.selector);
+        factory.addAllowedToken(address(t));
+    }
+
+    function test_addAllowedToken_revertsOnEoaToken() public {
+        _verifyOperator(operator);
+        vm.prank(operator);
+        vm.expectRevert(DropFactory.NotAContract.selector);
+        factory.addAllowedToken(makeAddr("eoa"));
+    }
+
+    function test_addAllowedToken_doesNotDowngradeOfficial() public {
+        // airdropToken is OFFICIAL from setUp
+        _verifyOperator(operator);
+        vm.prank(operator);
+        factory.addAllowedToken(address(airdropToken));
+        assertEq(uint8(factory.tokenTier(address(airdropToken))), uint8(DropFactory.TokenTier.OFFICIAL));
+    }
+
+    function test_addAllowedToken_idempotentNoopSkipsGates() public {
+        MockERC20 t = new MockERC20("T", "T", 18);
+        _verifyOperator(operator);
+        vm.prank(operator);
+        factory.addAllowedToken(address(t));
+        // Re-add by an unverified stranger is a no-op (gates skipped), no revert.
+        vm.prank(makeAddr("stranger"));
+        factory.addAllowedToken(address(t));
+        assertEq(uint8(factory.tokenTier(address(t))), uint8(DropFactory.TokenTier.COMMUNITY));
+    }
+
+    function test_setOfficialToken_onlyOwner() public {
+        vm.prank(operator);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, operator));
+        factory.setOfficialToken(address(airdropToken), true);
+    }
+
+    function test_setOfficialToken_setsOfficialAndRequiresContract() public {
+        MockERC20 t = new MockERC20("T", "T", 18);
+        vm.startPrank(admin);
+        vm.expectRevert(DropFactory.NotAContract.selector);
+        factory.setOfficialToken(makeAddr("eoa"), true);
+        factory.setOfficialToken(address(t), true);
+        vm.stopPrank();
+        assertEq(uint8(factory.tokenTier(address(t))), uint8(DropFactory.TokenTier.OFFICIAL));
+    }
+
+    function test_setOfficialToken_redundantOfficialIsNoop() public {
+        vm.startPrank(admin);
+        factory.setOfficialToken(address(airdropToken), true); // already OFFICIAL from setUp
+        vm.stopPrank();
+        assertEq(uint8(factory.tokenTier(address(airdropToken))), uint8(DropFactory.TokenTier.OFFICIAL));
+    }
+
+    function test_setOfficialToken_unsetDemotesToCommunity() public {
+        vm.prank(admin);
+        factory.setOfficialToken(address(airdropToken), false);
+        assertEq(uint8(factory.tokenTier(address(airdropToken))), uint8(DropFactory.TokenTier.COMMUNITY));
+    }
+
+    function test_setOfficialToken_unsetOnNonOfficialIsNoop() public {
+        MockERC20 t = new MockERC20("T", "T", 18);
+        vm.prank(admin);
+        factory.setOfficialToken(address(t), false);
+        assertEq(uint8(factory.tokenTier(address(t))), uint8(DropFactory.TokenTier.NONE));
+    }
+
+    function test_removeAllowedToken_onlyOwnerSetsNone() public {
+        vm.prank(operator);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, operator));
+        factory.removeAllowedToken(address(airdropToken));
+
+        vm.prank(admin);
+        factory.removeAllowedToken(address(airdropToken));
+        assertEq(uint8(factory.tokenTier(address(airdropToken))), uint8(DropFactory.TokenTier.NONE));
+        assertFalse(factory.isAllowed(address(airdropToken)));
+    }
+
+    function test_removeAllowedToken_noopWhenNone() public {
+        MockERC20 t = new MockERC20("T", "T", 18);
+        vm.prank(admin);
+        factory.removeAllowedToken(address(t)); // already NONE → no-op
+        assertEq(uint8(factory.tokenTier(address(t))), uint8(DropFactory.TokenTier.NONE));
+    }
+
+    // -- admin: access control & validation ------------------------------
 
     function test_onlyOwner_setters() public {
         bytes memory denied = abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, operator);
-
         vm.startPrank(operator);
         vm.expectRevert(denied);
-        factory.setFee(uint8(DropFactory.AirdropType.CSV), 1);
-        vm.expectRevert(denied);
-        factory.setFeeToken(IERC20(address(feeToken)));
+        factory.setFee(address(feeToken), uint8(DropFactory.AirdropType.CSV), 1);
         vm.expectRevert(denied);
         factory.setOperatorRegistry(address(opReg));
         vm.expectRevert(denied);
@@ -339,17 +623,25 @@ contract DropFactoryTest is Test {
         vm.stopPrank();
     }
 
-    function test_setFeeToken_updatesToken() public {
-        MockERC20 newFee = new MockERC20("Fee2", "FEE2", 18);
+    function test_setOperatorRegistry_takesEffect() public {
+        MockIdentityRegistry newReg = new MockIdentityRegistry();
         vm.prank(admin);
-        factory.setFeeToken(IERC20(address(newFee)));
-        assertEq(address(factory.feeToken()), address(newFee));
-    }
+        factory.setOperatorRegistry(address(newReg));
+        assertEq(factory.operatorRegistry(), address(newReg));
 
-    function test_setFeeToken_allowsZero() public {
-        vm.prank(admin);
-        factory.setFeeToken(IERC20(address(0)));
-        assertEq(address(factory.feeToken()), address(0));
+        _verifyOperator(operator); // verified on OLD registry only
+        _fund(operator, CSV_FEE, TOTAL);
+        vm.prank(operator);
+        vm.expectRevert(DropFactory.OperatorNotVerified.selector);
+        factory.createDrop(
+            uint8(DropFactory.AirdropType.CSV),
+            address(airdropToken),
+            ROOT,
+            TOTAL,
+            deadline,
+            custReg,
+            address(feeToken)
+        );
     }
 
     function test_setZkFactory_updatesFactory() public {
@@ -357,222 +649,6 @@ contract DropFactoryTest is Test {
         vm.prank(admin);
         factory.setZkFactory(newZk);
         assertEq(address(factory.zkFactory()), address(newZk));
-    }
-
-    function test_setOperatorRegistry_takesEffect() public {
-        MockIdentityRegistry newReg = new MockIdentityRegistry();
-        vm.prank(admin);
-        factory.setOperatorRegistry(address(newReg));
-        assertEq(factory.operatorRegistry(), address(newReg));
-
-        // Verified on the OLD registry only → now rejected.
-        _verifyOperator(operator);
-        _fund(operator, CSV_FEE, TOTAL);
-        vm.prank(operator);
-        vm.expectRevert(DropFactory.OperatorNotVerified.selector);
-        factory.createDrop(
-            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, deadline, custReg
-        );
-    }
-
-    // -- token registry (W18a) -------------------------------------------
-
-    event AllowedTokenSet(address indexed token, DropFactory.TokenTier tier, address indexed caller);
-
-    function test_addAllowedToken_byVerifiedOperator_setsCommunity() public {
-        _verifyOperator(operator);
-        // AllowedTokenSet indexes token (topic1) and caller (topic2); tier is data.
-        vm.expectEmit(true, true, false, true, address(factory));
-        emit AllowedTokenSet(address(airdropToken), DropFactory.TokenTier.COMMUNITY, operator);
-        vm.prank(operator);
-        factory.addAllowedToken(address(airdropToken));
-
-        assertEq(uint8(factory.tokenTier(address(airdropToken))), uint8(DropFactory.TokenTier.COMMUNITY));
-        assertTrue(factory.isAllowed(address(airdropToken)));
-    }
-
-    function test_addAllowedToken_revertsWhenOperatorUnverified() public {
-        vm.prank(operator); // not verified
-        vm.expectRevert(DropFactory.OperatorNotVerified.selector);
-        factory.addAllowedToken(address(airdropToken));
-    }
-
-    function test_addAllowedToken_revertsOnEoaToken() public {
-        _verifyOperator(operator);
-        vm.prank(operator);
-        vm.expectRevert(DropFactory.NotAContract.selector);
-        factory.addAllowedToken(makeAddr("eoa"));
-    }
-
-    function test_addAllowedToken_doesNotDowngradeOfficial() public {
-        vm.prank(admin);
-        factory.setOfficialToken(address(airdropToken), true);
-
-        _verifyOperator(operator);
-        vm.prank(operator);
-        factory.addAllowedToken(address(airdropToken)); // must keep OFFICIAL
-
-        assertEq(uint8(factory.tokenTier(address(airdropToken))), uint8(DropFactory.TokenTier.OFFICIAL));
-    }
-
-    function test_addAllowedToken_idempotentNoopSkipsGates() public {
-        _verifyOperator(operator);
-        vm.prank(operator);
-        factory.addAllowedToken(address(airdropToken)); // COMMUNITY
-
-        // Re-adding an already-registered token is a no-op and skips the gates,
-        // so even an unverified caller does not revert and the tier is unchanged.
-        vm.prank(makeAddr("stranger"));
-        factory.addAllowedToken(address(airdropToken));
-        assertEq(uint8(factory.tokenTier(address(airdropToken))), uint8(DropFactory.TokenTier.COMMUNITY));
-    }
-
-    function test_setOfficialToken_redundantOfficialIsNoop() public {
-        vm.startPrank(admin);
-        factory.setOfficialToken(address(airdropToken), true);
-        factory.setOfficialToken(address(airdropToken), true); // no-op, no re-write/event
-        vm.stopPrank();
-        assertEq(uint8(factory.tokenTier(address(airdropToken))), uint8(DropFactory.TokenTier.OFFICIAL));
-    }
-
-    function test_setOfficialToken_onlyOwner() public {
-        vm.prank(operator);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, operator));
-        factory.setOfficialToken(address(airdropToken), true);
-    }
-
-    function test_setOfficialToken_setsOfficialAndRequiresContract() public {
-        vm.startPrank(admin);
-        vm.expectRevert(DropFactory.NotAContract.selector);
-        factory.setOfficialToken(makeAddr("eoa"), true);
-
-        factory.setOfficialToken(address(airdropToken), true);
-        vm.stopPrank();
-        assertEq(uint8(factory.tokenTier(address(airdropToken))), uint8(DropFactory.TokenTier.OFFICIAL));
-    }
-
-    function test_setOfficialToken_unsetDemotesToCommunity() public {
-        vm.startPrank(admin);
-        factory.setOfficialToken(address(airdropToken), true);
-        factory.setOfficialToken(address(airdropToken), false);
-        vm.stopPrank();
-        assertEq(uint8(factory.tokenTier(address(airdropToken))), uint8(DropFactory.TokenTier.COMMUNITY));
-    }
-
-    function test_setOfficialToken_unsetOnNonOfficialIsNoop() public {
-        // never registered → unset leaves it NONE
-        vm.prank(admin);
-        factory.setOfficialToken(address(airdropToken), false);
-        assertEq(uint8(factory.tokenTier(address(airdropToken))), uint8(DropFactory.TokenTier.NONE));
-    }
-
-    function test_removeAllowedToken_onlyOwnerSetsNone() public {
-        _verifyOperator(operator);
-        vm.prank(operator);
-        factory.addAllowedToken(address(airdropToken));
-
-        vm.prank(operator);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, operator));
-        factory.removeAllowedToken(address(airdropToken));
-
-        vm.prank(admin);
-        factory.removeAllowedToken(address(airdropToken));
-        assertEq(uint8(factory.tokenTier(address(airdropToken))), uint8(DropFactory.TokenTier.NONE));
-        assertFalse(factory.isAllowed(address(airdropToken)));
-    }
-
-    function test_createDrop_stillWorksWithoutRegistration() public {
-        // W18a is non-destructive: createDrop does not yet require a registered token.
-        _verifyOperator(operator);
-        _fund(operator, CSV_FEE, TOTAL);
-        address drop = _createCsv(operator);
-        assertTrue(drop != address(0));
-        assertEq(uint8(factory.tokenTier(address(airdropToken))), uint8(DropFactory.TokenTier.NONE));
-    }
-
-    // -- exact-receipt guard (IncorrectAmountReceived) -------------------
-
-    function test_createDrop_revertsOnFeeOnTransferAirdropToken() public {
-        MockFeeOnTransferERC20 fot = new MockFeeOnTransferERC20("Tax", "TAX", 100); // 1% transfer fee
-        _verifyOperator(operator);
-        fot.mint(operator, TOTAL);
-        vm.prank(operator);
-        fot.approve(address(factory), TOTAL);
-
-        // SOCIAL fee is 0, so this isolates the airdrop-funding receipt check.
-        vm.prank(operator);
-        vm.expectRevert(DropFactory.IncorrectAmountReceived.selector);
-        factory.createDrop(
-            uint8(DropFactory.AirdropType.SOCIAL), address(fot), ROOT, TOTAL, deadline, custReg
-        );
-    }
-
-    function test_createDrop_revertsOnFeeOnTransferFeeToken() public {
-        MockFeeOnTransferERC20 fot = new MockFeeOnTransferERC20("TaxFee", "TXF", 50); // 0.5%
-        DropFactory f = new DropFactory(admin, IERC20(address(fot)), address(opReg), zkFactory, treasury);
-        vm.prank(admin);
-        f.setFee(uint8(DropFactory.AirdropType.CSV), CSV_FEE);
-
-        _verifyOperator(operator);
-        fot.mint(operator, CSV_FEE);
-        airdropToken.mint(operator, TOTAL);
-        vm.startPrank(operator);
-        fot.approve(address(f), CSV_FEE);
-        airdropToken.approve(address(f), TOTAL);
-        vm.expectRevert(DropFactory.IncorrectAmountReceived.selector);
-        f.createDrop(
-            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, deadline, custReg
-        );
-        vm.stopPrank();
-    }
-
-    // -- contract-address validation (NotAContract) ----------------------
-
-    function test_constructor_revertsOnEoaOperatorRegistry() public {
-        address eoa = makeAddr("eoa");
-        vm.expectRevert(DropFactory.NotAContract.selector);
-        new DropFactory(admin, IERC20(address(feeToken)), eoa, zkFactory, treasury);
-    }
-
-    function test_constructor_revertsOnEoaZkFactory() public {
-        address eoa = makeAddr("eoa");
-        vm.expectRevert(DropFactory.NotAContract.selector);
-        new DropFactory(admin, IERC20(address(feeToken)), address(opReg), IRegistryFactoryLike(eoa), treasury);
-    }
-
-    function test_constructor_revertsOnEoaFeeToken() public {
-        address eoa = makeAddr("eoa");
-        vm.expectRevert(DropFactory.NotAContract.selector);
-        new DropFactory(admin, IERC20(eoa), address(opReg), zkFactory, treasury);
-    }
-
-    function test_constructor_allowsZeroFeeToken() public {
-        // address(0) fee token is permitted (valid only when all fees stay 0).
-        DropFactory f = new DropFactory(admin, IERC20(address(0)), address(opReg), zkFactory, treasury);
-        assertEq(address(f.feeToken()), address(0));
-    }
-
-    function test_constructor_revertsOnZeroOperatorRegistry() public {
-        vm.expectRevert(DropFactory.InvalidAddress.selector);
-        new DropFactory(admin, IERC20(address(feeToken)), address(0), zkFactory, treasury);
-    }
-
-    function test_constructor_revertsOnZeroZkFactory() public {
-        vm.expectRevert(DropFactory.InvalidAddress.selector);
-        new DropFactory(
-            admin, IERC20(address(feeToken)), address(opReg), IRegistryFactoryLike(address(0)), treasury
-        );
-    }
-
-    function test_constructor_revertsOnZeroTreasury() public {
-        vm.expectRevert(DropFactory.InvalidAddress.selector);
-        new DropFactory(admin, IERC20(address(feeToken)), address(opReg), zkFactory, address(0));
-    }
-
-    function test_setFeeToken_revertsOnEoa() public {
-        vm.prank(admin);
-        vm.expectRevert(DropFactory.NotAContract.selector);
-        factory.setFeeToken(IERC20(makeAddr("eoa")));
     }
 
     function test_setOperatorRegistry_revertsOnEoa() public {
@@ -587,16 +663,34 @@ contract DropFactoryTest is Test {
         factory.setZkFactory(IRegistryFactoryLike(makeAddr("eoa")));
     }
 
-    function test_createDrop_revertsOnEoaAirdropToken() public {
-        _verifyOperator(operator);
-        vm.prank(operator);
-        vm.expectRevert(DropFactory.NotAContract.selector);
-        factory.createDrop(
-            uint8(DropFactory.AirdropType.CSV), makeAddr("eoa"), ROOT, TOTAL, deadline, custReg
-        );
+    // -- constructor -----------------------------------------------------
+
+    function test_constructor_revertsOnZeroOperatorRegistry() public {
+        vm.expectRevert(DropFactory.InvalidAddress.selector);
+        new DropFactory(admin, address(0), zkFactory, treasury);
     }
 
-    // -- withdrawFees: fixed treasury ------------------------------------
+    function test_constructor_revertsOnZeroZkFactory() public {
+        vm.expectRevert(DropFactory.InvalidAddress.selector);
+        new DropFactory(admin, address(opReg), IRegistryFactoryLike(address(0)), treasury);
+    }
+
+    function test_constructor_revertsOnZeroTreasury() public {
+        vm.expectRevert(DropFactory.InvalidAddress.selector);
+        new DropFactory(admin, address(opReg), zkFactory, address(0));
+    }
+
+    function test_constructor_revertsOnEoaOperatorRegistry() public {
+        vm.expectRevert(DropFactory.NotAContract.selector);
+        new DropFactory(admin, makeAddr("eoa"), zkFactory, treasury);
+    }
+
+    function test_constructor_revertsOnEoaZkFactory() public {
+        vm.expectRevert(DropFactory.NotAContract.selector);
+        new DropFactory(admin, address(opReg), IRegistryFactoryLike(makeAddr("eoa")), treasury);
+    }
+
+    // -- withdrawFees: ERC20 ---------------------------------------------
 
     function test_withdrawFees_toTreasuryOnly() public {
         _verifyOperator(operator);
@@ -605,7 +699,6 @@ contract DropFactoryTest is Test {
 
         vm.prank(admin);
         factory.withdrawFees(address(feeToken), CSV_FEE);
-
         assertEq(feeToken.balanceOf(treasury), CSV_FEE, "treasury received");
         assertEq(feeToken.balanceOf(address(factory)), 0, "vault drained");
         assertEq(factory.collectedFees(address(feeToken)), 0, "accounting cleared");
@@ -615,7 +708,6 @@ contract DropFactoryTest is Test {
         _verifyOperator(operator);
         _fund(operator, CSV_FEE, TOTAL);
         _createCsv(operator);
-
         vm.prank(admin);
         factory.withdrawFees(address(feeToken), CSV_FEE / 2);
         assertEq(factory.collectedFees(address(feeToken)), CSV_FEE - CSV_FEE / 2);
@@ -626,21 +718,16 @@ contract DropFactoryTest is Test {
         _verifyOperator(operator);
         _fund(operator, CSV_FEE, TOTAL);
         _createCsv(operator);
-
         vm.prank(admin);
         factory.withdrawFees(address(feeToken), 0);
-
-        // Nothing moved, accounting untouched.
         assertEq(factory.collectedFees(address(feeToken)), CSV_FEE);
         assertEq(feeToken.balanceOf(treasury), 0);
-        assertEq(feeToken.balanceOf(address(factory)), CSV_FEE);
     }
 
     function test_withdrawFees_revertsOnOverdraw() public {
         _verifyOperator(operator);
         _fund(operator, CSV_FEE, TOTAL);
         _createCsv(operator);
-
         vm.prank(admin);
         vm.expectRevert(DropFactory.InsufficientCollectedFees.selector);
         factory.withdrawFees(address(feeToken), CSV_FEE + 1);
@@ -650,51 +737,105 @@ contract DropFactoryTest is Test {
         _verifyOperator(operator);
         _fund(operator, CSV_FEE, TOTAL);
         _createCsv(operator);
-
         address newTreasury = makeAddr("newTreasury");
         vm.startPrank(admin);
         factory.setTreasury(newTreasury);
         factory.withdrawFees(address(feeToken), CSV_FEE);
         vm.stopPrank();
-
         assertEq(feeToken.balanceOf(newTreasury), CSV_FEE);
         assertEq(feeToken.balanceOf(treasury), 0);
     }
 
-    // -- fuzz ------------------------------------------------------------
+    // -- withdrawFees: ETH -----------------------------------------------
+
+    function test_withdrawFees_eth_toTreasury() public {
+        _verifyOperator(operator);
+        airdropToken.mint(operator, TOTAL);
+        vm.prank(operator);
+        airdropToken.approve(address(factory), TOTAL);
+        vm.deal(operator, ETH_FEE);
+        vm.prank(operator);
+        factory.createDrop{ value: ETH_FEE }(
+            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, deadline, custReg, ETH
+        );
+
+        uint256 before = treasury.balance;
+        vm.prank(admin);
+        factory.withdrawFees(ETH, ETH_FEE);
+        assertEq(treasury.balance - before, ETH_FEE, "treasury got eth");
+        assertEq(factory.collectedFees(ETH), 0);
+        assertEq(address(factory).balance, 0);
+    }
+
+    function test_withdrawFees_eth_revertsWhenTreasuryRejects() public {
+        NoReceive sink = new NoReceive();
+        vm.prank(admin);
+        factory.setTreasury(address(sink));
+
+        _verifyOperator(operator);
+        airdropToken.mint(operator, TOTAL);
+        vm.prank(operator);
+        airdropToken.approve(address(factory), TOTAL);
+        vm.deal(operator, ETH_FEE);
+        vm.prank(operator);
+        factory.createDrop{ value: ETH_FEE }(
+            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, deadline, custReg, ETH
+        );
+
+        vm.prank(admin);
+        vm.expectRevert(DropFactory.EthTransferFailed.selector);
+        factory.withdrawFees(ETH, ETH_FEE);
+    }
+
+    // -- fuzz & invariant-style ------------------------------------------
 
     function testFuzz_feeAccrual(uint96 fee, uint96 total) public {
         vm.assume(total > 0);
         vm.prank(admin);
-        factory.setFee(uint8(DropFactory.AirdropType.CSV), fee);
+        factory.setFee(address(feeToken), uint8(DropFactory.AirdropType.CSV), fee);
 
         _verifyOperator(operator);
+        // ERC20 path requires fee > 0; for fee == 0 use the ETH path instead.
+        if (fee == 0) {
+            airdropToken.mint(operator, total);
+            vm.prank(operator);
+            airdropToken.approve(address(factory), total);
+            vm.prank(operator);
+            address drop = factory.createDrop(
+                uint8(DropFactory.AirdropType.SOCIAL),
+                address(airdropToken),
+                ROOT,
+                total,
+                deadline,
+                custReg,
+                ETH
+            );
+            assertEq(airdropToken.balanceOf(drop), total);
+            return;
+        }
         _fund(operator, fee, total);
-
         vm.prank(operator);
-        address drop = factory.createDrop(
-            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, total, deadline, custReg
+        address drop2 = factory.createDrop(
+            uint8(DropFactory.AirdropType.CSV),
+            address(airdropToken),
+            ROOT,
+            total,
+            deadline,
+            custReg,
+            address(feeToken)
         );
-
-        assertEq(airdropToken.balanceOf(drop), total);
+        assertEq(airdropToken.balanceOf(drop2), total);
         assertEq(factory.collectedFees(address(feeToken)), fee);
-        assertEq(feeToken.balanceOf(address(factory)), fee);
     }
 
-    // -- invariant-style: vault balance == Σfees − Σwithdrawals ----------
-
     function test_vaultConservation_overManyOps() public {
-        vm.prank(admin);
-        factory.setFee(uint8(DropFactory.AirdropType.CSV), CSV_FEE);
         _verifyOperator(operator);
-
         uint256 expected;
         for (uint256 i = 0; i < 5; i++) {
             _fund(operator, CSV_FEE, TOTAL);
             _createCsv(operator);
             expected += CSV_FEE;
         }
-        // withdraw part-way
         vm.prank(admin);
         factory.withdrawFees(address(feeToken), CSV_FEE * 2);
         expected -= CSV_FEE * 2;
