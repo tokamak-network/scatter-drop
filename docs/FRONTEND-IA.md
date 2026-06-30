@@ -148,7 +148,8 @@ Campaign 관리     /manage/[id]     (본인이 createDrop한 캠페인만)
 ### 3.1 생성 마법사 (`/manage/new`) — DESIGN §6
 ```
 Step 0  운영자 신원검증  operatorRegistry.verifiedUntil(me) ≥ now 확인 (미검증 시 차단)
-Step 1  기본 정보   이름·설명·로고·배포 토큰·총량·**시작시간·마감시간**
+Step 1  기본 정보   이름·설명·로고·배포 토큰·**시작시간·마감시간**
+                  · 총량은 입력 안 함 — Step2 명단에서 Σ금액으로 자동 산출(Step4)
                   · 클레임 윈도우 [시작, 마감] 둘 다 입력 (datetime). 검증: 마감>시작, 윈도우≥MIN_DURATION
                   · 배포 토큰: 등록부 picker (OFFICIAL 먼저 → COMMUNITY). 없으면 "+ 토큰 추가"(addAllowedToken)
                   · 고객 CA Registry: 표준(추천) 선택 / 목록 선택 / **주소 직접 입력** (셋 중 하나, 필수)
@@ -168,11 +169,19 @@ Step 2  자격 방식   ○ CSV 업로드                      → type=CSV
    └ 규칙(온체인 검증) → 조건 빌더(보유≥N·스테이킹≥X·NFT·AND/OR) [GatedDrop, 후속]
    └ 소셜 → 퀘스트 설정(트위터/디스코드)
 Step 3  배포 방식   ○ 즉시  ○ 베스팅(cliff+linear)  ○ 선착순
-Step 4  미리보기    자격자 수·총 배분량 → Merkle 트리 생성
-                    + 결제 요약: 종류별 수수료(feeOf[type]) + 예치 토큰량
-Step 5  생성 & 결제 납부 토큰 선택(ETH / TON …) — 토큰별 가격 표시(TON 할인)
-                    선택 토큰의 feeOf[token][type] 지불(ETH=msg.value/ERC20=approve) + 배포 토큰 예치 → createDrop
+Step 4  명단 확정(오프체인)  ← 트랜잭션 없음
+                    packages/merkle buildDrop → merkleRoot + **총량=Σ금액(자동)** + proofs.json
+                    미리보기: 자격자 수 · 총 배분량 · 윈도우 · (납부토큰별) 수수료
+Step 5  자금 예치 & 생성(온체인)  ← 가이드형 트랜잭션 시퀀스
+                    1) 납부 토큰 선택(ETH / TON …) — getFeeOf로 토큰별 가격 표시(TON 할인)
+                    2) approve 배포토큰(=총량)  [필수]
+                    3) ERC20 수수료면 approve feeToken / ETH면 value=수수료  [자동 분기]
+                    4) createDrop(type, airdropToken, root, 총량, start, deadline, identityRegistry, feeToken)
+                       = 수수료 볼트 적립 + 배포토큰 총량 예치 + MerkleDrop 배포 (한 tx)
+                    · 각 단계 상태 표시(approve 1/2 … createDrop pending) + 안내 문구
 ```
+> 흐름: ① 오프체인 머클트리(root 산출, 트랜잭션 X) → ② 온체인 createDrop 한 번(앞 approve 1~2건).
+>       root는 별도 등록 트랜잭션이 아니라 createDrop **인자**로 들어감.
 > v1 핵심 경로: **CSV → Merkle → 즉시 배포.** 나머지는 단계적 노출.
 > 수수료는 **선택한 자격 방식(종류)에 따라 달라짐** — Step 2에서 즉시 안내.
 
