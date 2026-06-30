@@ -6,6 +6,7 @@ const nextConfig = {
   transpilePackages: [
     "@tokamak-network/scatter-drop-sdk",
     "@tokamak-network/scatter-drop-merkle",
+    "@tokamak-network/scatter-drop-snapshot",
   ],
   webpack: (config) => {
     // The SDK is authored in NodeNext style with explicit `.js` extensions in

@@ -18,7 +18,9 @@ import {
 import { ArrowLeft, ArrowRight, Check, Download } from "lucide-react";
 import Link from "next/link";
 import { ConnectGate } from "@/components/ConnectGate";
+import { SnapshotBuilder } from "@/components/SnapshotBuilder";
 import { TxButton } from "@/components/TxButton";
+import type { SnapshotManifest } from "@/lib/useSnapshotJob";
 import {
   deploymentIssue,
   useDeployment,
@@ -119,9 +121,15 @@ export default function NewCampaignPage() {
     return () => clearTimeout(t);
   }, [csv]);
   const { manifest, error: csvError } = parsed;
-  const recipientCount = manifest?.count ?? 0;
-  const totalAmount = manifest ? BigInt(manifest.totalAmount) : 0n;
-  const merkleRoot = (manifest?.merkleRoot ?? `0x${"0".repeat(64)}`) as Hex;
+
+  // Snapshot mode (ONCHAIN_SNAPSHOT) sources recipients from a server-side
+  // holder scan instead of a pasted CSV.
+  const isSnapshot = type === AirdropType.ONCHAIN_SNAPSHOT;
+  const [snapResult, setSnapResult] = useState<SnapshotManifest | null>(null);
+  const activeManifest = isSnapshot ? snapResult : manifest;
+  const recipientCount = activeManifest?.count ?? 0;
+  const totalAmount = activeManifest ? BigInt(activeManifest.totalAmount) : 0n;
+  const merkleRoot = (activeManifest?.merkleRoot ?? `0x${"0".repeat(64)}`) as Hex;
 
   // Token decimals for human-readable display (amounts in CSV are base units).
   const { data: decimals } = useErc20Decimals(
@@ -141,7 +149,7 @@ export default function NewCampaignPage() {
     ? 0
     : Math.floor(deadlineParsed / 1000);
 
-  const recipientsValid = manifest !== null;
+  const recipientsValid = activeManifest !== null;
   // Deadline must be in the future and after the start (mirrors on-chain checks;
   // MIN_DURATION is still enforced on-chain).
   const nowSec = Math.floor(Date.now() / 1000);
@@ -378,33 +386,39 @@ export default function NewCampaignPage() {
                 <h2 className="text-lg font-bold text-slate-200">
                   Recipients &amp; window
                 </h2>
-                <Field label="Recipients CSV (address,amount per line)">
-                  <textarea
-                    className="input font-mono text-xs"
-                    rows={6}
-                    value={csv}
-                    onChange={(e) => setCsv(e.target.value)}
-                    placeholder={"0xabc…,120\n0xdef…,80"}
-                  />
-                  <div className="flex items-center justify-between">
-                    <span
-                      className={`text-xs ${csvError ? "text-red-500" : "text-slate-500"}`}
-                    >
-                      {csvError
-                        ? csvError
-                        : manifest
-                          ? `${recipientCount} recipients · total ${fmtAmount(totalAmount)} (auto)`
-                          : "Paste address,amount per line (amount in base units)"}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={downloadSampleCsv}
-                      className="text-[11px] text-emerald-600 inline-flex items-center gap-1 hover:underline"
-                    >
-                      <Download className="w-3 h-3" /> Sample CSV
-                    </button>
-                  </div>
-                </Field>
+                {isSnapshot ? (
+                  <Field label="Recipients (on-chain holder snapshot)">
+                    <SnapshotBuilder onResult={setSnapResult} />
+                  </Field>
+                ) : (
+                  <Field label="Recipients CSV (address,amount per line)">
+                    <textarea
+                      className="input font-mono text-xs"
+                      rows={6}
+                      value={csv}
+                      onChange={(e) => setCsv(e.target.value)}
+                      placeholder={"0xabc…,120\n0xdef…,80"}
+                    />
+                    <div className="flex items-center justify-between">
+                      <span
+                        className={`text-xs ${csvError ? "text-red-500" : "text-slate-500"}`}
+                      >
+                        {csvError
+                          ? csvError
+                          : manifest
+                            ? `${recipientCount} recipients · total ${fmtAmount(totalAmount)} (auto)`
+                            : "Paste address,amount per line (amount in base units)"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={downloadSampleCsv}
+                        className="text-[11px] text-emerald-600 inline-flex items-center gap-1 hover:underline"
+                      >
+                        <Download className="w-3 h-3" /> Sample CSV
+                      </button>
+                    </div>
+                  </Field>
+                )}
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Start (optional)">
                     <input
