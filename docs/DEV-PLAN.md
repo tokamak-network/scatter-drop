@@ -24,7 +24,7 @@
 | M | 이름 | 산출물 | 의존 |
 |---|------|--------|------|
 | **M0** | 모노레포 부트스트랩 | Foundry·pnpm·CI 골격 | — |
-| **M1** | merkle 패키지 | CSV→tree/root/proofs 라이브러리 + 테스트 | M0 |
+| **M1** | merkle 패키지 + SDK 골격 | CSV→tree/root/proofs 라이브러리 + `@tokamak-network/scatter-drop-sdk` 골격 | M0 |
 | **M2** | 코어 컨트랙트 | DropFactory + MerkleDrop + 신원게이트 + 볼트 | M0 |
 | **M3** | 배포·시드 스크립트 | anvil 로컬 E2E(zk-X509 레지스트리 연동) | M1·M2 |
 | **M4** | 프론트 기반 | Next.js + wagmi/viem + 지갑연결 + 라우팅 | M0 |
@@ -79,11 +79,31 @@ interface IRegistryFactoryLike {         // zk-X509 RegistryFactory
 
 ---
 
-## 3. merkle 패키지 상세 (M1)
+## 3. merkle 패키지 + SDK (M1)
+
+### 3.1 packages/merkle
 - 입력 `(address, amount)[]` (CSV 파싱·체크섬·중복·합계 검증).
 - 출력: `merkleRoot`, `proofs.json`(index·account·amount·proof), `totalAmount`.
 - 컨트랙트와 **leaf 인코딩·정렬 규칙 동일** 보장(교차 테스트로 고정).
-- 테스트: 알려진 벡터, 대량(수만) 성능, 컨트랙트 검증과 라운드트립.
+  - leaf = `keccak256(abi.encodePacked(index, account, amount))`, OZ MerkleProof 호환 정렬 페어 해시.
+- 테스트(vitest): 알려진 벡터, 대량(수만) 성능, 컨트랙트 검증과 라운드트립.
+
+### 3.2 packages/sdk — `@tokamak-network/scatter-drop-sdk` (scatter-dex 패턴 차용)
+개발자 제공용 1급 패키지. ESM + subpath exports. 내부 프론트(apps/web)도 이걸 소비(dogfooding).
+```
+src/
+ ├ index.ts
+ ├ core/      viem 기반 DropFactory/MerkleDrop 타입드 클라이언트 (M2 이후 채움)
+ ├ merkle/    packages/merkle 재노출 (트리/proof 생성)
+ ├ identity/  zk-X509 헬퍼 — verifiedUntil(addr)≥now, isRegistry(addr) 체크
+ ├ claim/     자격·proof 조회 + claim 콜데이터 빌더
+ ├ react/     wagmi 훅 (useCampaign/useIdentityGate/useClaim) — react optional peer
+ ├ types/     AirdropType 등 공유 타입
+ └ util/
+```
+- exports 맵: `.`, `./core`, `./merkle`, `./identity`, `./claim`, `./react`, `./types`, `./util`.
+- 의존: viem(권장) 또는 ethers v6. react는 optional peerDependency.
+- M1에선 **골격 + merkle/types/util**만 채우고, core/claim/identity/react는 M2·M5에서 점증.
 
 ---
 
