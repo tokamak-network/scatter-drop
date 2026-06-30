@@ -37,7 +37,7 @@ export interface Campaign {
   deadline: string;
   /** Claim window start as unix seconds (0 = open immediately). */
   startTimeUnix: bigint;
-  /** Claim window deadline as unix seconds (for isClaimWindowOpen). */
+  /** Claim window deadline as unix seconds. */
   deadlineUnix: bigint;
   identityRegistry: Address;
   /** Curated label for the registry, e.g. "KR-NPKI". */

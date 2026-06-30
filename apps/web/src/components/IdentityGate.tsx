@@ -59,7 +59,7 @@ export function IdentityGate({
             className="inline-block bg-slate-100 hover:bg-white text-slate-950 font-semibold px-4 py-2 rounded text-xs transition"
             href="https://github.com/tokamak-network"
             target="_blank"
-            rel="noreferrer"
+            rel="noopener noreferrer"
           >
             Verify with zk-X509 →
           </a>
