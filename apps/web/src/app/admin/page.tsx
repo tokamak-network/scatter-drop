@@ -20,6 +20,7 @@ import {
   deploymentIssue,
   useCollectedFees,
   useDeployment,
+  useErc20Decimals,
   useFeeOf,
   useTokenTier,
 } from "@/lib/contracts";
@@ -49,7 +50,7 @@ export default function AdminPage() {
   const factory = dep.dropFactory;
   const feeTokens: FeeToken[] = [
     { addr: NATIVE_FEE_TOKEN, label: "ETH" },
-    ...(dep.feeToken ? [{ addr: dep.feeToken, label: "ERC-20 (TON)" }] : []),
+    ...(dep.feeToken ? [{ addr: dep.feeToken, label: "ERC-20 fee token" }] : []),
   ];
 
   return (
@@ -169,10 +170,13 @@ function FeeCell({
   type: AirdropType;
 }) {
   const { data: fee, refetch } = useFeeOf(factory, feeToken, type);
+  const isEth = feeToken === NATIVE_FEE_TOKEN;
+  const { data: erc20Decimals } = useErc20Decimals(isEth ? undefined : feeToken);
+  const dp = isEth ? 18 : (erc20Decimals ?? 18);
   const [amount, setAmount] = useState("");
-  const valid = isPositiveDecimal(amount);
+  const valid = isPositiveDecimal(amount, dp);
   const req = valid
-    ? buildSetFeeRequest(factory, feeToken, type, parseUnits(amount, 18))
+    ? buildSetFeeRequest(factory, feeToken, type, parseUnits(amount, dp))
     : null;
 
   return (
@@ -180,7 +184,7 @@ function FeeCell({
       <div className="flex justify-between text-xs">
         <span className="text-slate-300">{airdropTypeLabel(type)}</span>
         <span className="font-mono text-slate-400">
-          {fee === undefined ? "…" : formatUnits(fee, 18)}
+          {fee === undefined ? "…" : formatUnits(fee, dp)}
         </span>
       </div>
       <div className="flex gap-2">
