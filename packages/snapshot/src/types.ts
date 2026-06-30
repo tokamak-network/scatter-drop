@@ -27,8 +27,8 @@ export interface SnapshotParams {
 /** Progress callback payload during a scan. */
 export interface ScanProgress {
   phase: "logs" | "balances";
-  /** Items processed so far in the current phase. */
-  done: number;
+  /** Items processed so far in the current phase (bigint — block numbers can be large). */
+  done: bigint;
   /** Total items in the current phase, if known. */
-  total?: number;
+  total?: bigint;
 }
