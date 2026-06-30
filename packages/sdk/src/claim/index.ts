@@ -47,7 +47,9 @@ export interface CreateDropParams {
   airdropToken: Address;
   merkleRoot: Hex;
   totalAmount: bigint;
-  /** Unix seconds. Must be > now (+ MIN_DURATION enforced on-chain). */
+  /** Unix seconds the claim window opens (≤ now = starts immediately). */
+  startTime: bigint;
+  /** Unix seconds the claim window closes. On-chain: deadline - startTime ≥ MIN_DURATION. */
   deadline: bigint;
   identityRegistry: Address;
   /** Fee payment token. `NATIVE_FEE_TOKEN` (address(0)) = pay the fee in ETH. */
@@ -80,6 +82,7 @@ export function buildCreateDropRequest(factory: Address, params: CreateDropParam
         getAddress(params.airdropToken),
         params.merkleRoot,
         params.totalAmount,
+        params.startTime,
         params.deadline,
         getAddress(params.identityRegistry),
         feeToken,

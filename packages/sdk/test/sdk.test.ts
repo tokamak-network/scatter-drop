@@ -86,6 +86,7 @@ describe("factory / erc20 calldata builders", () => {
       airdropToken: A(2),
       merkleRoot: `0x${"ab".repeat(32)}`,
       totalAmount: 1000n,
+      startTime: 1_800_000_000n,
       deadline: 1_900_000_000n,
       identityRegistry: A(3),
       feeToken: A(9),
@@ -98,8 +99,8 @@ describe("factory / erc20 calldata builders", () => {
     expect(d.args[0]).toBe(AirdropType.CSV);
     expect(d.args[1]).toBe(A(2));
     expect(d.args[3]).toBe(1000n);
-    expect(d.args[5]).toBe(A(3));
-    expect(d.args[6]).toBe(A(9));
+    expect(d.args[6]).toBe(A(3));
+    expect(d.args[7]).toBe(A(9));
   });
 
   it("buildCreateDropRequest sends the fee as value when paid in ETH", () => {
@@ -108,6 +109,7 @@ describe("factory / erc20 calldata builders", () => {
       airdropToken: A(2),
       merkleRoot: `0x${"ab".repeat(32)}`,
       totalAmount: 1000n,
+      startTime: 1_800_000_000n,
       deadline: 1_900_000_000n,
       identityRegistry: A(3),
       feeToken: NATIVE_FEE_TOKEN,
@@ -115,7 +117,7 @@ describe("factory / erc20 calldata builders", () => {
     });
     expect(req.value).toBe(777n);
     const d = decodeFunctionData({ abi: dropFactoryAbi, data: req.data });
-    expect(d.args[6]).toBe(NATIVE_FEE_TOKEN);
+    expect(d.args[7]).toBe(NATIVE_FEE_TOKEN);
   });
 
   it("buildSetFeeRequest encodes (feeToken, type, amount)", () => {
