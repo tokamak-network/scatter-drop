@@ -244,6 +244,29 @@ contract DropFactoryTest is Test {
         );
     }
 
+    function test_createDrop_revertsWhenDeadlineBeforeMinDuration() public {
+        _verifyOperator(operator);
+        _fund(operator, CSV_FEE, TOTAL);
+        // Just under MIN_DURATION in the future.
+        uint64 tooSoon = uint64(block.timestamp + factory.MIN_DURATION() - 1);
+        vm.prank(operator);
+        vm.expectRevert(DropFactory.InvalidDeadline.selector);
+        factory.createDrop(
+            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, tooSoon, custReg
+        );
+    }
+
+    function test_createDrop_succeedsAtExactlyMinDuration() public {
+        _verifyOperator(operator);
+        _fund(operator, CSV_FEE, TOTAL);
+        uint64 atMin = uint64(block.timestamp + factory.MIN_DURATION());
+        vm.prank(operator);
+        address drop = factory.createDrop(
+            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, atMin, custReg
+        );
+        assertTrue(drop != address(0));
+    }
+
     function test_createDrop_revertsWhenFeeSetButTokenUnset() public {
         // Deploy a factory whose fee token is zero, then set a non-zero fee.
         DropFactory f = new DropFactory(admin, IERC20(address(0)), address(opReg), zkFactory, treasury);
