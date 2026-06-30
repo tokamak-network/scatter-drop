@@ -16,9 +16,9 @@
 - 프론트: Next.js (App Router) + wagmi/viem
 - 분배 방식: Merkle Distributor 기본 (온체인 root + proof self-claim)
 - 토큰: ERC-20 (시작점)
-- **신원 게이트: zk-X509 IdentityRegistry (CA 레지스트리) — 모든 캠페인 필수**
+- **신원 게이트: zk-X509 IdentityRegistry (CA 레지스트리) — 고객 게이트는 운영자 선택(옵션)**
   (연동 프로젝트: `/Users/zena/tokamak-projects/zk-X509` — RegistryFactory / IdentityRegistry)
-  신뢰 CA는 레지스트리마다 다름: **국가 PKI 또는 자체 발급 CA** (§4.3).
+  운영자가 캠페인마다 켜거나 끔(미지정=open claim). 켜면 신뢰 CA는 레지스트리마다 다름: **국가 PKI 또는 자체 발급 CA** (§4.3).
 
 ---
 
@@ -54,10 +54,11 @@
 | | (1) 운영자 게이트 | (2) 고객 게이트 |
 |---|---|---|
 | 대상 | 캠페인을 **만드는** 지갑 | 에어드랍을 **받는** 지갑 |
-| CA 레지스트리 | **전역 1개** (운영자 전용) | **캠페인마다** 운영자가 지정 |
+| 필수 여부 | 어드민 전역 정책(on/off) | **운영자 선택 (캠페인마다 켜거나 끔)** |
+| CA 레지스트리 | **전역 1개** (운영자 전용) | **캠페인마다** 운영자가 지정 (또는 미지정=open) |
 | 등록·관리 주체 | **플랫폼 어드민** | 운영자 (생성 시 선택) |
-| 강제 시점 | `createDrop`/`createGatedDrop` | `claim` |
-| 온체인 판정 | `operatorRegistry.verifiedUntil(msg.sender) ≥ now` | `campaign.identityRegistry.verifiedUntil(msg.sender) ≥ now` |
+| 강제 시점 | `createDrop`/`createGatedDrop` | `claim` (게이트 켜진 캠페인만) |
+| 온체인 판정 | `operatorRegistry.verifiedUntil(msg.sender) ≥ now` | `identityRegistry != 0 면` `identityRegistry.verifiedUntil(msg.sender) ≥ now`, `0이면 검증 없음` |
 
 > 두 레지스트리는 별개다. 운영자용 CA(예: 사업자/법인 인증)와 고객용 CA(예: 개인 실명 인증)는
 > 서로 다른 신뢰 CA 집합을 가질 수 있다.
@@ -68,12 +69,14 @@
   미검증 지갑은 `createDrop` 불가.
 - 변경은 어드민만 가능(0/미설정이면 게이트 비활성 — 운영 정책상 비권장).
 
-#### (2) 고객 게이트 — 캠페인마다 운영자 지정
-- 모든 캠페인은 생성 시 **하나의 고객용 IdentityRegistry(`identityRegistry`) 주소**를 필수 지정한다.
-- **불변 규칙(예외 없음):** 에어드랍을 **받는 지갑은 반드시** 그 레지스트리에서
-  사전 신원검증을 마친 지갑이어야 한다. 미검증 지갑은 어떤 경우에도 수령 불가.
-- **수령 지갑 = 신원검증 지갑 (동일성 강제):** claim은 self-claim만 허용하며
-  `msg.sender`(수령자)가 곧 검증 대상이다. 제3자 대납·다른 주소로의 수령 불가.
+#### (2) 고객 게이트 — 캠페인마다 운영자 선택 (켜거나 끔)
+- **운영자 선택:** 생성 시 고객용 IdentityRegistry 주소를 지정하면 게이트 **ON**,
+  미지정(`identityRegistry = address(0)`)이면 게이트 **OFF**(open claim — proof만 있으면 누구나 수령).
+- **게이트 ON일 때(불변):** 받는 지갑은 반드시 그 레지스트리에서 사전 신원검증된 지갑이어야 하며,
+  미검증 지갑은 수령 불가. self-claim만 허용(`msg.sender`=수령자=검증 대상), 대납·타주소 수령 불가.
+- **게이트 OFF일 때:** 신원검증 없이 머클 proof만으로 claim. self-claim 강제는 유지(`account == msg.sender`).
+- 어느 쪽이든 **머클 자격(명단)은 항상 적용** — 게이트는 그 위에 겹치는 선택적 신원 레이어.
+- 트레이드오프: ON = 실명·sybil방지·컴플라이언스 / OFF = 마찰 없는 공개 에어드랍. 운영자가 캠페인 성격에 맞게 선택.
 
 #### 재사용 — 공유 정준(canonical) 레지스트리 (국가 CA가 대표 사례)
 - **표준 IdentityRegistry를 한 번 만들어 전 캠페인이 재사용**한다. 운영자는 자기 레지스트리를
@@ -97,52 +100,52 @@
 
 ---
 
-## 5. 자격(eligibility) 방식 — 캠페인마다 운영자가 선택
+## 5. 자격(eligibility) — 본질은 머클 명단, 명단을 만드는 "유틸리티"가 다양
 
-### 5.1 직접 업로드 (CSV)
-- 운영자가 `(address, amount)` 명단을 직접 업로드
-- 가장 단순. 명단을 정확히 아는 경우
-- → 오프체인에서 Merkle 트리 생성 → MerkleDrop
+**핵심:** 자격 메커니즘은 하나 — `(address, amount)` 명단 → Merkle 트리 → MerkleDrop self-claim.
+"CSV·스냅샷·소셜" 등은 **별개 메커니즘이 아니라 그 명단을 만드는 유틸리티**다. 전부 같은 CSV→머클 경로로 수렴.
+(유일한 예외 = §5.4 GatedDrop: 명단 없이 claim 시 온체인 검증 → 별도 컨트랙트.)
 
-### 5.2 규칙 기반 (온체인 상태) — 두 갈래
-운영자가 주소 명단 대신 **온체인 상태 조건(rule)**을 정의한다.
-조건 예: 토큰 N개 이상 보유 / 스테이킹 금액 ≥ 임계값(WTON·sWTON 등) / 특정 NFT 보유 /
-특정 컨트랙트 상호작용 / 복합 AND·OR (예: "토큰 100개 이상 AND 30일 이상 스테이킹").
-배분량은 고정 또는 보유·스테이킹량 비례로 산정.
+```
+[명단 생성 유틸리티] → (address, amount) CSV → Merkle 트리 → MerkleDrop
+   소스 × 조합 × 배분
+```
 
-| | (A) 스냅샷 방식 | (B) 기간 + 온체인 검증 방식 |
-|---|---|---|
-| 자격 판정 시점 | 과거/특정 블록 스냅샷 (1회 고정) | 운영자가 정한 **기간(claim window)** 내, claim 시 실시간 |
-| 산출 위치 | 오프체인 인덱서가 명단 계산 | 컨트랙트가 claim 시 직접 조건 검증 |
-| 명단 | 사전 확정된 자격자 리스트 | 사전 명단 없음 — 조건 충족자면 누구나 |
-| 컨트랙트 | 기존 **MerkleDrop 재사용** | **별도 GatedDrop** 필요 |
-| 가스 | 저렴(proof 검증만) | 높음(상태 조회+검증) |
-| 특성 | 정적·소급 가능 | 동적·"기간 내 조건 충족"이면 OK |
+### 5.1 명단 생성 유틸리티 (소스)
+| 유틸 | 설명 | v1 |
+|------|------|:---:|
+| **수동 CSV / 붙여넣기** | 운영자가 가진 명단 직접 업로드·입력 | ✅ |
+| **인앱 빌더** | 행 추가 / "N명 균등 X씩" 헬퍼 | ✅ |
+| **ERC-20 홀더 스냅샷** | 블록 N에 토큰 ≥ X 보유자 (RPC 스캔) | ✅ |
+| **NFT 홀더 스냅샷** | 블록 N에 컬렉션(721/1155) 보유자 | 🔜 v1 추가 |
+| 스테이커·LP / 활동(상호작용·거버넌스) / 추첨 | 스테이킹·LP, 컨트랙트 활동, 랜덤 N명 | ⛔ 후속 |
+| 소셜·퀘스트 완료자 | 트위터·디스코드 (백엔드 필요, §5.3) | ⛔ 후속 |
 
-**스냅샷 명단 산출 — v1은 Dune 활용 (자체 인덱서 불필요).**
-"블록 N 기준 토큰 ≥ X 보유자 + 잔액" 같은 명단은 **Dune Analytics**로 뽑는다.
-- 마법사가 입력값(토큰주소·스냅샷블록·최소수량·배분방식 균등/비례)으로 **Dune SQL 쿼리를 생성** →
-  운영자가 Dune에서 실행 → 결과 **CSV 내보내기** → 마법사에 업로드(=CSV 경로로 수렴).
-- 즉 v1 스냅샷 = "Dune 쿼리 생성기 + CSV 임포트"로 충분. 플랫폼 인덱서는 **후속(자동화)**.
-- 비례 배분은 `(주소, 잔액)`에서 `총량 × 잔액/Σ잔액`으로 마법사가 계산.
+### 5.2 조합·배분 (유틸리티 위에 적용)
+- **조합(집합 연산):** **AND / OR**(여러 스냅샷 교집합/합집합) · **제외 목록**(이미 받은 사람·블랙리스트 차집합) — 🔜 v1 추가
+- **병합·중복제거:** 여러 명단 합치고 금액 합산/최대 — 후속
+- **배분:** 균등 ✅ / 비례(보유량×총량/Σ) ✅ / 구간차등·비례+상한 — 후속
 
-→ 두 방식은 용도가 다름.
-   - **(A) 스냅샷**: "과거 특정 블록 기준 홀더에게 보상" — 명단 고정, 소급.
-   - **(B) 기간+조건**: "기간을 열어두고, 그 안에서 온체인 조건만 맞으면 클레임" — 명단 미리 안 만들고
-     조건 충족 여부만 본다. 진행 중 새로 조건 충족한 지갑도 참여 가능.
-   v1에서 어디까지 지원할지는 미결정(아래 11 참고).
+> **스냅샷 = 명단 생성 유틸리티의 한 종류.** RPC 스캔 백엔드(packages/snapshot)가 홀더를 긁어
+> `(주소, 금액)`을 만들면 = 운영자가 CSV 올린 것과 동일. 별도 자격 타입이 아니라 "CSV를 만드는 도구".
+> (AirdropType 라벨 ONCHAIN_SNAPSHOT은 "명단이 스냅샷으로 만들어졌다"는 분석용 표시일 뿐, 메커니즘은 CSV/머클과 동일.)
 
-### 5.3 소셜·태스크 기반 (백엔드 의존)
+### 5.3 소셜·태스크 (백엔드 의존, 후속)
 - 트위터 팔로우·디스코드 가입 등 퀘스트 완료자 (Galxe/Layer3 스타일)
 - 백엔드 + OAuth + sybil 방지 필요
 - → 완료자 명단을 오프체인에서 Merkle 트리로 환원 → MerkleDrop
+
+### 5.4 (유일한 예외) GatedDrop — 명단 없이 claim 시 온체인 검증 [후속]
+- 위 5.1~5.3은 전부 **사전 명단 → 머클**. 반면 "기간을 열어두고 claim 시점의 온체인 상태(보유·스테이킹)를
+  직접 검증"하는 방식은 명단으로 환원되지 않아 **별도 GatedDrop 컨트랙트**가 필요하다.
+- 진행 중 새로 조건 충족한 지갑도 참여 가능. 가스↑(claim 시 상태조회). v1 범위 밖(트랙 C).
 
 ---
 
 ## 6. 캠페인 생성 플로우 (운영자 마법사)
 ```
  1. 기본 정보       이름, 설명, 로고, 배포 토큰, 총량, 마감일
-                   + zk-X509 CA 레지스트리 지정 (필수 — 신원 게이트, §4.3)
+                   + zk-X509 CA 레지스트리 지정 (선택 — 고객 신원 게이트 ON/OFF, §4.3)
  2. 자격 방식 선택   ○ CSV 업로드  ○ 규칙 기반(스냅샷/온체인검증)  ○ 소셜·태스크
        └ CSV       → 파일 업로드 (address, amount)
        └ 규칙       → 조건 빌더(보유 ≥ N, 스테이킹 ≥ X, NFT, AND/OR) + 스냅샷 블록/실시간
@@ -176,12 +179,12 @@ DropFactory (어드민이 수수료방식·feeBps·flatFee, operatorRegistry, al
  │     · type ∈ {CSV, ONCHAIN_SNAPSHOT, SOCIAL}. 수수료 = feeMode별(PERCENT: floor(totalAmount × bpsOf/10000) / FLAT: flatFee[token]), on-top. (§8)
  │     · 클레임 윈도우 [startTime, deadline] — require(deadline > startTime) + (deadline - startTime >= MIN_DURATION) + deadline > now
  │     0a. require(operatorRegistry.verifiedUntil(msg.sender) >= now)  운영자 신원검증 (게이트1)
- │     0b. require(zkFactory.isRegistry[identityRegistry])             정식 고객 CA 레지스트리 검증
+ │     0b. if (identityRegistry != 0) require(zkFactory.isRegistry[identityRegistry])  고객 게이트 ON일 때만 정식 레지스트리 검증 (0=게이트 OFF, open claim)
  │     0c. require(tokenTier[airdropToken] != NONE)                    어드민 허가 토큰만 배포 (§8.7)
  │     1. fee = feeMode(airdropToken)==PERCENT ? totalAmount × bpsOf/10000 : flatFee[token]  (FLAT은 >0 보장, §8)
  │     2. airdropToken.safeTransferFrom(operator, newDrop, totalAmount)   배포 풀(전액)
  │     3. airdropToken.safeTransferFrom(operator, address(this), fee)     수수료 볼트(같은 토큰) → collectedFees[airdropToken]+=fee
- │     4. MerkleDrop 배포 (identityRegistry 주입)
+ │     4. MerkleDrop 배포 (identityRegistry 주입 — 0이면 고객 게이트 OFF, claim 시 신원검증 생략)
  │     (운영자 사전 approve = totalAmount + fee. exact-receipt(_pullExact)로 fee-on-transfer 거부.)
  ├ createGatedDrop(airdropToken, ruleConfig, totalAmount, startTime, deadline, identityRegistry)  온체인 검증
  │     · type = ONCHAIN_GATED. 동일 % 수수료(on-top) + 게이트 + GatedDrop 배포  [후속]
