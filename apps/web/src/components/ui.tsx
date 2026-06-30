@@ -49,15 +49,6 @@ export function Badge({ children }: { children: ReactNode }) {
   );
 }
 
-/** Colored status dot + label (gate/eligibility status pills). */
-export function StatusDot({ color, label }: { color: string; label: string }) {
-  return (
-    <span style={{ fontSize: 12, color }}>
-      ● {label}
-    </span>
-  );
-}
-
 /** Label-over-value stat card. */
 export function Kpi({ label, value }: { label: string; value: string }) {
   return (
