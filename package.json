@@ -1,0 +1,17 @@
+{
+  "name": "scatter-drop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Self-service multi-tenant airdrop platform gated by zk-X509 national-PKI identity",
+  "packageManager": "pnpm@10.8.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "contracts:build": "forge build --root contracts",
+    "contracts:test": "forge test --root contracts -vvv"
+  }
+}

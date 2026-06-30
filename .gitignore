@@ -1,0 +1,11 @@
+node_modules/
+.env
+.env.*
+out/
+cache/
+artifacts/
+broadcast/
+dist/
+.next/
+coverage/
+*.log
