@@ -58,3 +58,20 @@ create→claim→sweep flow is asserted in `test/E2E.t.sol`.
 - Whether E2E assertions live in a Foundry test (`forge script` + `forge test`)
   vs a TS harness driving anvil through `packages/sdk`. Leaning: Foundry script
   for deploy + a TS E2E using the SDK (matches how the frontend will call).
+
+## Sepolia fork E2E (W5b)
+`test/fork/ForkE2E.t.sol` runs the full create→claim→sweep→withdraw flow against
+the **real** zk-X509 deployment on a Sepolia fork:
+- `isRegistry` is checked against the live `RegistryFactory`
+  (`0x9e937dF6ac0E85979622519068412A518fa085d9`) for the users `IdentityRegistry`
+  (`0x3cF6A96f1970053ffDf957074F988aD53D13ada3`) — a real on-chain read;
+- `verifiedUntil` is overridden with `vm.mockCall` (a real zk proof on a fork is
+  impractical), keeping the override independent of the registry's proxy layout.
+
+Run it (RPC sourced from the gitignored `contracts/.env`):
+```bash
+source contracts/.env && forge test --root contracts \
+  --match-path "test/fork/ForkE2E.t.sol" -vv
+```
+Without `SEPOLIA_RPC_URL` the tests skip, so the default `forge test` stays
+hermetic and offline.
