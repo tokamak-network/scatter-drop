@@ -44,6 +44,8 @@ type DropCreatedArgs = {
 };
 
 function registryLabel(addr: Address, chainId: number): string {
+  // W24: address(0) = no identity gate (open claim).
+  if (/^0x0{40}$/i.test(addr)) return "Open claim (no identity gate)";
   const zk = getZkX509(chainId);
   const lc = addr.toLowerCase();
   if (zk && lc === zk.usersRegistry.toLowerCase()) return "Users registry";

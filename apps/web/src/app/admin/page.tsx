@@ -1,16 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { formatUnits, isAddress, parseUnits, type Address } from "viem";
 import {
-  AirdropType,
   airdropTypeLabel,
-  buildAddAllowedTokenRequest,
-  buildRemoveAllowedTokenRequest,
-  buildSetFeeRequest,
-  buildSetOfficialTokenRequest,
-  NATIVE_FEE_TOKEN,
+  buildSetAllowedTokenRequest,
+  buildSetDefaultFeeBpsRequest,
+  buildSetDefaultFeeModeRequest,
+  buildSetFeeBpsRequest,
+  buildSetFeeModeRequest,
+  buildSetFlatFeeRequest,
+  FeeMode,
   TokenTier,
 } from "@tokamak-network/scatter-drop-sdk";
 import { Loader2, ShieldCheck } from "lucide-react";
@@ -18,26 +19,23 @@ import { TxButton } from "@/components/TxButton";
 import { VaultWithdraw } from "@/components/VaultWithdraw";
 import {
   deploymentIssue,
-  useCollectedFees,
+  useDefaultFeeBps,
+  useDefaultFeeMode,
   useDeployment,
   useErc20Decimals,
-  useFeeOf,
+  useFeeBpsOf,
+  useFeeModeOf,
+  useFlatFee,
   useTokenTier,
 } from "@/lib/contracts";
 import { useCampaigns } from "@/lib/campaigns";
-import { isPositiveDecimal } from "@/lib/validation";
 
 const TABS = ["Overview", "Funds", "Tokens", "Campaigns", "Vault"] as const;
 type Tab = (typeof TABS)[number];
 
-const TYPES = [
-  AirdropType.CSV,
-  AirdropType.ONCHAIN_SNAPSHOT,
-  AirdropType.ONCHAIN_GATED,
-  AirdropType.SOCIAL,
-];
-
-type FeeToken = { addr: Address; label: string };
+const MAX_FEE_BPS = 1000; // 10% — mirrors the contract cap
+const isBps = (s: string) =>
+  /^\d+$/.test(s) && Number(s) >= 0 && Number(s) <= MAX_FEE_BPS;
 
 export default function AdminPage() {
   const { data: dep, isLoading } = useDeployment();
@@ -48,10 +46,6 @@ export default function AdminPage() {
     return <p className="text-slate-400 text-sm">{issue ?? "No deployment."}</p>;
   }
   const factory = dep.dropFactory;
-  const feeTokens: FeeToken[] = [
-    { addr: NATIVE_FEE_TOKEN, label: "ETH" },
-    ...(dep.feeToken ? [{ addr: dep.feeToken, label: "ERC-20 fee token" }] : []),
-  ];
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -80,8 +74,8 @@ export default function AdminPage() {
         ))}
       </div>
 
-      {tab === "Overview" && <Overview factory={factory} feeTokens={feeTokens} />}
-      {tab === "Funds" && <Funds factory={factory} feeTokens={feeTokens} />}
+      {tab === "Overview" && <Overview factory={factory} />}
+      {tab === "Funds" && <Funds factory={factory} />}
       {tab === "Tokens" && <Tokens factory={factory} />}
       {tab === "Campaigns" && <Campaigns />}
       {tab === "Vault" && (
@@ -104,28 +98,35 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
   );
 }
 
-function Overview({
-  factory,
-  feeTokens,
-}: {
-  factory: Address;
-  feeTokens: FeeToken[];
-}) {
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <Card title={label}>
+      <div className="text-2xl font-bold text-slate-100">{value}</div>
+    </Card>
+  );
+}
+
+function Overview({ factory }: { factory: Address }) {
   const { data: campaigns } = useCampaigns();
-  const { data: collected } = useCollectedFees(factory, feeTokens[0]?.addr);
+  const { data: mode } = useDefaultFeeMode(factory);
+  const { data: bps } = useDefaultFeeBps(factory);
+
+  const defaultFee =
+    mode === undefined
+      ? "…"
+      : Number(mode) === FeeMode.PERCENT
+        ? bps === undefined
+          ? "…"
+          : `${Number(bps) / 100}% (percent)`
+        : "flat (per token)";
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <Card title="Campaigns (on-chain)">
-        <div className="text-2xl font-bold text-slate-100">
-          {campaigns?.campaigns.length ?? "…"}
-        </div>
-      </Card>
-      <Card title="Collected fees (ETH)">
-        <div className="text-2xl font-bold text-slate-100">
-          {collected === undefined ? "…" : formatUnits(collected, 18)}
-        </div>
-      </Card>
+      <Stat
+        label="Campaigns (on-chain)"
+        value={String(campaigns?.campaigns.length ?? "…")}
+      />
+      <Stat label="Default fee" value={defaultFee} />
       <Card title="DropFactory">
         <div className="text-xs font-mono text-slate-400 break-all">{factory}</div>
       </Card>
@@ -133,92 +134,213 @@ function Overview({
   );
 }
 
-function Funds({ factory, feeTokens }: { factory: Address; feeTokens: FeeToken[] }) {
+function Funds({ factory }: { factory: Address }) {
   return (
-    <Card title="Per-token creation fees (feeOf · setFee)">
-      <div className="space-y-5">
-        {feeTokens.map((ft) => (
-          <div key={ft.addr} className="space-y-2">
-            <div className="text-xs font-mono text-slate-300">
-              {ft.label}
-              {ft.addr === NATIVE_FEE_TOKEN ? " (native)" : ` · ${ft.addr}`}
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {TYPES.map((t) => (
-                <FeeCell
-                  key={`${ft.addr}-${t}`}
-                  factory={factory}
-                  feeToken={ft.addr}
-                  type={t}
-                />
-              ))}
-            </div>
-          </div>
-        ))}
+    <div className="space-y-4">
+      <DefaultFeeConfig factory={factory} />
+      <TokenFeeConfig factory={factory} />
+    </div>
+  );
+}
+
+function DefaultFeeConfig({ factory }: { factory: Address }) {
+  const { data: mode, refetch: refMode } = useDefaultFeeMode(factory);
+  const { data: bps, refetch: refBps } = useDefaultFeeBps(factory);
+  const [bpsInput, setBpsInput] = useState("");
+
+  const modeNum = mode === undefined ? undefined : Number(mode);
+
+  return (
+    <Card title="Platform default fee">
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-slate-400">Current default mode:</span>
+        <span className="text-slate-200 font-mono">
+          {modeNum === undefined
+            ? "…"
+            : modeNum === FeeMode.PERCENT
+              ? "PERCENT"
+              : "FLAT"}
+        </span>
+        {modeNum === FeeMode.PERCENT && (
+          <span className="text-slate-400">
+            · {bps === undefined ? "…" : `${Number(bps)} bps (${Number(bps) / 100}%)`}
+          </span>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <TxButton
+          request={buildSetDefaultFeeModeRequest(factory, FeeMode.PERCENT)}
+          label="Default → PERCENT"
+          onConfirmed={() => void refMode()}
+        />
+        <TxButton
+          request={buildSetDefaultFeeModeRequest(factory, FeeMode.FLAT)}
+          label="Default → FLAT"
+          onConfirmed={() => void refMode()}
+        />
+      </div>
+      <div className="flex gap-2">
+        <input
+          className="input"
+          value={bpsInput}
+          onChange={(e) => setBpsInput(e.target.value)}
+          placeholder={`Default bps (0–${MAX_FEE_BPS}, 50 = 0.5%)`}
+        />
+        <TxButton
+          request={
+            isBps(bpsInput)
+              ? buildSetDefaultFeeBpsRequest(factory, Number(bpsInput))
+              : null
+          }
+          label="Set default bps"
+          disabled={!isBps(bpsInput)}
+          onConfirmed={() => {
+            setBpsInput("");
+            void refBps();
+          }}
+        />
       </div>
     </Card>
   );
 }
 
-function FeeCell({
-  factory,
-  feeToken,
-  type,
-}: {
-  factory: Address;
-  feeToken: Address;
-  type: AirdropType;
-}) {
-  const { data: fee, refetch } = useFeeOf(factory, feeToken, type);
-  const isEth = feeToken === NATIVE_FEE_TOKEN;
-  const { data: erc20Decimals } = useErc20Decimals(isEth ? undefined : feeToken);
-  const dp = isEth ? 18 : (erc20Decimals ?? 18);
-  const [amount, setAmount] = useState("");
-  const valid = isPositiveDecimal(amount, dp);
-  const req = valid
-    ? buildSetFeeRequest(factory, feeToken, type, parseUnits(amount, dp))
-    : null;
+function TokenFeeConfig({ factory }: { factory: Address }) {
+  const [token, setToken] = useState("");
+  const valid = isAddress(token);
+  const t = valid ? (token as Address) : undefined;
+
+  const { data: mode, refetch: refMode } = useFeeModeOf(factory, t);
+  const { data: bps, refetch: refBps } = useFeeBpsOf(factory, t);
+  const { data: flat, refetch: refFlat } = useFlatFee(factory, t);
+  const { data: decimals } = useErc20Decimals(t);
+  const dp = decimals ?? 18;
+
+  const [bpsInput, setBpsInput] = useState("");
+  const [flatInput, setFlatInput] = useState("");
+  const flatValid = /^\d+(\.\d+)?$/.test(flatInput) && Number(flatInput) > 0;
+
+  const modeNum = mode === undefined ? undefined : Number(mode);
 
   return (
-    <div className="bg-slate-950 border border-slate-800/80 rounded-lg p-3 space-y-2">
-      <div className="flex justify-between text-xs">
-        <span className="text-slate-300">{airdropTypeLabel(type)}</span>
-        <span className="font-mono text-slate-400">
-          {fee === undefined ? "…" : formatUnits(fee, dp)}
-        </span>
-      </div>
-      <div className="flex gap-2">
-        <input
-          className="input"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          placeholder="new fee"
-        />
-        <TxButton
-          request={req}
-          label="setFee"
-          disabled={!valid}
-          onConfirmed={() => {
-            setAmount("");
-            void refetch();
-          }}
-        />
-      </div>
-    </div>
+    <Card title="Per-token fee override">
+      <input
+        className="input"
+        value={token}
+        onChange={(e) => setToken(e.target.value)}
+        placeholder="Token address 0x…"
+      />
+      {t && (
+        <div className="space-y-3">
+          <div className="text-xs font-mono text-slate-400">
+            Mode:{" "}
+            <span className="text-slate-200">
+              {modeNum === undefined
+                ? "…"
+                : modeNum === FeeMode.PERCENT
+                  ? `PERCENT (${bps === undefined ? "…" : `${Number(bps)} bps`})`
+                  : `FLAT (${flat === undefined ? "…" : formatUnits(flat, dp)})`}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <TxButton
+              request={buildSetFeeModeRequest(factory, t, FeeMode.PERCENT)}
+              label="Mode → PERCENT"
+              onConfirmed={() => void refMode()}
+            />
+            <TxButton
+              request={buildSetFeeModeRequest(factory, t, FeeMode.FLAT)}
+              label="Mode → FLAT"
+              onConfirmed={() => void refMode()}
+            />
+          </div>
+          <div className="flex gap-2">
+            <input
+              className="input"
+              value={bpsInput}
+              onChange={(e) => setBpsInput(e.target.value)}
+              placeholder={`bps (0–${MAX_FEE_BPS})`}
+            />
+            <TxButton
+              request={
+                isBps(bpsInput)
+                  ? buildSetFeeBpsRequest(factory, t, Number(bpsInput))
+                  : null
+              }
+              label="Set bps"
+              disabled={!isBps(bpsInput)}
+              onConfirmed={() => {
+                setBpsInput("");
+                void refBps();
+              }}
+            />
+          </div>
+          <div className="flex gap-2">
+            <input
+              className="input"
+              value={flatInput}
+              onChange={(e) => setFlatInput(e.target.value)}
+              placeholder={`flat fee (token units, ${dp} dp)`}
+            />
+            <TxButton
+              request={
+                flatValid
+                  ? buildSetFlatFeeRequest(factory, t, parseUnits(flatInput, dp))
+                  : null
+              }
+              label="Set flat fee"
+              disabled={!flatValid}
+              onConfirmed={() => {
+                setFlatInput("");
+                void refFlat();
+              }}
+            />
+          </div>
+        </div>
+      )}
+    </Card>
   );
+}
+
+// Off-chain curation note (advisory) persisted locally per token.
+function useCurationNote(token: string) {
+  const [note, setNote] = useState("");
+  const key = `curation-note:${token.toLowerCase()}`;
+  useEffect(() => {
+    if (!token) return setNote("");
+    try {
+      setNote(localStorage.getItem(key) ?? "");
+    } catch {
+      setNote("");
+    }
+  }, [token, key]);
+  const save = (v: string) => {
+    setNote(v);
+    try {
+      localStorage.setItem(key, v);
+    } catch {
+      /* ignore */
+    }
+  };
+  return [note, save] as const;
 }
 
 function Tokens({ factory }: { factory: Address }) {
   const [token, setToken] = useState("");
   const valid = isAddress(token);
-  const { data: tier, refetch } = useTokenTier(
-    factory,
-    valid ? (token as Address) : undefined,
-  );
   const t = valid ? (token as Address) : undefined;
+  const { data: tier, refetch } = useTokenTier(factory, t);
+  const { data: decimals } = useErc20Decimals(t);
+  const [note, setNote] = useCurationNote(valid ? token : "");
+
+  const allowed = tier !== undefined && Number(tier) === TokenTier.ALLOWED;
 
   return (
-    <Card title="Allowed token registry (setOfficial · remove)">
+    <Card title="Allowed token curation (admin)">
+      <p className="text-[11px] text-slate-500">
+        Curate which established assets (e.g. WETH, USDC, USDT) operators may use.
+        The platform is neutral infrastructure — this is a suitability decision,
+        not a securities determination.
+      </p>
       <input
         className="input"
         value={token}
@@ -227,36 +349,45 @@ function Tokens({ factory }: { factory: Address }) {
       />
       {t && tier !== undefined && (
         <div className="space-y-3">
-          <div className="text-xs font-mono text-slate-400">
-            Current tier:{" "}
-            <span className="text-slate-200">
-              {Number(tier) === TokenTier.OFFICIAL
-                ? "OFFICIAL"
-                : Number(tier) === TokenTier.COMMUNITY
-                  ? "COMMUNITY"
-                  : "NONE"}
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-slate-400">Status:</span>
+            <span
+              className={`font-mono font-bold px-2 py-0.5 rounded border ${
+                allowed
+                  ? "bg-emerald-950/40 text-emerald-600 border-emerald-900/40"
+                  : "bg-amber-950/20 text-amber-600 border-amber-500/20"
+              }`}
+            >
+              {allowed ? "ALLOWED" : "NOT ALLOWED"}
             </span>
+            {decimals !== undefined && (
+              <span className="text-slate-500">· {decimals} dp</span>
+            )}
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <TxButton
-              request={buildAddAllowedTokenRequest(factory, t)}
-              label="Add (community)"
-              onConfirmed={() => void refetch()}
+
+          <label className="block space-y-1">
+            <span className="label">Curation note (off-chain · symbol / source)</span>
+            <textarea
+              className="input font-mono text-xs"
+              rows={2}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="e.g. USDC — Circle, canonical Sepolia deployment"
             />
+          </label>
+
+          <div className="flex gap-2">
             <TxButton
-              request={buildSetOfficialTokenRequest(factory, t, true)}
-              label="Set official"
+              request={buildSetAllowedTokenRequest(factory, t, true)}
+              label="Allow token"
               primary
+              disabled={allowed}
               onConfirmed={() => void refetch()}
             />
             <TxButton
-              request={buildSetOfficialTokenRequest(factory, t, false)}
-              label="Unset official"
-              onConfirmed={() => void refetch()}
-            />
-            <TxButton
-              request={buildRemoveAllowedTokenRequest(factory, t)}
-              label="Remove"
+              request={buildSetAllowedTokenRequest(factory, t, false)}
+              label="Revoke"
+              disabled={!allowed}
               onConfirmed={() => void refetch()}
             />
           </div>
