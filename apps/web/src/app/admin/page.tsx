@@ -29,6 +29,7 @@ import {
   useTokenTier,
 } from "@/lib/contracts";
 import { useCampaigns } from "@/lib/campaigns";
+import { isPositiveDecimal } from "@/lib/validation";
 
 const TABS = ["Overview", "Funds", "Tokens", "Campaigns", "Vault"] as const;
 type Tab = (typeof TABS)[number];
@@ -217,7 +218,17 @@ function TokenFeeConfig({ factory }: { factory: Address }) {
 
   const [bpsInput, setBpsInput] = useState("");
   const [flatInput, setFlatInput] = useState("");
-  const flatValid = /^\d+(\.\d+)?$/.test(flatInput) && Number(flatInput) > 0;
+  // Parse once, safely: derive validity from a successful parse so the inline
+  // request builder never calls parseUnits with an out-of-range value (crash).
+  let flatAmount: bigint | null = null;
+  if (isPositiveDecimal(flatInput, dp)) {
+    try {
+      flatAmount = parseUnits(flatInput, dp);
+    } catch {
+      flatAmount = null;
+    }
+  }
+  const flatValid = flatAmount !== null;
 
   const modeNum = mode === undefined ? undefined : Number(mode);
 
@@ -283,8 +294,8 @@ function TokenFeeConfig({ factory }: { factory: Address }) {
             />
             <TxButton
               request={
-                flatValid
-                  ? buildSetFlatFeeRequest(factory, t, parseUnits(flatInput, dp))
+                flatAmount !== null
+                  ? buildSetFlatFeeRequest(factory, t, flatAmount)
                   : null
               }
               label="Set flat fee"

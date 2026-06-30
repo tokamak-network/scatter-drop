@@ -174,9 +174,10 @@ export default function NewCampaignPage() {
     identityOk &&
     feeValid;
 
-  // On-top: a single approval of the airdrop token for total + fee.
+  // On-top: a single approval of the airdrop token for total + fee. Gate on the
+  // fee being resolved so we never approve total-only (which would under-fund).
   const approveTokenReq =
-    factory && tokenValid && totalDeposit > 0n
+    factory && tokenValid && fee !== undefined && totalDeposit > 0n
       ? buildApproveRequest(token as Address, factory, totalDeposit)
       : null;
   const createReq =
