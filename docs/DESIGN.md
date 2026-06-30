@@ -164,21 +164,21 @@ DropFactory (어드민이 수수료방식·feeBps·flatFee, operatorRegistry, al
  ├ defaultFeeBps → uint16 (초기 50=0.5%)     PERCENT 전역 기본율 (§8)
  ├ feeBps[token] → uint16                    PERCENT 토큰별 율(bps). 미설정=defaultFeeBps. ≤ MAX_FEE_BPS
  ├ flatFee[token] → uint256                  FLAT 토큰별 정액. FLAT인데 0이면 미설정→revert
- ├ tokenTier[address] → {NONE,ALLOWED}       에어드랍 토큰 화이트리스트 (§8.7, 증권성 규제)
+ ├ tokenTier[address] → {NONE,ALLOWED}       에어드랍 토큰 화이트리스트 (§8.7, 어드민 큐레이션)
  ├ setOperatorRegistry(addr)   onlyAdmin     운영자 신원 게이트 변경
  ├ setDefaultFeeMode(mode)     onlyAdmin     전역 기본 방식 변경
  ├ setFeeMode(token, mode)     onlyAdmin     토큰별 방식 PERCENT/FLAT 설정
  ├ setDefaultFeeBps(bps)       onlyAdmin     PERCENT 전역 기본율 (≤ MAX_FEE_BPS)
  ├ setFeeBps(token, bps)       onlyAdmin     PERCENT 토큰별 율. ≤ MAX_FEE_BPS
  ├ setFlatFee(token, amount)   onlyAdmin     FLAT 토큰별 정액
- ├ setAllowedToken(token, on)  onlyAdmin     ★토큰 허가/해제 (어드민 전용 — 증권성 심사 후). 운영자 셀프등록 없음
+ ├ setAllowedToken(token, on)  onlyAdmin     ★토큰 허가/해제 (어드민 전용 — 플랫폼 적합 토큰 큐레이션). 운영자 셀프등록 없음
  ├ createDrop(type, airdropToken, merkleRoot, totalAmount, startTime, deadline, identityRegistry)
- │     · type ∈ {CSV, ONCHAIN_SNAPSHOT, SOCIAL}. 수수료 = floor(totalAmount × bpsOf(airdropToken)/10000), on-top.
+ │     · type ∈ {CSV, ONCHAIN_SNAPSHOT, SOCIAL}. 수수료 = feeMode별(PERCENT: floor(totalAmount × bpsOf/10000) / FLAT: flatFee[token]), on-top. (§8)
  │     · 클레임 윈도우 [startTime, deadline] — require(deadline > startTime) + (deadline - startTime >= MIN_DURATION) + deadline > now
  │     0a. require(operatorRegistry.verifiedUntil(msg.sender) >= now)  운영자 신원검증 (게이트1)
  │     0b. require(zkFactory.isRegistry[identityRegistry])             정식 고객 CA 레지스트리 검증
  │     0c. require(tokenTier[airdropToken] != NONE)                    어드민 허가 토큰만 배포 (§8.7)
- │     1. fee = totalAmount × bpsOf(airdropToken) / 10000  (bpsOf = feeBps[token] or defaultFeeBps)
+ │     1. fee = feeMode(airdropToken)==PERCENT ? totalAmount × bpsOf/10000 : flatFee[token]  (FLAT은 >0 보장, §8)
  │     2. airdropToken.safeTransferFrom(operator, newDrop, totalAmount)   배포 풀(전액)
  │     3. airdropToken.safeTransferFrom(operator, address(this), fee)     수수료 볼트(같은 토큰) → collectedFees[airdropToken]+=fee
  │     4. MerkleDrop 배포 (identityRegistry 주입)
@@ -358,26 +358,27 @@ fee = feeMode(airdropToken) == PERCENT
 
 ---
 
-## 8.7 에어드랍 토큰 등록 (어드민 화이트리스트 전용 — 증권성 규제)
-에어드랍에 쓸 토큰은 온체인 **토큰 등록부**에 있어야 한다(`createDrop`이 강제).
-**⚠️ 증권성(securities) 규제 때문에 등록은 플랫폼 어드민 전용이다.** 운영자는 토큰을 추가할 수 없다.
-어드민은 **정식 등록 증권(또는 증권성 없는 컴플라이언트 토큰)만** 허가한다.
+## 8.7 에어드랍 토큰 등록 (어드민 큐레이션 화이트리스트)
+에어드랍에 쓸 토큰은 온체인 **토큰 등록부**에 있어야 한다(`createDrop`이 강제). 등록은 **플랫폼 어드민 전용**이다 — 운영자는 토큰을 추가할 수 없다.
+어드민은 **에어드랍에 쓰기 적절한 established 토큰만 추려서** 허가한다 — 예: WETH(이더), USDC·USDT 등 스테이블코인, 검증된 블루칩.
+> 어드민은 토큰의 **증권성을 판정하지 않는다.** "플랫폼에 쓰기 적절한 established 자산인가"만 본다(결제처리사가 지원 자산 목록을 두는 것과 동일).
+> 명백히 적절한 자산으로 한정하면 증권 리스크는 *실무상* 회피되지만, 플랫폼이 증권 판정 주체가 되지는 않는다 → **중립 인프라 유지**(§8.6).
 
 ### 등급 모델 (`tokenTier[address]`)
 | 등급 | 누가 등록 | 의미 | createDrop |
 |------|----------|------|-----------|
-| **ALLOWED** | 플랫폼 어드민 (`setAllowedToken`) | 어드민이 컴플라이언스 심사 후 허가 | 가능 |
+| **ALLOWED** | 플랫폼 어드민 (`setAllowedToken`) | 어드민이 플랫폼 적합성 기준 큐레이션 | 가능 |
 | **NONE** | — | 미허가 (기본값) | **불가** |
 
-> 이전의 운영자 셀프 등록(`addAllowedToken`, COMMUNITY 퍼미션리스)은 **폐지**. 증권형 토큰을
-> 운영자가 임의 등록·분배하면 무허가 증권 발행/배포 리스크 → 어드민 화이트리스트로만 허용.
+> 이전의 운영자 셀프 등록(`addAllowedToken`, COMMUNITY 퍼미션리스)은 **폐지**. 운영자가 임의 토큰을
+> 등록·분배하면 사칭·악성·부적절 토큰 리스크 → 어드민이 추린 established 토큰만 허용.
 
 ### 원칙
 - **어드민 전용 허가:** `setAllowedToken(token, bool)` (onlyAdmin)만 토큰을 ALLOWED/NONE로 전환.
   운영자용 `addAllowedToken` 인터페이스 **없음**.
-- **증권성 심사 = 어드민의 오프체인 책임:** 컨트랙트는 "화이트리스트에 있는가"만 강제한다(증권 여부를 온체인이
-  판단할 수 없음). 어드민(법무·컴플라이언스)이 등록 전 **정식 등록 증권 여부·관할·근거를 심사**하고,
-  어드민 UI에 근거(증권 등록번호·메모)를 기록한다. → 무허가 증권 배포 차단의 1차 방어.
+- **적합성 큐레이션 = 어드민의 오프체인 판단:** 컨트랙트는 "화이트리스트에 있는가"만 강제한다.
+  어드민은 등록 전 **"플랫폼에 쓰기 적절한 established 자산인가"**(유동성·널리 쓰임·비악성·비사칭)를 보고 허가하되,
+  **증권 여부는 판정하지 않는다.** 명백히 적절한 자산으로 한정하는 것 자체가 증권 리스크의 실무적 회피.
 - **모더레이션:** 문제 토큰은 어드민이 `setAllowedToken(token, false)`로 제거(→ NONE).
 - **createDrop 게이트:** `require(tokenTier[airdropToken] != NONE)`. 미허가면 생성 불가
   (운영자가 추가할 방법 없음 — 어드민에게 등록 요청).
