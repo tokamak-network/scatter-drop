@@ -9,7 +9,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-RPC_URL="${RPC_URL:-http://127.0.0.1:8545}"
+# Exported so the child dev-verify.sh inherits a custom RPC_URL.
+export RPC_URL="${RPC_URL:-http://127.0.0.1:8545}"
 CHAIN_ID="${FORK_CHAIN_ID:-11155111}"
 DEPLOY_JSON="$ROOT/contracts/deployments/$CHAIN_ID.json"
 [ -f "$DEPLOY_JSON" ] || { echo "ERROR: $DEPLOY_JSON not found — run dev-fork.sh first" >&2; exit 1; }
@@ -18,6 +19,10 @@ json_addr() { grep -o "\"$1\"[^,}]*" "$DEPLOY_JSON" | grep -oiE '0x[0-9a-f]{40}'
 FACTORY="$(json_addr dropFactory)"
 FEE_TOKEN="$(json_addr feeToken)"
 AIRDROP="$(json_addr airdropToken)"
+if [ -z "$FACTORY" ] || [ -z "$FEE_TOKEN" ] || [ -z "$AIRDROP" ]; then
+  echo "ERROR: could not parse dropFactory/feeToken/airdropToken from $DEPLOY_JSON" >&2
+  exit 1
+fi
 REGISTRY="${SEPOLIA_IDENTITY_REGISTRY:-0x3cF6A96f1970053ffDf957074F988aD53D13ada3}"
 
 # Anvil well-known accounts: #0 operator (deployer/funded), #1 customer, #2 other.
@@ -32,24 +37,29 @@ TOTAL="1500000000000000000000"     # 1500e18
 # cast call annotates values (e.g. "10000000000000000000 [1e19]") — keep field 1.
 FEE="$(cast call "$FACTORY" 'feeOf(uint8)(uint256)' 0 --rpc-url "$RPC_URL" | awk '{print $1}')"
 NOW="$(cast block latest --field timestamp --rpc-url "$RPC_URL" | awk '{print $1}')"
+if ! [[ "$NOW" =~ ^[0-9]+$ ]]; then
+  echo "ERROR: could not read current block timestamp from $RPC_URL" >&2
+  exit 1
+fi
 DEADLINE="$(( NOW + 7 * 24 * 3600 ))"
 
 # Build the 2-leaf tree: leaf = keccak256(abi.encodePacked(index, account, amount)).
-# Use cast to-uint256 (printf %x overflows for >2^63 amounts).
+# cast to-uint256 (printf %x overflows for >2^63 amounts); bash param expansion
+# avoids subshells. No lowercasing needed — cast parses hex case-insensitively.
 pack() {
   local idx acct amt
-  idx="$(cast to-uint256 "$1" | sed 's/^0x//')"
-  acct="$(echo "$2" | sed 's/^0x//' | tr 'A-Z' 'a-z')"
-  amt="$(cast to-uint256 "$3" | sed 's/^0x//')"
-  echo "0x${idx}${acct}${amt}"
+  idx="$(cast to-uint256 "$1")"
+  amt="$(cast to-uint256 "$3")"
+  acct="${2#0x}"
+  echo "0x${idx#0x}${acct}${amt#0x}"
 }
 L0="$(cast keccak "$(pack 0 "$CUSTOMER" "$CUST_AMT")")"
 L1="$(cast keccak "$(pack 1 "$OTHER" "$OTHER_AMT")")"
 # sorted-pair root (OZ commutative)
 if [[ "$L0" < "$L1" || "$L0" == "$L1" ]]; then
-  ROOT_HASH="$(cast keccak "$L0$(echo "$L1" | sed 's/0x//')")"
+  ROOT_HASH="$(cast keccak "${L0}${L1#0x}")"
 else
-  ROOT_HASH="$(cast keccak "$L1$(echo "$L0" | sed 's/0x//')")"
+  ROOT_HASH="$(cast keccak "${L1}${L0#0x}")"
 fi
 
 echo "[seed] verifying operator + customer on the fork..."
