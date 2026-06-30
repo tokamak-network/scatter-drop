@@ -1,3 +1,4 @@
+import { airdropTypeLabel } from "@tokamak-network/scatter-drop-sdk";
 import { PageHeader, RowLink } from "@/components/ui";
 import { listCampaigns } from "@/lib/stub";
 
@@ -16,7 +17,7 @@ export default async function AdminCampaignsPage() {
             key={c.id}
             href={`/admin/campaigns/${c.id}`}
             label={c.name}
-            detail={`${c.type} · ${c.status} · ${c.claimedPct}%`}
+            detail={`${airdropTypeLabel(c.type)} · ${c.status} · ${c.claimedPct}%`}
           />
         ))}
       </div>

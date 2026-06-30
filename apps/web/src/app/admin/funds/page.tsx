@@ -1,8 +1,16 @@
+import { AirdropType, airdropTypeLabel } from "@tokamak-network/scatter-drop-sdk";
 import { PageHeader, StubButton } from "@/components/ui";
-import { FEE_BY_TYPE, type AirdropType } from "@/lib/stub";
+import { FEE_BY_TYPE, getAdminOverview } from "@/lib/stub";
 
-export default function AdminFundsPage() {
-  const types = Object.keys(FEE_BY_TYPE) as AirdropType[];
+const TYPES = [
+  AirdropType.CSV,
+  AirdropType.ONCHAIN_SNAPSHOT,
+  AirdropType.ONCHAIN_GATED,
+  AirdropType.SOCIAL,
+];
+
+export default async function AdminFundsPage() {
+  const { feeToken } = await getAdminOverview();
 
   return (
     <>
@@ -12,15 +20,17 @@ export default function AdminFundsPage() {
       />
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="muted" style={{ fontSize: 13 }}>
-          Fee token
+          Fee token (setFeeToken)
         </div>
-        <div>0xFeeToken… (setFeeToken)</div>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 13 }}>
+          {feeToken}
+        </div>
       </div>
       <div className="grid grid-cols-2">
-        {types.map((t) => (
+        {TYPES.map((t) => (
           <div key={t} className="card">
             <div className="muted" style={{ fontSize: 13 }}>
-              {t}
+              {airdropTypeLabel(t)}
             </div>
             <div style={{ fontSize: 18, fontWeight: 600 }}>{FEE_BY_TYPE[t]}</div>
             <div style={{ marginTop: 8 }}>

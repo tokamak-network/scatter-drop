@@ -1,39 +1,57 @@
+import type { Address, Hex } from "viem";
+import { AirdropType, type ClaimProof } from "@tokamak-network/scatter-drop-sdk";
+
 /**
  * Stub data layer for the W6 scaffold.
  *
- * No contract calls yet — every value here is placeholder data so the UI shell
- * can be built and reviewed independently of the M2 contracts / M3 scripts.
- *
- * The read functions are intentionally **async** (return Promises) so this is
- * the seam where M5–M7 swap in real reads (server-side viem `readContract`,
- * client-side wagmi/react-query) without changing any call site: server
- * components already `await` them; client components consume them via
- * react-query `useQuery`.
+ * No live contract calls yet — every value here is placeholder data so the UI
+ * shell can be built and reviewed independently of the M2 contracts / M3
+ * deploy scripts. Types are aligned with `@tokamak-network/scatter-drop-sdk`
+ * (frozen ABIs) so the read functions can be swapped for real viem/wagmi reads
+ * in M3+ without changing call sites: server components already `await` them;
+ * client components consume them via react-query `useQuery`.
  */
 
-export type AirdropType = "CSV" | "ONCHAIN_SNAPSHOT" | "ONCHAIN_GATED" | "SOCIAL";
+export { AirdropType };
+export type { ClaimProof };
 
 export type CampaignStatus = "active" | "ended";
+
+/** Pad a short hex suffix into a valid 20-byte address (stub addresses). */
+const addr = (suffix: string): Address =>
+  `0x${suffix.toLowerCase().padStart(40, "0")}` as Address;
 
 export interface Campaign {
   id: string;
   name: string;
   description: string;
   type: AirdropType;
-  token: string;
+  /** Deployed MerkleDrop address (claim target). */
+  drop: Address;
+  token: Address;
+  tokenSymbol: string;
+  /** Human display amount, e.g. "1,000,000 ACME". */
   totalAmount: string;
   claimedPct: number;
+  /** Display date (YYYY-MM-DD). */
   deadline: string;
-  identityRegistry: string;
-  operator: string;
+  /** Claim window deadline as unix seconds (for isClaimWindowOpen). */
+  deadlineUnix: bigint;
+  identityRegistry: Address;
+  /** Curated label for the registry, e.g. "KR-NPKI". */
+  identityRegistryLabel: string;
+  operator: Address;
   status: CampaignStatus;
 }
 
+/** Deployed DropFactory address (createDrop / withdrawFees target). */
+export const FACTORY_ADDRESS: Address = addr("fac7");
+
 export const FEE_BY_TYPE: Record<AirdropType, string> = {
-  CSV: "10 FEE",
-  ONCHAIN_SNAPSHOT: "25 FEE",
-  ONCHAIN_GATED: "40 FEE",
-  SOCIAL: "75 FEE",
+  [AirdropType.CSV]: "10 FEE",
+  [AirdropType.ONCHAIN_SNAPSHOT]: "25 FEE",
+  [AirdropType.ONCHAIN_GATED]: "40 FEE",
+  [AirdropType.SOCIAL]: "75 FEE",
 };
 
 const CAMPAIGNS: Campaign[] = [
@@ -41,39 +59,51 @@ const CAMPAIGNS: Campaign[] = [
     id: "1",
     name: "Acme Loyalty Drop",
     description: "Reward for verified Acme customers (KR-NPKI gated).",
-    type: "CSV",
-    token: "0xToken…Acme",
+    type: AirdropType.CSV,
+    drop: addr("d401"),
+    token: addr("ace1"),
+    tokenSymbol: "ACME",
     totalAmount: "1,000,000 ACME",
     claimedPct: 42,
     deadline: "2026-08-01",
-    identityRegistry: "KR-NPKI",
-    operator: "0xOperator…01",
+    deadlineUnix: 1785535200n,
+    identityRegistry: addr("c0a1"),
+    identityRegistryLabel: "KR-NPKI",
+    operator: addr("0901"),
     status: "active",
   },
   {
     id: "2",
     name: "DAO Contributor Snapshot",
     description: "Snapshot-based distribution to verified contributors.",
-    type: "ONCHAIN_SNAPSHOT",
-    token: "0xToken…Dao",
+    type: AirdropType.ONCHAIN_SNAPSHOT,
+    drop: addr("d402"),
+    token: addr("da02"),
+    tokenSymbol: "DAO",
     totalAmount: "500,000 DAO",
     claimedPct: 88,
     deadline: "2026-07-10",
-    identityRegistry: "EE-eID",
-    operator: "0xOperator…02",
+    deadlineUnix: 1783684800n,
+    identityRegistry: addr("c0a2"),
+    identityRegistryLabel: "EE-eID",
+    operator: addr("0902"),
     status: "active",
   },
   {
     id: "3",
     name: "Legacy Quest Rewards",
     description: "Completed campaign — claim window closed.",
-    type: "SOCIAL",
-    token: "0xToken…Quest",
+    type: AirdropType.SOCIAL,
+    drop: addr("d403"),
+    token: addr("9e03"),
+    tokenSymbol: "QST",
     totalAmount: "250,000 QST",
     claimedPct: 100,
     deadline: "2026-05-01",
-    identityRegistry: "KR-NPKI",
-    operator: "0xOperator…01",
+    deadlineUnix: 1777660800n,
+    identityRegistry: addr("c0a1"),
+    identityRegistryLabel: "KR-NPKI",
+    operator: addr("0901"),
     status: "ended",
   },
 ];
@@ -103,7 +133,7 @@ export async function listMyClaims(address?: string): Promise<MyClaim[]> {
 
 /**
  * Campaigns created by the connected wallet. Empty is valid.
- * Stub: returns a sample set for any connected address (real ownership filter
+ * Stub: returns the active set for any connected address (real ownership filter
  * by createDrop sender lands in M6).
  */
 export async function listManagedCampaigns(
@@ -116,6 +146,54 @@ export async function listManagedCampaigns(
 /** Stub admin gate — replaced by DropFactory.owner() check in M7. */
 export function useIsAdmin(_address?: string): boolean {
   return false;
+}
+
+/**
+ * Stub for the customer identity gate. Returns a `verifiedUntil` (unix seconds)
+ * for `account` in `registry`; M3 swaps this for SDK `getVerifiedUntil`/
+ * `getIdentityStatus` against a live PublicClient.
+ *
+ * Demo behaviour: wallets whose last hex nibble is even are "verified"
+ * (far-future), odd are "unverified" (0) — so both gate branches are reachable.
+ */
+export async function getStubVerifiedUntil(
+  _registry: Address,
+  account?: Address,
+): Promise<bigint> {
+  if (!account) return 0n;
+  const lastNibble = parseInt(account.slice(-1), 16);
+  return Number.isNaN(lastNibble) || lastNibble % 2 !== 0 ? 0n : 9_999_999_999n;
+}
+
+export interface Eligibility {
+  eligible: boolean;
+  alreadyClaimed: boolean;
+  /** SDK ClaimProof — feeds buildClaimRequest(drop, claim) unchanged in M5. */
+  claim?: ClaimProof;
+}
+
+/**
+ * Stub eligibility check. M5 swaps this for a real proofs.json / on-chain
+ * lookup; the returned `claim` already matches the SDK `ClaimProof` shape so
+ * `buildClaimRequest(drop, claim)` works unchanged.
+ */
+export async function getStubEligibility(
+  campaignId: string,
+  account?: Address,
+): Promise<Eligibility> {
+  if (!account) return { eligible: false, alreadyClaimed: false };
+  // Campaign 3 is closed → not eligible; others get a sample allocation.
+  if (campaignId === "3") return { eligible: false, alreadyClaimed: false };
+  return {
+    eligible: true,
+    alreadyClaimed: false,
+    claim: {
+      index: 0,
+      account,
+      amount: "120000000000000000000",
+      proof: [`0x${"ab".repeat(32)}` as Hex, `0x${"cd".repeat(32)}` as Hex],
+    },
+  };
 }
 
 export interface ParticipantStats {
@@ -138,6 +216,9 @@ export interface AdminOverview {
   endedCampaigns: number;
   collectedFees: string;
   operatorCount: number;
+  /** Fee token + treasury addresses (DropFactory config). */
+  feeToken: Address;
+  treasury: Address;
 }
 
 export async function getAdminOverview(): Promise<AdminOverview> {
@@ -147,10 +228,19 @@ export async function getAdminOverview(): Promise<AdminOverview> {
     endedCampaigns: CAMPAIGNS.filter((c) => c.status === "ended").length,
     collectedFees: "1,250 FEE",
     operatorCount: 2,
+    feeToken: addr("fee1"),
+    treasury: addr("17ea"),
   };
 }
 
-export const STANDARD_REGISTRIES = [
-  { id: "KR-NPKI", label: "KR-NPKI (Korea national PKI)", trustedCAs: 12 },
-  { id: "EE-eID", label: "EE-eID (Estonia eID)", trustedCAs: 5 },
+export interface StandardRegistry {
+  id: string;
+  label: string;
+  address: Address;
+  trustedCAs: number;
+}
+
+export const STANDARD_REGISTRIES: StandardRegistry[] = [
+  { id: "KR-NPKI", label: "KR-NPKI (Korea national PKI)", address: addr("c0a1"), trustedCAs: 12 },
+  { id: "EE-eID", label: "EE-eID (Estonia eID)", address: addr("c0a2"), trustedCAs: 5 },
 ];
