@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { useAccount } from "wagmi";
 import { useQuery } from "@tanstack/react-query";
@@ -9,77 +8,78 @@ import {
   buildClaimRequest,
   isVerificationValid,
   isClaimWindowOpen,
-  type ClaimRequest,
 } from "@tokamak-network/scatter-drop-sdk";
 import { ConnectGate } from "@/components/ConnectGate";
 import { IdentityGate } from "@/components/IdentityGate";
 import { EligibilityCheck } from "@/components/EligibilityCheck";
-import { CalldataPreview } from "@/components/CalldataPreview";
-import {
-  getStubEligibility,
-  getStubVerifiedUntil,
-  type Campaign,
-} from "@/lib/stub";
+import { TxButton } from "@/components/TxButton";
+import { useIsClaimed, useVerifiedUntil } from "@/lib/contracts";
+import { getStubEligibility, type Campaign } from "@/lib/stub";
 
 /**
- * Claim flow for a campaign detail page.
- *   IdentityGate     → SDK isVerificationValid(verifiedUntil, now)
- *   EligibilityCheck → stub proof lookup (proofs.json / on-chain in M5)
- *   [Prepare claim]  → SDK buildClaimRequest(drop, proof) → calldata preview
+ * Claim flow for a campaign detail page (M5 — live).
+ *   IdentityGate     → live IdentityRegistry.verifiedUntil + SDK isVerificationValid
+ *   EligibilityCheck → off-chain proof (stub seam / seed manifest) + live isClaimed
+ *   [Claim]          → real MerkleDrop.claim tx (SDK buildClaimRequest calldata)
  *
- * Reads go through the async stub seam (swapped for wagmi/anvil in M5); the
- * wallet send of the prepared calldata is wired in M5 too.
+ * Live reads require the campaign's drop/registry to be real on-chain contracts
+ * (the seeded demo campaign on the dev fork). For the placeholder stub campaigns
+ * the gate stays "checking/unverified" and claim is disabled.
  */
 export function ClaimPanel({ campaign }: { campaign: Campaign }) {
   const { address } = useAccount();
-  const [request, setRequest] = useState<ClaimRequest | null>(null);
-  // Computed at render so gate/window checks stay accurate across a deadline
-  // boundary. In M5 the gate reads chain block.timestamp via SDK
-  // getIdentityStatus; this client clock is only the stub stand-in.
   const now = BigInt(Math.floor(Date.now() / 1000));
 
-  const identity = useQuery({
-    queryKey: ["identity", campaign.identityRegistry, address],
-    queryFn: () => getStubVerifiedUntil(campaign.identityRegistry, address),
-    enabled: !!address,
-  });
-  const eligibility = useQuery({
+  // Off-chain eligibility (Merkle proof) — stub seam; the proof feeds the claim.
+  const { data: elig } = useQuery({
     queryKey: ["eligibility", campaign.id, address],
     queryFn: () => getStubEligibility(campaign.id, address),
     enabled: !!address,
   });
 
+  // Live identity gate + live claimed flag.
+  const { data: verifiedUntil, isLoading: gateLoading } = useVerifiedUntil(
+    campaign.identityRegistry,
+    address,
+  );
+  const { data: claimedOnChain, isLoading: claimLoading } = useIsClaimed(
+    campaign.drop,
+    elig?.claim?.index,
+  );
+
   const verified =
-    identity.data !== undefined && isVerificationValid(identity.data, now);
+    verifiedUntil !== undefined && isVerificationValid(verifiedUntil, now);
   const windowOpen = isClaimWindowOpen(campaign.deadlineUnix, now);
-  const elig = eligibility.data;
 
   const gateState =
-    identity.isLoading || identity.data === undefined
+    !address || gateLoading || verifiedUntil === undefined
       ? "loading"
       : verified
         ? "verified"
         : "unverified";
 
-  const eligState = eligibility.isLoading
-    ? "loading"
-    : !elig?.eligible
-      ? "ineligible"
-      : elig.alreadyClaimed
+  const eligState =
+    !elig || (elig.eligible && !!elig.claim && claimLoading)
+      ? "loading"
+      : claimedOnChain
         ? "claimed"
-        : "eligible";
+        : !elig.eligible
+          ? "ineligible"
+          : "eligible";
 
   const amountDisplay = elig?.claim
     ? `${formatUnits(BigInt(elig.claim.amount), 18)} ${campaign.tokenSymbol}`
     : undefined;
 
   const canClaim =
-    verified && windowOpen && eligState === "eligible" && !!elig?.claim;
-
-  function prepareClaim() {
-    if (!elig?.claim) return;
-    setRequest(buildClaimRequest(campaign.drop, elig.claim));
-  }
+    verified &&
+    windowOpen &&
+    eligState === "eligible" &&
+    // Only once the on-chain check has resolved to "not claimed".
+    claimedOnChain === false &&
+    !!elig?.claim;
+  const claimRequest =
+    canClaim && elig?.claim ? buildClaimRequest(campaign.drop, elig.claim) : null;
 
   return (
     <div className="card">
@@ -99,22 +99,7 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
             </p>
           )}
 
-          <button
-            className="btn btn-primary"
-            disabled={!canClaim}
-            onClick={prepareClaim}
-          >
-            {request ? "Claim calldata ready" : "Prepare claim"}
-          </button>
-
-          {request && (
-            <CalldataPreview
-              title="MerkleDrop.claim(index, account, amount, proof)"
-              to={request.to}
-              data={request.data}
-              note="Prepared with SDK buildClaimRequest — wallet send is wired in M5."
-            />
-          )}
+          <TxButton request={claimRequest} label="Claim" primary disabled={!canClaim} />
 
           <p className="muted" style={{ fontSize: 12, margin: 0 }}>
             Claim requires (identity verified) AND (eligible). Self-claim only.

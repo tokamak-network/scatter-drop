@@ -44,9 +44,6 @@ export interface Campaign {
   status: CampaignStatus;
 }
 
-/** Deployed DropFactory address (createDrop / withdrawFees target). */
-export const FACTORY_ADDRESS: Address = addr("fac7");
-
 export const FEE_BY_TYPE: Record<AirdropType, string> = {
   [AirdropType.CSV]: "10 FEE",
   [AirdropType.ONCHAIN_SNAPSHOT]: "25 FEE",
@@ -148,23 +145,6 @@ export async function listManagedCampaigns(
 /** Stub admin gate — replaced by DropFactory.owner() check in M7. */
 export function useIsAdmin(_address?: string): boolean {
   return false;
-}
-
-/**
- * Stub for the customer identity gate. Returns a `verifiedUntil` (unix seconds)
- * for `account` in `registry`; M3 swaps this for SDK `getVerifiedUntil`/
- * `getIdentityStatus` against a live PublicClient.
- *
- * Demo behaviour: wallets whose last hex nibble is even are "verified"
- * (far-future), odd are "unverified" (0) — so both gate branches are reachable.
- */
-export async function getStubVerifiedUntil(
-  _registry: Address,
-  account?: Address,
-): Promise<bigint> {
-  if (!account) return 0n;
-  const lastNibble = parseInt(account.slice(-1), 16);
-  return Number.isNaN(lastNibble) || lastNibble % 2 !== 0 ? 0n : 9_999_999_999n;
 }
 
 export interface Eligibility {
