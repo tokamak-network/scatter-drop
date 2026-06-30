@@ -167,12 +167,17 @@ export interface Eligibility {
 const DEMO_PROOF: Hex[] = [
   "0x38e53589afaea9410bbb608dab49a3b28297ff97d5cea6d06ba5937dfec9ef93",
 ];
+// dev-fork seed recipient (anvil #1). Only this wallet has a valid proof in the
+// seeded tree, so only it is eligible — others would revert with InvalidProof.
+const SEED_RECIPIENT = "0x70997970c51812dc3a010c7d01b50e0d17dc79c8";
 
 export async function getStubEligibility(
   _campaignId: string,
   account?: Address,
 ): Promise<Eligibility> {
-  if (!account) return { eligible: false, alreadyClaimed: false };
+  if (!account || account.toLowerCase() !== SEED_RECIPIENT) {
+    return { eligible: false, alreadyClaimed: false };
+  }
   return {
     eligible: true,
     alreadyClaimed: false,
