@@ -72,7 +72,12 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
     : undefined;
 
   const canClaim =
-    verified && windowOpen && eligState === "eligible" && !!elig?.claim;
+    verified &&
+    windowOpen &&
+    eligState === "eligible" &&
+    // Only once the on-chain check has resolved to "not claimed".
+    claimedOnChain === false &&
+    !!elig?.claim;
   const claimRequest =
     canClaim && elig?.claim ? buildClaimRequest(campaign.drop, elig.claim) : null;
 

@@ -7,7 +7,12 @@ import { defineChain } from "viem";
  * so the fork keeps Sepolia's chain id (11155111) by default but is served from
  * a local RPC. Both are overridable via env for a plain anvil (31337) run.
  */
-const FORK_CHAIN_ID = Number(process.env.NEXT_PUBLIC_FORK_CHAIN_ID ?? 11155111);
+const DEFAULT_FORK_CHAIN_ID = 11155111;
+const parsedForkChainId = Number(process.env.NEXT_PUBLIC_FORK_CHAIN_ID);
+const FORK_CHAIN_ID =
+  Number.isFinite(parsedForkChainId) && parsedForkChainId > 0
+    ? parsedForkChainId
+    : DEFAULT_FORK_CHAIN_ID;
 export const FORK_RPC_URL =
   process.env.NEXT_PUBLIC_FORK_RPC ?? "http://127.0.0.1:8545";
 
