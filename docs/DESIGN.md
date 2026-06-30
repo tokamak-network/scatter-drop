@@ -365,7 +365,8 @@ GatedDrop (캠페인 1개 — 온체인 검증 규칙)  [후속 단계]
 1. 운영자가 자격 방식에 따라 명단 확보 (CSV 업로드 / 인덱서 스냅샷 / 소셜 완료자)
 2. `packages/merkle`가 Merkle 트리 생성 → root + proofs.json
 3. 운영자가 **zk-X509 CA 레지스트리 지정**(필수) + `DropFactory.createDrop`로 캠페인 배포 + 수수료 지불 + 토큰 예치
-4. proofs.json은 오프체인 저장(IPFS/S3), 고객은 클레임 페이지에서 proof 조회
+4. proofs.json은 IPFS 핀서비스(Filebase/Pinata, 자체노드 X) 업로드 → CID를 DropCreated 이벤트에 기록.
+   고객은 클레임 페이지가 그 CID로 proofs.json 로드 → 자기 proof 조회. (데모는 시드 고정 proof)
 5. 고객이 (필요 시) 지정 CA 레지스트리에 zk-X509 신원검증 등록 → `verifiedUntil` 세팅
 6. 고객이 `claim()` 호출(가스 자가 부담) → 신원검증 확인 후 토큰 수령
 7. 마감 후 운영자가 `sweep()`로 미클레임 토큰 회수
@@ -418,7 +419,6 @@ docs/            설계 문서
 - 수수료 기본 화폐: USDC / WTON / ETH (어드민 변경 가능하나 기본값 필요)
 - 수수료 토큰 단일 고정 vs 복수 허용 (초기엔 단일 고정 추천)
 - 수수료 면제 화이트리스트
-- proof 저장: IPFS vs S3
 - 캠페인 메타데이터(이름/로고) 저장 위치 (오프체인 DB 예정)
 - zk-X509 CA 레지스트리: 캠페인당 **단일 고정 vs 복수(OR)** 허용 (초기엔 단일 고정 추천)
 - 신원검증 만료(`verifiedUntil`)가 claim 시점 이전이면 처리 (재검증 유도 / claim 차단)
@@ -426,3 +426,10 @@ docs/            설계 문서
 ### 결정됨 (참고)
 - **수령 지갑 = 신원검증 지갑 동일 강제** (§4.3). self-claim만 허용, 제3자 대납·타주소 수령 불가.
   CSV 명단의 주소는 곧 신원검증해야 할 지갑이며, 미검증이면 claim 불가.
+- **proof(proofs.json) 저장 = IPFS 핀서비스 (Filebase/Pinata 무료 티어), 자체 노드 불필요.**
+  - 근거: proofs.json은 root에 묶인 **불변** 데이터 → content-addressing(CID)과 정합. 검열저항(플랫폼이
+    죽어도 claim 가능). 크기 작음(1만 명 ≈ 5MB) → 무료 티어로 캠페인 수천 개. 사실상 0원. 온체인 저장은 비싸서 제외.
+  - 운영: 자체 IPFS 노드 안 띄움 — Filebase(S3 호환 API, 5GB 무료) 또는 Pinata에 업로드만. S3만큼 단순.
+  - **CID 위치: `DropCreated` 이벤트에 proofsCid 필드 추가**(온체인) → 프론트가 별도 메타 DB 없이 자동 조회.
+    (대안: 오프체인 메타 DB. 이벤트 방식이 DB 불필요해서 우선.)
+  - **단계: v1 데모/포크 = 저장 없이 시드 고정 proof(현 동작). 출시 v1 = 핀서비스 + 이벤트 CID 연동.** [후속 작업]
