@@ -162,7 +162,8 @@ Step 2  자격 방식   ○ CSV 업로드                      → type=CSV
 Step 3  배포 방식   ○ 즉시  ○ 베스팅(cliff+linear)  ○ 선착순
 Step 4  미리보기    자격자 수·총 배분량 → Merkle 트리 생성
                     + 결제 요약: 종류별 수수료(feeOf[type]) + 예치 토큰량
-Step 5  생성 & 결제 feeToken(종류별 수수료) 지불 + 토큰 예치 → createDrop / createGatedDrop
+Step 5  생성 & 결제 납부 토큰 선택(ETH / TON …) — 토큰별 가격 표시(TON 할인)
+                    선택 토큰의 feeOf[token][type] 지불(ETH=msg.value/ERC20=approve) + 배포 토큰 예치 → createDrop
 ```
 > v1 핵심 경로: **CSV → Merkle → 즉시 배포.** 나머지는 단계적 노출.
 > 수수료는 **선택한 자격 방식(종류)에 따라 달라짐** — Step 2에서 즉시 안내.
@@ -181,14 +182,13 @@ Overview          /admin            플랫폼 현황 대시보드
  ├ 누적 수수료·트레저리 잔액
  └ 운영자 수·클레임 총량 등 핵심 지표
 
-Campaign Funds    /admin/funds      ★ 캠페인 등록 요구 자금 설정 (종류별 차등)
- ├ feeToken        결제(요구) 토큰 주소 — 어떤 토큰으로 받을지
- ├ feeOf[type]     ★ 에어드랍 종류별 생성 수수료 (setFee) — 종류마다 금액 다름
- │   · CSV               (명단 직접 → Merkle)           : 저
- │   · ONCHAIN_SNAPSHOT  (규칙 스냅샷, 인덱서)          : 중
- │   · ONCHAIN_GATED     (온체인 실시간 검증, GatedDrop): 중상
- │   · SOCIAL            (백엔드+OAuth+sybil)           : 고
- └ (각 0 = 해당 종류 무료. 생성 시 운영자는 선택 종류의 금액을 볼트에 적립)
+Campaign Funds    /admin/funds      ★ 생성 수수료 설정 — (납부토큰 × 종류) 2차원
+ ├ 납부 토큰 행     ETH(address(0)) / TON / … — 토큰별로 가격 행 추가
+ ├ feeOf[token][type] ★ setFee(token,type,amount) — 토큰별·종류별 금액 (TON 할인 = TON 행을 낮게)
+ │            ┌ CSV ┬ SNAPSHOT ┬ GATED ┬ SOCIAL
+ │      ETH   │  저 │   중      │  중상 │  고
+ │      TON   │ 저↓ │  중↓     │  …    │  … (할인)
+ └ (0 = 그 (토큰,종류) 미허용. 운영자는 생성 시 납부토큰 선택→해당 금액 볼트 적립)
 
 Identity Registries /admin/identity ★ 신원 레지스트리 관리
  ├ Operator Gate   운영자용 CA 레지스트리(operatorRegistry) 등록·변경

@@ -144,19 +144,19 @@
 ```
 DropFactory (어드민이 feeToken, feeOf[type], operatorRegistry, allowedToken 관리 + 수수료 볼트 보관)
  ├ operatorRegistry                          운영자용 CA 레지스트리 (어드민 전역 설정)
- ├ feeOf[AirdropType] → uint                 에어드랍 종류별 생성 수수료 (어드민 설정)
+ ├ feeOf[feeToken][AirdropType] → uint       (납부토큰,종류)별 생성 수수료 (어드민, address(0)=ETH, §8)
  ├ tokenTier[address] → {NONE,COMMUNITY,OFFICIAL}  에어드랍 토큰 등록·등급 (§8.7)
  ├ setOperatorRegistry(addr)   onlyAdmin     운영자 신원 게이트 변경
- ├ setFee(type, amount)        onlyAdmin     종류별 생성 수수료 설정
+ ├ setFee(feeToken, type, amount) onlyAdmin  (납부토큰,종류)별 수수료 설정 (TON 할인 등). 0=그 토큰 미허용
  ├ addAllowedToken(token)      operator      검증 운영자가 직접 등록(승인 불요) → COMMUNITY. 게이트1 + token.code>0
  ├ setOfficialToken(token,on)  onlyAdmin     플랫폼 공식 토큰 지정/해제 → OFFICIAL (목록 상단 노출)
  ├ removeAllowedToken(token)   onlyAdmin     악성 토큰 제거 → NONE (모더레이션)
- ├ createDrop(type, airdropToken, merkleRoot, totalAmount, deadline, identityRegistry)  Merkle 방식
- │     · type ∈ {CSV, ONCHAIN_SNAPSHOT, SOCIAL}  (오프체인 명단 → Merkle)
+ ├ createDrop(type, airdropToken, merkleRoot, totalAmount, deadline, identityRegistry, feeToken)  payable
+ │     · type ∈ {CSV, ONCHAIN_SNAPSHOT, SOCIAL}  (오프체인 명단 → Merkle). feeToken=납부수단(0=ETH)
  │     0a. require(operatorRegistry.verifiedUntil(msg.sender) >= now)  운영자 신원검증 (게이트1)
  │     0b. require(zkFactory.isRegistry[identityRegistry])             정식 고객 CA 레지스트리 검증
  │     0c. require(tokenTier[airdropToken] != NONE)                    등록 토큰만 배포 (미등록 시 운영자가 addAllowedToken)
- │     1. feeToken.transferFrom(operator, address(this), feeOf[type]) 종류별 수수료 → 볼트 적립
+ │     1. (ETH) require(msg.value==feeOf[0][type]) / (ERC20) transferFrom feeOf[feeToken][type] → 볼트 적립
  │     2. airdropToken.transferFrom(operator, newDrop, totalAmount)   배포 토큰 예치
  │     3. MerkleDrop 배포 (identityRegistry 주입)
  ├ createGatedDrop(airdropToken, ruleConfig, totalAmount, deadline, identityRegistry)  온체인 검증
@@ -186,27 +186,33 @@ GatedDrop (캠페인 1개 — 온체인 검증 규칙)  [후속 단계]
 ---
 
 ## 8. 이코노미 (수익 모델)
-- **에어드랍 종류별 차등 생성 수수료** 방식. 캠페인 규모와는 무관하되 **종류(자격 방식)별로 금액이 다르다.**
-  - 근거: 종류마다 플랫폼이 부담하는 원가(인덱서·백엔드·sybil 방지)가 달라서.
-- 어드민이 **결제 토큰(feeToken)**과 **종류별 금액(feeOf[type])**을 전역 설정.
-- 운영자가 캠페인 생성 시, 선택한 종류의 `feeOf[type]`만큼 `feeToken`을 **수수료 볼트(DropFactory)에 적립**.
-  플랫폼 어드민이 `collectedFees`로 조회하고 `withdrawFees`로 출금.
-- 배포할 에어드랍 토큰과 수수료 토큰은 **별개**. 어드민이 변경 가능(0 = 무료 프로모션).
+- **에어드랍 종류별 × 결제 토큰별 차등 생성 수수료.** 금액이 ① 종류(자격 방식) ② **납부 토큰**에 따라 다르다.
+  - 종류별 차등 근거: 종류마다 플랫폼 원가(인덱서·백엔드·sybil 방지)가 달라서.
+  - **토큰별 차등 = 결제 수단 인센티브.** 여러 토큰으로 납부 가능하고 토큰마다 가격이 다르다.
+    예) **TON으로 내면 ETH보다 할인** — 어드민이 TON 가격을 더 낮게 설정.
+- 운영자는 생성 시 **납부 토큰을 선택**(ETH=native / TON 등 ERC-20). 해당 토큰의 종류별 금액만큼 **볼트에 적립**.
+  플랫폼 어드민이 `collectedFees(token)`로 토큰별 조회, `withdrawFees`로 출금.
+- 배포할 에어드랍 토큰과 수수료 납부 토큰은 **별개**. 특정 토큰의 금액 0 = 그 토큰으론 무료/미허용.
 
-### 에어드랍 종류 → 생성 수수료 (어드민이 종류별로 설정)
-| 종류(AirdropType) | 자격 방식(§5) | 플랫폼 원가 | 요금 |
-|---|---|---|---|
-| `CSV` | 명단 직접 업로드 → Merkle | 낮음 (오프체인 트리) | 저 |
-| `ONCHAIN_SNAPSHOT` | 규칙 기반 스냅샷 (인덱서 계산) | 중 (인덱싱) | 중 |
-| `ONCHAIN_GATED` | 온체인 실시간 검증 (GatedDrop) | 중상 (상태조회 컨트랙트) | 중상 |
-| `SOCIAL` | 소셜·태스크 (백엔드+OAuth+sybil) | 높음 (백엔드 운영) | 고 |
-> 각 금액은 어드민이 독립 설정(`setFee(type, amount)`), 0이면 해당 종류 무료.
+### 생성 수수료 = feeOf[feeToken][AirdropType] (2차원)
+어드민이 **(납부토큰, 종류)별로** 금액 설정: `setFee(feeToken, type, amount)`. `feeToken=address(0)`은 native ETH.
+| | CSV | ONCHAIN_SNAPSHOT | ONCHAIN_GATED | SOCIAL |
+|---|---|---|---|---|
+| **ETH** (정가) | 저 | 중 | 중상 | 고 |
+| **TON** (할인) | 저×할인 | 중×할인 | … | … |
+> 종류별 차등(인덱서·백엔드 원가 반영) + 토큰별 차등(TON 할인 등 인센티브)을 곱으로 적용.
+> 미설정(0)인 (토큰,종류) 조합은 그 토큰으로 결제 불가.
+
+### createDrop 납부 흐름 (payable)
+- `feeToken == address(0)`(ETH): `require(msg.value == feeOf[0][type])` → `collectedFees[0] += msg.value`.
+- `feeToken != 0`(ERC-20, 예 TON): `require(msg.value == 0)` + `require(feeOf[feeToken][type] > 0)`(허용) →
+  `safeTransferFrom(operator, vault, feeOf[feeToken][type])` → `collectedFees[feeToken] += amount`.
+- `withdrawFees`는 ETH(address(0), call 전송) / ERC-20 모두 지원, treasury 고정.
 
 ### 어드민 전역 설정·권한 항목
 | 항목 | 설명 |
 |------|------|
-| feeToken | 캠페인 생성 요구 자금 — 결제 토큰 |
-| **feeOf[type]** | **에어드랍 종류별 생성 수수료 금액 (종류마다 다름, 0=무료)** |
+| **feeOf[token][type]** | **(납부토큰, 종류)별 생성 수수료 — TON 할인 등 토큰별 차등. 0=그 토큰 미허용** |
 | **수수료 볼트** | **생성 수수료가 DropFactory에 적립. `collectedFees(token)`로 잔액 조회** |
 | **withdrawFees** | **볼트 출금 — 플랫폼 어드민만 (`onlyAdmin`)** |
 | **operatorRegistry** | **운영자용 CA 레지스트리 — 캠페인 생성 신원 게이트(§4.3-1)** |

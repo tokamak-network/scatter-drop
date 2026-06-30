@@ -34,6 +34,22 @@ export const merkleDropAbi = [
 
 export const dropFactoryAbi = [
   {
+    type: "event",
+    name: "DropCreated",
+    inputs: [
+      { name: "drop", type: "address", indexed: true },
+      { name: "operator", type: "address", indexed: true },
+      { name: "airdropType", type: "uint8", indexed: true },
+      { name: "airdropToken", type: "address", indexed: false },
+      { name: "identityRegistry", type: "address", indexed: false },
+      { name: "merkleRoot", type: "bytes32", indexed: false },
+      { name: "totalAmount", type: "uint256", indexed: false },
+      { name: "deadline", type: "uint64", indexed: false },
+      { name: "fee", type: "uint256", indexed: false },
+    ],
+    anonymous: false,
+  },
+  {
     type: "function",
     name: "createDrop",
     stateMutability: "nonpayable",
