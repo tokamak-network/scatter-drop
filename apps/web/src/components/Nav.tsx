@@ -5,6 +5,7 @@ import { useAccount } from "wagmi";
 import { WalletConnect } from "./WalletConnect";
 import { NavLink } from "./NavLink";
 import { useIsAdmin } from "@/lib/stub";
+import { useMounted } from "@/lib/useMounted";
 
 const LINKS = [
   { href: "/campaigns", label: "Explore" },
@@ -14,7 +15,11 @@ const LINKS = [
 
 export function Nav() {
   const { address } = useAccount();
-  const isAdmin = useIsAdmin(address);
+  const mounted = useMounted();
+  const isAdminWallet = useIsAdmin(address);
+  // Gate on mount so the Admin link only appears client-side, matching the
+  // server markup (hooks are still called unconditionally above).
+  const isAdmin = mounted && isAdminWallet;
 
   const links = isAdmin ? [...LINKS, { href: "/admin", label: "Admin" }] : LINKS;
 

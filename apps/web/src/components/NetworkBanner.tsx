@@ -2,14 +2,17 @@
 
 import { useAccount, useSwitchChain } from "wagmi";
 import { SUPPORTED_CHAINS, SUPPORTED_CHAIN_IDS } from "@/lib/wagmi";
+import { useMounted } from "@/lib/useMounted";
 
 export function NetworkBanner() {
   const { isConnected, chainId } = useAccount();
   const { switchChain } = useSwitchChain();
+  const mounted = useMounted();
 
-  // Render nothing when disconnected, while the chain is still hydrating
-  // (chainId undefined), or when the active chain is supported.
-  if (!isConnected || chainId === undefined || SUPPORTED_CHAIN_IDS.includes(chainId)) {
+  // Render nothing until mounted (avoids hydration mismatch), when
+  // disconnected, while the chain is still hydrating (chainId undefined), or
+  // when the active chain is supported.
+  if (!mounted || !isConnected || chainId === undefined || SUPPORTED_CHAIN_IDS.includes(chainId)) {
     return null;
   }
 
