@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from "react";
 import Link from "next/link";
+import { airdropTypeLabel } from "@tokamak-network/scatter-drop-sdk";
 import type { Campaign } from "@/lib/stub";
 
 export function PageHeader({
@@ -46,6 +47,15 @@ export function Badge({ children }: { children: ReactNode }) {
       }}
     >
       {children}
+    </span>
+  );
+}
+
+/** Colored status dot + label (gate/eligibility status pills). */
+export function StatusDot({ color, label }: { color: string; label: string }) {
+  return (
+    <span style={{ fontSize: 12, color }}>
+      ● {label}
     </span>
   );
 }
@@ -134,7 +144,7 @@ export function CampaignCard({ c }: { c: Campaign }) {
         }}
       >
         <strong>{c.name}</strong>
-        <Badge>{c.type}</Badge>
+        <Badge>{airdropTypeLabel(c.type)}</Badge>
       </div>
       <p className="muted" style={{ margin: "0 0 12px", fontSize: 14 }}>
         {c.description}

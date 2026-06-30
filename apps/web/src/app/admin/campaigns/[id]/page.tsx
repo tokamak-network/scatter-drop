@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { airdropTypeLabel } from "@tokamak-network/scatter-drop-sdk";
 import { PageHeader, DescriptionList } from "@/components/ui";
 import { getCampaign } from "@/lib/stub";
 
@@ -21,8 +22,11 @@ export default async function AdminCampaignDetailPage({
         <DescriptionList
           items={[
             { label: "Operator", value: campaign.operator },
-            { label: "Customer CA Registry", value: campaign.identityRegistry },
-            { label: "Type", value: campaign.type },
+            {
+              label: "Customer CA Registry",
+              value: `${campaign.identityRegistryLabel} (${campaign.identityRegistry})`,
+            },
+            { label: "Type", value: airdropTypeLabel(campaign.type) },
             { label: "Claim rate", value: `${campaign.claimedPct}%` },
             { label: "Total", value: campaign.totalAmount },
             { label: "Deadline", value: campaign.deadline },
