@@ -11,6 +11,7 @@ import { IRegistryFactoryLike } from "../src/interfaces/IRegistryFactoryLike.sol
 import { MockERC20 } from "./mocks/MockERC20.sol";
 import { MockIdentityRegistry } from "./mocks/MockIdentityRegistry.sol";
 import { MockRegistryFactory } from "./mocks/MockRegistryFactory.sol";
+import { MockFeeOnTransferERC20 } from "./mocks/MockFeeOnTransferERC20.sol";
 
 contract DropFactoryTest is Test {
     DropFactory internal factory;
@@ -329,6 +330,42 @@ contract DropFactoryTest is Test {
         factory.createDrop(
             uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, deadline, custReg
         );
+    }
+
+    // -- exact-receipt guard (IncorrectAmountReceived) -------------------
+
+    function test_createDrop_revertsOnFeeOnTransferAirdropToken() public {
+        MockFeeOnTransferERC20 fot = new MockFeeOnTransferERC20("Tax", "TAX", 100); // 1% transfer fee
+        _verifyOperator(operator);
+        fot.mint(operator, TOTAL);
+        vm.prank(operator);
+        fot.approve(address(factory), TOTAL);
+
+        // SOCIAL fee is 0, so this isolates the airdrop-funding receipt check.
+        vm.prank(operator);
+        vm.expectRevert(DropFactory.IncorrectAmountReceived.selector);
+        factory.createDrop(
+            uint8(DropFactory.AirdropType.SOCIAL), address(fot), ROOT, TOTAL, deadline, custReg
+        );
+    }
+
+    function test_createDrop_revertsOnFeeOnTransferFeeToken() public {
+        MockFeeOnTransferERC20 fot = new MockFeeOnTransferERC20("TaxFee", "TXF", 50); // 0.5%
+        DropFactory f = new DropFactory(admin, IERC20(address(fot)), address(opReg), zkFactory, treasury);
+        vm.prank(admin);
+        f.setFee(uint8(DropFactory.AirdropType.CSV), CSV_FEE);
+
+        _verifyOperator(operator);
+        fot.mint(operator, CSV_FEE);
+        airdropToken.mint(operator, TOTAL);
+        vm.startPrank(operator);
+        fot.approve(address(f), CSV_FEE);
+        airdropToken.approve(address(f), TOTAL);
+        vm.expectRevert(DropFactory.IncorrectAmountReceived.selector);
+        f.createDrop(
+            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, deadline, custReg
+        );
+        vm.stopPrank();
     }
 
     // -- contract-address validation (NotAContract) ----------------------

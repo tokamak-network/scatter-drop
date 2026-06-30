@@ -83,6 +83,7 @@ contract DropFactory is Ownable {
     error FeeTokenNotSet();
     error InsufficientCollectedFees();
     error NotAContract();
+    error IncorrectAmountReceived();
 
     /// @param initialOwner       Admin (can set fees, registries, treasury, and withdraw).
     /// @param feeToken_          ERC20 charged on `createDrop`. May be zero only if all fees are 0.
@@ -209,9 +210,9 @@ contract DropFactory is Ownable {
         if (fee > 0) {
             IERC20 token = feeToken;
             if (address(token) == address(0)) revert FeeTokenNotSet();
-            // CEI: account for the fee before the external transfer.
+            // CEI: account for the fee before the external pull.
             collectedFees[address(token)] += fee;
-            token.safeTransferFrom(msg.sender, address(this), fee);
+            _pullExact(token, msg.sender, address(this), fee);
         }
 
         // Deploy the drop (operator = msg.sender, factory = this via MerkleDrop's msg.sender).
@@ -223,8 +224,9 @@ contract DropFactory is Ownable {
         );
         _drops.push(drop);
 
-        // Fund the drop with the airdrop tokens.
-        IERC20(airdropToken).safeTransferFrom(msg.sender, drop, totalAmount);
+        // Fund the drop with the airdrop tokens; require exact receipt so a fee-on-transfer
+        // or rebasing token cannot under-fund the campaign and DoS later claimers.
+        _pullExact(IERC20(airdropToken), msg.sender, drop, totalAmount);
 
         emit DropCreated(
             drop, msg.sender, t, airdropToken, identityRegistry, merkleRoot, totalAmount, deadline, fee
@@ -270,5 +272,18 @@ contract DropFactory is Ownable {
     ///      clear error instead of an opaque ABI-decode/AddressEmptyCode revert downstream.
     function _requireContract(address a) private view {
         if (a.code.length == 0) revert NotAContract();
+    }
+
+    /// @dev `safeTransferFrom` that requires `to` to net exactly `amount`, reverting
+    ///      `IncorrectAmountReceived` for fee-on-transfer / rebasing tokens that would
+    ///      otherwise mis-account the vault or under-fund a campaign.
+    function _pullExact(IERC20 token, address from, address to, uint256 amount) private {
+        uint256 balBefore = token.balanceOf(to);
+        token.safeTransferFrom(from, to, amount);
+        // unchecked so a token whose `to` balance fails to increase by `amount` (rebasing or
+        // malicious balanceOf) reverts with IncorrectAmountReceived rather than an arithmetic panic.
+        unchecked {
+            if (token.balanceOf(to) - balBefore != amount) revert IncorrectAmountReceived();
+        }
     }
 }
