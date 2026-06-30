@@ -156,6 +156,13 @@ describe("factory / erc20 calldata builders", () => {
     expect(mode.args).toEqual([A(9), FeeMode.FLAT]);
   });
 
+  it("buildSetFeeBpsRequest rejects out-of-range bps", () => {
+    expect(() => buildSetFeeBpsRequest(A(7), A(9), 1001)).toThrow(/\[0, 1000\]/);
+    expect(() => buildSetFeeBpsRequest(A(7), A(9), -1)).toThrow();
+    // boundary OK
+    expect(buildSetFeeBpsRequest(A(7), A(9), 1000).data).toBeDefined();
+  });
+
   it("buildWithdrawFeesRequest encodes token + amount", () => {
     const req = buildWithdrawFeesRequest(A(7), A(2), 50n);
     const d = decodeFunctionData({ abi: dropFactoryAbi, data: req.data });

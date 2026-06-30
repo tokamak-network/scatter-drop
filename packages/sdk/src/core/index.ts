@@ -1,5 +1,5 @@
 import type { Address, PublicClient } from "viem";
-import { TokenTier, type CampaignInfo } from "../types/index.js";
+import { FeeMode, TokenTier, type CampaignInfo } from "../types/index.js";
 import { dropFactoryAbi, merkleDropAbi } from "./abis.js";
 
 export {
@@ -95,6 +95,36 @@ export async function getFeeOf(
     functionName: "feeOf",
     args: [token, totalAmount],
   });
+}
+
+/** Read a token's effective fee mode (resolves to the default when unset). */
+export async function getFeeModeOf(
+  client: PublicClient,
+  factory: Address,
+  token: Address,
+): Promise<FeeMode> {
+  const m = await client.readContract({
+    address: factory,
+    abi: dropFactoryAbi,
+    functionName: "feeModeOf",
+    args: [token],
+  });
+  return Number(m) as FeeMode;
+}
+
+/** Read a token's effective PERCENT rate in basis points (resolves to the default when unset). */
+export async function getFeeBpsOf(
+  client: PublicClient,
+  factory: Address,
+  token: Address,
+): Promise<number> {
+  const bps = await client.readContract({
+    address: factory,
+    abi: dropFactoryAbi,
+    functionName: "feeBpsOf",
+    args: [token],
+  });
+  return Number(bps);
 }
 
 /** Whether a token may be used for airdrops (tier != NONE). */

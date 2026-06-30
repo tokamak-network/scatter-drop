@@ -21,6 +21,12 @@ export enum TokenTier {
   ALLOWED = 1,
 }
 
+/** Token fee pricing mode. MUST match the Solidity `enum FeeMode`. */
+export enum FeeMode {
+  PERCENT = 0,
+  FLAT = 1,
+}
+
 /** On-chain immutable view of a deployed MerkleDrop campaign. */
 export interface CampaignInfo {
   drop: Address;
