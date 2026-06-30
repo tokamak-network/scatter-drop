@@ -3,7 +3,7 @@
 import { use } from "react";
 import { airdropTypeLabel } from "@tokamak-network/scatter-drop-sdk";
 import { PageHeader, Badge, DescriptionList } from "@/components/ui";
-import { EmptyState, Loading } from "@/components/states";
+import { EmptyState, ErrorState, Loading } from "@/components/states";
 import { useCampaign } from "@/lib/campaigns";
 import { ClaimPanel } from "./ClaimPanel";
 
@@ -13,9 +13,14 @@ export default function CampaignDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { data: campaign, isLoading } = useCampaign(id);
+  const { data: campaign, isPending, isError } = useCampaign(id);
 
-  if (isLoading) return <Loading label="Loading campaign…" />;
+  if (isPending) return <Loading label="Loading campaign…" />;
+  if (isError) {
+    return (
+      <ErrorState>Could not load campaign. Is the fork running?</ErrorState>
+    );
+  }
   if (!campaign) {
     return (
       <EmptyState

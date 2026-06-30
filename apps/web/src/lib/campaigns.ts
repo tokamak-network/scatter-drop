@@ -61,8 +61,10 @@ async function scanDropCreated(
   filter?: { drop: Address },
 ): Promise<DropCreatedArgs[]> {
   const latest = await client.getBlockNumber();
-  const fromBlock =
+  let fromBlock =
     dep.deployBlock ?? (latest > LOOKBACK ? latest - LOOKBACK : 0n);
+  // A stale deployBlock (different fork run) could exceed head → fromBlock > toBlock.
+  if (fromBlock > latest) fromBlock = latest;
   const logs = await client.getLogs({
     address: dep.dropFactory,
     event: DROP_CREATED,
@@ -76,6 +78,7 @@ async function scanDropCreated(
 /** Map a DropCreated event into the UI Campaign shape (on-chain fields only). */
 function toCampaign(args: DropCreatedArgs, chainId: number): Campaign {
   const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+  const deadlineMs = Number(args.deadline) * 1000;
   return {
     id: args.drop,
     name: `Campaign ${args.drop.slice(0, 8)}`,
@@ -86,7 +89,11 @@ function toCampaign(args: DropCreatedArgs, chainId: number): Campaign {
     tokenSymbol: "tokens",
     totalAmount: `${formatUnits(args.totalAmount, 18)} tokens`,
     claimedPct: 0,
-    deadline: new Date(Number(args.deadline) * 1000).toISOString().slice(0, 10),
+    // Guard against a uint64-max deadline overflowing JS's max date.
+    deadline:
+      deadlineMs <= 8.64e15
+        ? new Date(deadlineMs).toISOString().slice(0, 10)
+        : "No deadline",
     deadlineUnix: args.deadline,
     identityRegistry: args.identityRegistry,
     identityRegistryLabel: registryLabel(args.identityRegistry, chainId),
@@ -107,6 +114,9 @@ export function useCampaigns() {
   return useQuery({
     queryKey: ["campaigns", dep?.dropFactory],
     staleTime: 15_000,
+    // Wait until the deployment resolves (null or object) to avoid a flash of
+    // stub content before the live query key is known.
+    enabled: dep !== undefined,
     queryFn: async (): Promise<{ live: boolean; campaigns: Campaign[] }> => {
       if (!client || !dep) {
         return { live: false, campaigns: await listStubCampaigns() };
@@ -129,6 +139,7 @@ export function useCampaign(id: string) {
   return useQuery({
     queryKey: ["campaign", id, dep?.dropFactory],
     staleTime: 15_000,
+    enabled: dep !== undefined,
     queryFn: async (): Promise<Campaign | undefined> => {
       if (isAddress(id) && client && dep) {
         const [args] = await scanDropCreated(client, dep, { drop: id as Address });

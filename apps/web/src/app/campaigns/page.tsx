@@ -5,7 +5,7 @@ import { EmptyState, ErrorState, Loading } from "@/components/states";
 import { useCampaigns } from "@/lib/campaigns";
 
 export default function CampaignsPage() {
-  const { data, isLoading, isError } = useCampaigns();
+  const { data, isPending, isError } = useCampaigns();
   const campaigns = data?.campaigns ?? [];
 
   return (
@@ -18,7 +18,7 @@ export default function CampaignsPage() {
             : "All active campaigns. No wallet required."
         }
       />
-      {isLoading ? (
+      {isPending ? (
         <Loading label="Loading campaigns…" />
       ) : isError ? (
         <ErrorState>Could not load campaigns. Is the fork running?</ErrorState>
