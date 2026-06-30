@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { useAccount } from "wagmi";
 import { airdropTypeLabel } from "@tokamak-network/scatter-drop-sdk";
-import { BarChart3, ChevronRight, Loader2, Plus } from "lucide-react";
+import { AlertCircle, BarChart3, ChevronRight, Loader2, Plus } from "lucide-react";
 import { ConnectGate } from "@/components/ConnectGate";
 import { useManagedCampaigns } from "@/lib/campaigns";
 
 export default function ManagePage() {
   const { address } = useAccount();
-  const { data: campaigns, isPending } = useManagedCampaigns(address);
+  const { data: campaigns, isPending, isError } = useManagedCampaigns(address);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -32,8 +32,16 @@ export default function ManagePage() {
 
       <ConnectGate prompt="Connect a wallet to manage your campaigns.">
         {isPending ? (
-          <div className="flex items-center justify-center p-12 text-slate-500">
-            <Loader2 className="w-6 h-6 animate-spin" />
+          <div className="flex items-center justify-center gap-2 p-12 text-slate-500 text-sm font-mono">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            Loading your campaigns…
+          </div>
+        ) : isError ? (
+          <div className="flex flex-col items-center justify-center p-12 bg-slate-900 border border-slate-800 rounded-xl text-center space-y-3">
+            <AlertCircle className="w-8 h-8 text-red-500" />
+            <p className="text-slate-400 text-sm max-w-sm">
+              Could not load your campaigns. Is the fork running?
+            </p>
           </div>
         ) : !campaigns || campaigns.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-12 bg-slate-900 border border-slate-800 rounded-xl text-center space-y-4">
