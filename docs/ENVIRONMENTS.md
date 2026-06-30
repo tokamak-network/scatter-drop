@@ -38,8 +38,21 @@ E2E에서 `verifiedUntil(addr) >= now`가 필요하지만 포크에선 실제 zk
   (`IdentityRegistry`의 `verifiedUntil` public mapping 슬롯 인덱스는 컨트랙트 스토리지 레이아웃에서 확인.)
 - 운영자·고객 테스트 지갑 각각 미래 만료값으로 세팅하면 게이트 통과.
 
+### 재사용: scatter-dex 포크 툴링 (검증됨)
+`/Users/zena/tokamak-projects/scatter-dex`에 동일 패턴이 이미 있다. W5는 이걸 본뜬다.
+- `scripts/dev-fork.sh` — `anvil --fork-url $FORK_URL --chain-id $FORK_CHAIN_ID --hardfork prague`
+  로 Sepolia 포크 기동 + RPC 대기. scatter-drop 포크 스크립트의 템플릿.
+- `scripts/deploy-zk-x509-sepolia.sh` — zk-X509 RegistryFactory + users/relayers 레지스트리
+  배포·ledger(json) 기록 패턴. (포크 위에선 이미 배포된 실주소를 그대로 쓰면 됨 — 재배포 불필요.)
+- `.env.testnet.example` 변수명 그대로 채택:
+  - `SEPOLIA_RPC_URL` (Alchemy), `SEPOLIA_IDENTITY_REGISTRY`(User-CA, **deposits/claims 게이트** = scatter-drop 고객/운영자 게이트),
+    `SEPOLIA_RELAYER_IDENTITY_REGISTRY`(register 게이트), `SEPOLIA_TON_ADDRESS`(0xa30f…0044), `SEPOLIA_WETH_ADDRESS`(0x7b79…E7f9).
+- 실제 RPC/배포키는 scatter-dex `contracts/.env`(DEPLOYER_KEY, SEPOLIA_RPC_URL, gitignored, 사용자 보유)
+  에서 소싱하는 방식과 동일하게. scatter-drop도 `contracts/.env`(gitignore됨)에 둔다. **키는 절대 커밋·출력 금지.**
+
 ### 필요 환경변수
-- `SEPOLIA_RPC_URL` — Alchemy/Infura/공개 RPC. (없으면 K1이 발급)
+- `SEPOLIA_RPC_URL` — scatter-dex `contracts/.env`에 이미 있음(사용자 보유). scatter-drop `contracts/.env`로 복사.
+- `feeToken`은 포크에서 `SEPOLIA_TON_ADDRESS`(0xa30f…0044) 재사용 가능(또는 MockERC20 배포).
 
 > 산출물: `scripts/`의 배포 스크립트가 위 주소를 주입해 DropFactory 배포 →
 > `deployments/<chainId>.json`(또는 포크용 산출물) 기록. SDK/프론트가 이를 소비.
