@@ -62,6 +62,11 @@ enum AirdropType { CSV, ONCHAIN_SNAPSHOT, ONCHAIN_GATED, SOCIAL }
   2) 봇(Copilot/Gemini) 인라인 코멘트 전부 인라인 답글로 닫음(반영=커밋SHA, decline=근거)
   3) K0가 지정한 **머지 순서 차례**일 것(의존 PR). 독립 PR은 아무 때나.
   4) CI는 비활성(프로덕트 완성 후 등록) — 체크탭 비어도 정상.
+  5) **다운스트림 빌드 게이트 (CI 없으니 수동):** 시그니처/ABI를 바꾸는 PR은 다운스트림까지 빌드 확인.
+     - 컨트랙트 시그니처 → SDK(abis/builders) → `pnpm --filter @tokamak-network/scatter-drop-sdk test`(드리프트가드 포함)
+     - SDK export/시그니처 → apps/web → `pnpm --filter @scatter-drop/web build` 1회
+     - 깨지면 같은 PR에서 최소 호환 픽스(필드 기본값 등) 또는 다운스트림 담당 동시 핑+머지순서 조정.
+     - PR 본문에 `downstream: web build ✅/N-A` 한 줄. (교훈: W20-SDK 8-arg가 web 빌드 조용히 깸 → #33 핫픽스)
 - **K0 역할(축소):** 배정·시임 동결·머지순서/의존 시퀀싱·충돌 중재·통합. PR별 봇 처리·머지는 작성자.
 - **머지 순서 GO:** K0가 broadcast로 "머지 GO" 통지(의존 해소 시). 받은 작성자가 자기 PR 머지.
 
