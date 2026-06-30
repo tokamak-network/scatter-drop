@@ -133,16 +133,15 @@ contract MerkleDrop {
         bytes32 leaf = keccak256(abi.encodePacked(index, account, amount));
         if (!MerkleProof.verify(proof, merkleRoot, leaf)) revert InvalidProof();
 
-        // Effects before interactions (CEI): mark the index claimed before the
-        // external identity call and the transfer. `verifiedUntil` is `view`
-        // (STATICCALL), so reentry is already blocked today; setting here keeps
-        // the no-double-claim guarantee even if a standalone deployment ever
-        // wired a non-view/reentrant registry. A later `NotVerified` revert
-        // rolls this back with the rest of the call.
-        _claimed.set(index);
-
+        // External identity check last among the guards: it is `view`
+        // (STATICCALL) so it cannot reenter, and ordering it after the in-memory
+        // checks avoids paying for it (and the SSTORE below) on a cheaper revert.
         if (identityRegistry.verifiedUntil(msg.sender) < block.timestamp) revert NotVerified();
 
+        // Effects before the value-moving interaction (CEI): mark the index
+        // claimed before the transfer, so a token with a transfer callback
+        // cannot reenter `claim` with the same index.
+        _claimed.set(index);
         token.safeTransfer(msg.sender, amount);
 
         emit Claimed(index, account, amount);
