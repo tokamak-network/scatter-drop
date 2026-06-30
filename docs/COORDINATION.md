@@ -68,15 +68,22 @@ enum AirdropType { CSV, ONCHAIN_SNAPSHOT, ONCHAIN_GATED, SOCIAL }
 |---|------|--------|------|------|------|
 | W0 | M0 부트스트랩 | — | — | K0 | ✅ 완료 |
 | W1 | M1 merkle 라이브러리 | M | 시임① | K0 | ✅ 완료(8900721) |
-| W2 | M1 SDK 골격(merkle/types/util 재노출) | S | W1 | K2 | 대기 |
-| W3 | M2 MerkleDrop(claim·게이트2·sweep)+테스트 | C | 시임② | K1 | 대기 |
-| W4 | M2 DropFactory(게이트1·종류별수수료·볼트)+테스트 | C | W3 | K1 | 대기 |
-| W5 | M3 배포·시드·anvil E2E(zk-X509 mock) | C | W4 | K1 | 대기 |
-| W6 | M4 프론트 기반(지갑·라우팅·SDK 소비) | F | 시임③ | K3 | 대기 |
-| W7 | SDK core 클라이언트(viem, ABI 연동) | S | W4 | K2 | 대기 |
+| W2 | M1 SDK 골격(merkle/types/util 재노출) | S | W1 | **K0** | 진행 |
+| W3 | M2 MerkleDrop(claim·게이트2·sweep)+공유인터페이스+공유Mock | C | 시임② | **K1** | 배정 |
+| W4 | M2 DropFactory(게이트1·종류별수수료·고정treasury볼트)+테스트 | C | W3(머지순서) | **K2** | 배정 |
+| W5 | M3 배포·시드·anvil E2E(zk-X509 mock) | C | W4 | K1/K2 | 대기 |
+| W6 | M4 프론트 기반(지갑·라우팅·stub) | F | 시임③ | **K3** | 배정 |
+| W7 | SDK core 클라이언트(viem, ABI 연동) | S | W4 | K0/K2 | 대기 |
 | W8+ | M5/M6/M7 화면 | F | W6·W7 | K3 | 대기 |
 
-> 단일 워커(K1)만 가동 시: W3→W4→W5 직렬, 이후 K0가 SDK/프론트 흡수.
+### 파일 소유 (겹침 0)
+- **K1**: `contracts/src/MerkleDrop.sol`, `contracts/src/interfaces/IIdentityRegistry.sol`,
+  `contracts/test/MerkleDrop.t.sol`, `contracts/test/mocks/{MockERC20,MockIdentityRegistry}.sol` (공유 Mock SoT)
+- **K2**: `contracts/src/DropFactory.sol`, `contracts/src/interfaces/IRegistryFactoryLike.sol`,
+  `contracts/test/DropFactory.t.sol`, `contracts/test/mocks/MockRegistryFactory.sol`
+- **K3**: `apps/web/**`
+- **K0**: `packages/**`, `docs/**`, 통합·리뷰·머지
+- 머지 순서: **W3(K1) → W4(K2)**. K2는 시임② 시그니처로 병렬 작성, K1 머지 후 리베이스·테스트.
 
 ## 5. 선결 결정 (K0 확정)
 - **withdrawFees:** 고정 `treasury`로만 출금(`setTreasury` + `withdrawFees(token, amount)`). ✅
