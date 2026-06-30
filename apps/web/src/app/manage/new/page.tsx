@@ -66,8 +66,8 @@ export default function NewCampaignPage() {
           // merkleRoot comes from the CSV/snapshot pipeline in M6; zero placeholder.
           merkleRoot: ZERO_ROOT,
           totalAmount,
-          // startTime 0 = start immediately (on-chain effectiveStart = now);
-          // the start/end datetime picker lands in the phase-4 wizard redesign.
+          // startTime 0 = claims open immediately (stored on-chain startTime is
+          // 0; now >= 0). The start/end datetime picker lands in phase 4.
           startTime: 0n,
           deadline: BigInt(deadlineUnix),
           identityRegistry: registryAddr,
