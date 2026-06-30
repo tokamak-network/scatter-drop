@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useSendTransaction, useWaitForTransactionReceipt } from "wagmi";
 import type { Address, Hex } from "viem";
 import { fork } from "@/lib/wagmi";
@@ -26,9 +26,16 @@ export function TxButton({
   const { data: hash, sendTransaction, isPending, error } = useSendTransaction();
   const { isLoading: mining, isSuccess } = useWaitForTransactionReceipt({ hash });
 
+  // Keep the latest callback in a ref so the success effect depends only on
+  // `isSuccess` — an inline `onConfirmed` (new identity each render) would
+  // otherwise re-fire the effect in a loop once `isSuccess` is true.
+  const onConfirmedRef = useRef(onConfirmed);
   useEffect(() => {
-    if (isSuccess) onConfirmed?.();
-  }, [isSuccess, onConfirmed]);
+    onConfirmedRef.current = onConfirmed;
+  }, [onConfirmed]);
+  useEffect(() => {
+    if (isSuccess) onConfirmedRef.current?.();
+  }, [isSuccess]);
 
   const busy = isPending || mining;
   const text = isPending

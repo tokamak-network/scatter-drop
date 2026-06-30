@@ -42,7 +42,10 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
     campaign.identityRegistry,
     address,
   );
-  const { data: claimedOnChain } = useIsClaimed(campaign.drop, elig?.claim?.index);
+  const { data: claimedOnChain, isLoading: claimLoading } = useIsClaimed(
+    campaign.drop,
+    elig?.claim?.index,
+  );
 
   const verified =
     verifiedUntil !== undefined && isVerificationValid(verifiedUntil, now);
@@ -55,13 +58,14 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
         ? "verified"
         : "unverified";
 
-  const eligState = !elig
-    ? "loading"
-    : claimedOnChain
-      ? "claimed"
-      : !elig.eligible
-        ? "ineligible"
-        : "eligible";
+  const eligState =
+    !elig || (elig.eligible && !!elig.claim && claimLoading)
+      ? "loading"
+      : claimedOnChain
+        ? "claimed"
+        : !elig.eligible
+          ? "ineligible"
+          : "eligible";
 
   const amountDisplay = elig?.claim
     ? `${formatUnits(BigInt(elig.claim.amount), 18)} ${campaign.tokenSymbol}`

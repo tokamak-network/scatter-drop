@@ -53,8 +53,9 @@ export default function NewCampaignPage() {
 
   const totalAmount = amountValid ? parseUnits(amount, 18) : 0n;
 
+  // `fee` truthy ⇒ defined and > 0n; a zero fee needs no approval.
   const approveFeeReq =
-    factory && feeToken && fee !== undefined
+    factory && feeToken && fee
       ? buildApproveRequest(feeToken, factory, fee)
       : null;
   const approveTokenReq =
