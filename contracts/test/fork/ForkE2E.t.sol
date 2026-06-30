@@ -70,19 +70,19 @@ contract ForkE2ETest is MerkleTestBase {
 
         // Deploy the local pieces on top of the fork: tokens + factory wired to
         // the real registry factory and users registry.
-        MockERC20 feeToken = new MockERC20("Fee", "FEE", 18);
         MockERC20 airdropToken = new MockERC20("Drop", "DROP", 18);
 
         vm.prank(admin);
         DropFactory factory =
             new DropFactory(admin, USERS_REGISTRY, IRegistryFactoryLike(ZK_FACTORY), treasury);
         vm.startPrank(admin);
-        factory.setFee(address(feeToken), CSV, FEE);
-        factory.setOfficialToken(address(airdropToken), true); // register the airdrop token
+        factory.setAllowedToken(address(airdropToken), true); // curate the airdrop token
+        factory.setFeeMode(address(airdropToken), DropFactory.FeeMode.FLAT);
+        factory.setFlatFee(address(airdropToken), FEE);
         vm.stopPrank();
 
-        feeToken.mint(operator, FEE);
-        airdropToken.mint(operator, TOTAL);
+        // On-top fee in the airdrop token: operator funds TOTAL + FEE.
+        airdropToken.mint(operator, TOTAL + FEE);
 
         // Allocation tree: leaf0 = customer, leaf1 = other. leaf0 is inlined to
         // keep the stack shallow (this fork test is near the local-var limit).
@@ -95,24 +95,16 @@ contract ForkE2ETest is MerkleTestBase {
         // Operator creates the campaign — gate 1 (mocked verified) + real
         // isRegistry both pass.
         vm.startPrank(operator);
-        feeToken.approve(address(factory), FEE);
-        airdropToken.approve(address(factory), TOTAL);
+        airdropToken.approve(address(factory), TOTAL + FEE);
         MerkleDrop drop = MerkleDrop(
             factory.createDrop(
-                CSV,
-                address(airdropToken),
-                root,
-                TOTAL,
-                uint64(block.timestamp),
-                deadline,
-                USERS_REGISTRY,
-                address(feeToken)
+                CSV, address(airdropToken), root, TOTAL, uint64(block.timestamp), deadline, USERS_REGISTRY
             )
         );
         vm.stopPrank();
 
         assertEq(airdropToken.balanceOf(address(drop)), TOTAL);
-        assertEq(factory.collectedFees(address(feeToken)), FEE);
+        assertEq(factory.collectedFees(address(airdropToken)), FEE);
 
         // Customer claims — gate 2 (mocked verified) passes.
         bytes32[] memory proof = new bytes32[](1);
@@ -129,10 +121,10 @@ contract ForkE2ETest is MerkleTestBase {
         assertEq(airdropToken.balanceOf(operator), OTHER_AMT);
         assertEq(airdropToken.balanceOf(address(drop)), 0);
 
-        // Admin withdraws the accrued fee to the fixed treasury.
+        // Admin withdraws the accrued fee (in the airdrop token) to the fixed treasury.
         vm.prank(admin);
-        factory.withdrawFees(address(feeToken), FEE);
-        assertEq(feeToken.balanceOf(treasury), FEE);
+        factory.withdrawFees(address(airdropToken), FEE);
+        assertEq(airdropToken.balanceOf(treasury), FEE);
     }
 
     /// @dev Make `account` appear verified far into the future on the real

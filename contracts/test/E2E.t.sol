@@ -3,7 +3,6 @@ pragma solidity 0.8.28;
 
 import { DropFactory } from "../src/DropFactory.sol";
 import { MerkleDrop } from "../src/MerkleDrop.sol";
-import { IIdentityRegistry } from "../src/interfaces/IIdentityRegistry.sol";
 import { IRegistryFactoryLike } from "../src/interfaces/IRegistryFactoryLike.sol";
 
 import { MockERC20 } from "./mocks/MockERC20.sol";
@@ -12,17 +11,13 @@ import { MockRegistryFactory } from "./mocks/MockRegistryFactory.sol";
 import { MerkleTestBase } from "./util/MerkleTestBase.sol";
 
 /// @notice End-to-end (M3) integration across the full scatter-drop stack with
-///         mocked zk-X509: operator creates a campaign through `DropFactory`,
-///         an identity-verified customer claims through the deployed
-///         `MerkleDrop`, the operator sweeps the remainder, and the admin
-///         withdraws accrued fees to the fixed treasury. This is the in-VM
-///         behavioral assertion of the same path the `DeployLocal` script
-///         stands up on a live anvil node for the SDK/frontend harness.
+///         mocked zk-X509: operator creates a campaign through `DropFactory` (paying
+///         the on-top creation fee in the airdrop token), an identity-verified
+///         customer claims through the deployed `MerkleDrop`, the operator sweeps
+///         the remainder, and the admin withdraws accrued fees to the fixed treasury.
 contract E2ETest is MerkleTestBase {
     uint8 internal constant CSV = 0;
-    address internal constant ETH = address(0); // native fee token
 
-    MockERC20 internal feeToken;
     MockERC20 internal airdropToken;
     MockIdentityRegistry internal operatorRegistry;
     MockIdentityRegistry internal customerRegistry;
@@ -35,8 +30,7 @@ contract E2ETest is MerkleTestBase {
     address internal customer = makeAddr("customer");
     address internal other = makeAddr("other"); // second allocation, never claims
 
-    uint256 internal constant FEE = 10 ether;
-    uint256 internal constant ETH_FEE = 0.01 ether;
+    uint256 internal constant FEE = 10 ether; // flat fee in the airdrop token
     uint256 internal constant CUSTOMER_AMT = 1000 ether;
     uint256 internal constant OTHER_AMT = 500 ether;
     uint256 internal constant TOTAL = CUSTOMER_AMT + OTHER_AMT;
@@ -51,7 +45,6 @@ contract E2ETest is MerkleTestBase {
         startTime = uint64(block.timestamp);
         deadline = uint64(block.timestamp + 30 days);
 
-        feeToken = new MockERC20("Fee", "FEE", 18);
         airdropToken = new MockERC20("Drop", "DROP", 18);
         operatorRegistry = new MockIdentityRegistry();
         customerRegistry = new MockIdentityRegistry();
@@ -63,18 +56,17 @@ contract E2ETest is MerkleTestBase {
             admin, address(operatorRegistry), IRegistryFactoryLike(address(zkFactory)), treasury
         );
         vm.startPrank(admin);
-        factory.setFee(address(feeToken), CSV, FEE);
-        factory.setFee(ETH, CSV, ETH_FEE); // also offer a native-ETH fee tier
-        factory.setOfficialToken(address(airdropToken), true); // register the airdrop token
+        factory.setAllowedToken(address(airdropToken), true); // curate the airdrop token
+        factory.setFeeMode(address(airdropToken), DropFactory.FeeMode.FLAT);
+        factory.setFlatFee(address(airdropToken), FEE);
         vm.stopPrank();
 
         // Identity-verify the operator (gate 1) and the customer (gate 2).
         operatorRegistry.setVerifiedUntil(operator, type(uint64).max);
         customerRegistry.setVerifiedUntil(customer, type(uint64).max);
 
-        // Fund the operator with fee + tokens to distribute.
-        feeToken.mint(operator, FEE);
-        airdropToken.mint(operator, TOTAL);
+        // Fund the operator with the distribution + on-top fee (same token).
+        airdropToken.mint(operator, TOTAL + FEE);
 
         // Build the allocation tree: leaf0 = customer, leaf1 = other.
         bytes32 leaf0 = _leaf(0, customer, CUSTOMER_AMT);
@@ -83,21 +75,13 @@ contract E2ETest is MerkleTestBase {
         customerProof = [leaf1];
     }
 
-    /// @dev Operator approves the factory and creates the campaign.
+    /// @dev Operator approves `TOTAL + FEE` and creates the campaign.
     function _createDrop() internal returns (MerkleDrop drop) {
         vm.startPrank(operator);
-        feeToken.approve(address(factory), FEE);
-        airdropToken.approve(address(factory), TOTAL);
+        airdropToken.approve(address(factory), TOTAL + FEE);
         drop = MerkleDrop(
             factory.createDrop(
-                CSV,
-                address(airdropToken),
-                root,
-                TOTAL,
-                startTime,
-                deadline,
-                address(customerRegistry),
-                address(feeToken)
+                CSV, address(airdropToken), root, TOTAL, startTime, deadline, address(customerRegistry)
             )
         );
         vm.stopPrank();
@@ -106,13 +90,13 @@ contract E2ETest is MerkleTestBase {
     function test_E2E_CreateClaimSweepWithdraw() public {
         MerkleDrop drop = _createDrop();
 
-        // Factory wired the drop correctly and funded it; fee went to the vault.
+        // Factory funded the drop with the full TOTAL and accrued the on-top fee.
         assertEq(address(drop.token()), address(airdropToken));
         assertEq(drop.operator(), operator);
         assertEq(drop.merkleRoot(), root);
         assertEq(airdropToken.balanceOf(address(drop)), TOTAL);
-        assertEq(feeToken.balanceOf(address(factory)), FEE);
-        assertEq(factory.collectedFees(address(feeToken)), FEE);
+        assertEq(airdropToken.balanceOf(address(factory)), FEE);
+        assertEq(factory.collectedFees(address(airdropToken)), FEE);
 
         // Verified customer claims their allocation.
         vm.prank(customer);
@@ -130,39 +114,9 @@ contract E2ETest is MerkleTestBase {
 
         // Admin withdraws accrued fees to the fixed treasury.
         vm.prank(admin);
-        factory.withdrawFees(address(feeToken), FEE);
-        assertEq(feeToken.balanceOf(treasury), FEE);
-        assertEq(factory.collectedFees(address(feeToken)), 0);
-    }
-
-    /// @dev Full flow paying the creation fee in native ETH instead of an ERC20:
-    ///      createDrop{value} → claim → admin withdraws the ETH fee to treasury.
-    function test_E2E_EthFee_CreateClaimWithdraw() public {
-        vm.deal(operator, ETH_FEE);
-
-        vm.startPrank(operator);
-        airdropToken.approve(address(factory), TOTAL); // no feeToken approval on the ETH path
-        MerkleDrop drop = MerkleDrop(
-            factory.createDrop{ value: ETH_FEE }(
-                CSV, address(airdropToken), root, TOTAL, startTime, deadline, address(customerRegistry), ETH
-            )
-        );
-        vm.stopPrank();
-
-        // Fee accrued as ETH in the vault; no ERC20 fee pulled.
-        assertEq(factory.collectedFees(ETH), ETH_FEE);
-        assertEq(address(factory).balance, ETH_FEE);
-        assertEq(feeToken.balanceOf(address(factory)), 0);
-
-        vm.prank(customer);
-        drop.claim(0, customer, CUSTOMER_AMT, customerProof);
-        assertEq(airdropToken.balanceOf(customer), CUSTOMER_AMT);
-
-        // Admin withdraws the ETH fee to the fixed treasury.
-        vm.prank(admin);
-        factory.withdrawFees(ETH, ETH_FEE);
-        assertEq(treasury.balance, ETH_FEE);
-        assertEq(factory.collectedFees(ETH), 0);
+        factory.withdrawFees(address(airdropToken), FEE);
+        assertEq(airdropToken.balanceOf(treasury), FEE);
+        assertEq(factory.collectedFees(address(airdropToken)), 0);
     }
 
     /// @dev A campaign that opens in the future: claims revert until startTime,
@@ -171,30 +125,20 @@ contract E2ETest is MerkleTestBase {
         uint64 futureStart = uint64(block.timestamp + 1 days);
 
         vm.startPrank(operator);
-        feeToken.approve(address(factory), FEE);
-        airdropToken.approve(address(factory), TOTAL);
+        airdropToken.approve(address(factory), TOTAL + FEE);
         MerkleDrop drop = MerkleDrop(
             factory.createDrop(
-                CSV,
-                address(airdropToken),
-                root,
-                TOTAL,
-                futureStart,
-                deadline,
-                address(customerRegistry),
-                address(feeToken)
+                CSV, address(airdropToken), root, TOTAL, futureStart, deadline, address(customerRegistry)
             )
         );
         vm.stopPrank();
 
         assertEq(drop.startTime(), futureStart);
 
-        // Before the window opens, even a verified customer with a valid proof is blocked.
         vm.prank(customer);
         vm.expectRevert(MerkleDrop.ClaimNotStarted.selector);
         drop.claim(0, customer, CUSTOMER_AMT, customerProof);
 
-        // Once startTime is reached, the same claim succeeds.
         vm.warp(futureStart);
         vm.prank(customer);
         drop.claim(0, customer, CUSTOMER_AMT, customerProof);
@@ -203,44 +147,25 @@ contract E2ETest is MerkleTestBase {
     }
 
     function test_E2E_RevertUnverifiedOperator() public {
-        // Gate 1 reverts on identity before any fee/token is pulled, so no
-        // funding or approvals are needed here.
         address rogue = makeAddr("rogue");
         vm.prank(rogue);
         vm.expectRevert(DropFactory.OperatorNotVerified.selector);
         factory.createDrop(
-            CSV,
-            address(airdropToken),
-            root,
-            TOTAL,
-            startTime,
-            deadline,
-            address(customerRegistry),
-            address(feeToken)
+            CSV, address(airdropToken), root, TOTAL, startTime, deadline, address(customerRegistry)
         );
     }
 
     function test_E2E_RevertNonStandardRegistry() public {
-        // The registry check reverts before any token is pulled, so the
-        // operator's setUp funding is irrelevant and no approvals are needed.
         MockIdentityRegistry rogueRegistry = new MockIdentityRegistry();
         vm.prank(operator);
         vm.expectRevert(DropFactory.NotAStandardRegistry.selector);
         factory.createDrop(
-            CSV,
-            address(airdropToken),
-            root,
-            TOTAL,
-            startTime,
-            deadline,
-            address(rogueRegistry),
-            address(feeToken)
+            CSV, address(airdropToken), root, TOTAL, startTime, deadline, address(rogueRegistry)
         );
     }
 
     function test_E2E_RevertUnverifiedCustomerClaim() public {
         MerkleDrop drop = _createDrop();
-        // `other` holds a valid allocation/proof but is not identity-verified.
         bytes32[] memory otherProof = new bytes32[](1);
         otherProof[0] = _leaf(0, customer, CUSTOMER_AMT);
         vm.prank(other);

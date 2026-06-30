@@ -98,10 +98,8 @@ contract MerkleDrop {
         IIdentityRegistry identityRegistry_,
         address operator_
     ) {
-        if (
-            address(token_) == address(0) || address(identityRegistry_) == address(0)
-                || operator_ == address(0)
-        ) {
+        // identityRegistry_ is OPTIONAL (W24): address(0) = no customer gate (open claim).
+        if (address(token_) == address(0) || operator_ == address(0)) {
             revert ZeroAddress();
         }
         // Guard standalone deployments: solmate's SafeTransferLib treats a call
@@ -144,10 +142,15 @@ contract MerkleDrop {
         bytes32 leaf = keccak256(abi.encodePacked(index, account, amount));
         if (!MerkleProof.verify(proof, merkleRoot, leaf)) revert InvalidProof();
 
-        // External identity check last among the guards: it is `view`
-        // (STATICCALL) so it cannot reenter, and ordering it after the in-memory
-        // checks avoids paying for it (and the SSTORE below) on a cheaper revert.
-        if (identityRegistry.verifiedUntil(msg.sender) < block.timestamp) revert NotVerified();
+        // Optional customer gate (W24): only when an identityRegistry is set.
+        // address(0) = open claim (merkle proof + self-claim still enforced).
+        // The check is last among the guards: it is `view` (STATICCALL) so it
+        // cannot reenter, and ordering it after the in-memory checks avoids
+        // paying for it (and the SSTORE below) on a cheaper revert.
+        if (
+            address(identityRegistry) != address(0)
+                && identityRegistry.verifiedUntil(msg.sender) < block.timestamp
+        ) revert NotVerified();
 
         // Effects before the value-moving interaction (CEI): mark the index
         // claimed before the transfer, so a token with a transfer callback
