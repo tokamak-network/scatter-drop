@@ -2,7 +2,6 @@
 pragma solidity 0.8.28;
 
 import { Script, console2 } from "forge-std/Script.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { DropFactory } from "../src/DropFactory.sol";
 import { IRegistryFactoryLike } from "../src/interfaces/IRegistryFactoryLike.sol";
@@ -47,10 +46,11 @@ contract DeployFork is Script {
         MockERC20 feeToken = new MockERC20("Fee Token", "FEE", 18);
         MockERC20 airdropToken = new MockERC20("Airdrop Token", "DROP", 18);
 
-        DropFactory factory = new DropFactory(
-            deployer, IERC20(address(feeToken)), operatorRegistry, IRegistryFactoryLike(zkFactory), treasury
-        );
-        factory.setFee(CSV, feeAmount);
+        DropFactory factory =
+            new DropFactory(deployer, operatorRegistry, IRegistryFactoryLike(zkFactory), treasury);
+        factory.setFee(address(feeToken), CSV, feeAmount);
+        // Register the demo airdrop token (OFFICIAL) so seeded createDrop calls pass the allow-list.
+        factory.setOfficialToken(address(airdropToken), true);
 
         feeToken.mint(deployer, fundAmount);
         airdropToken.mint(deployer, fundAmount);

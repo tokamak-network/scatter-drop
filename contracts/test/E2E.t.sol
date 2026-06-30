@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
 import { DropFactory } from "../src/DropFactory.sol";
 import { MerkleDrop } from "../src/MerkleDrop.sol";
 import { IIdentityRegistry } from "../src/interfaces/IIdentityRegistry.sol";
@@ -58,14 +56,12 @@ contract E2ETest is MerkleTestBase {
 
         vm.prank(admin);
         factory = new DropFactory(
-            admin,
-            IERC20(address(feeToken)),
-            address(operatorRegistry),
-            IRegistryFactoryLike(address(zkFactory)),
-            treasury
+            admin, address(operatorRegistry), IRegistryFactoryLike(address(zkFactory)), treasury
         );
-        vm.prank(admin);
-        factory.setFee(CSV, FEE);
+        vm.startPrank(admin);
+        factory.setFee(address(feeToken), CSV, FEE);
+        factory.setOfficialToken(address(airdropToken), true); // register the airdrop token
+        vm.stopPrank();
 
         // Identity-verify the operator (gate 1) and the customer (gate 2).
         operatorRegistry.setVerifiedUntil(operator, type(uint64).max);
@@ -88,7 +84,15 @@ contract E2ETest is MerkleTestBase {
         feeToken.approve(address(factory), FEE);
         airdropToken.approve(address(factory), TOTAL);
         drop = MerkleDrop(
-            factory.createDrop(CSV, address(airdropToken), root, TOTAL, deadline, address(customerRegistry))
+            factory.createDrop(
+                CSV,
+                address(airdropToken),
+                root,
+                TOTAL,
+                deadline,
+                address(customerRegistry),
+                address(feeToken)
+            )
         );
         vm.stopPrank();
     }
@@ -131,7 +135,9 @@ contract E2ETest is MerkleTestBase {
         address rogue = makeAddr("rogue");
         vm.prank(rogue);
         vm.expectRevert(DropFactory.OperatorNotVerified.selector);
-        factory.createDrop(CSV, address(airdropToken), root, TOTAL, deadline, address(customerRegistry));
+        factory.createDrop(
+            CSV, address(airdropToken), root, TOTAL, deadline, address(customerRegistry), address(feeToken)
+        );
     }
 
     function test_E2E_RevertNonStandardRegistry() public {
@@ -140,7 +146,9 @@ contract E2ETest is MerkleTestBase {
         MockIdentityRegistry rogueRegistry = new MockIdentityRegistry();
         vm.prank(operator);
         vm.expectRevert(DropFactory.NotAStandardRegistry.selector);
-        factory.createDrop(CSV, address(airdropToken), root, TOTAL, deadline, address(rogueRegistry));
+        factory.createDrop(
+            CSV, address(airdropToken), root, TOTAL, deadline, address(rogueRegistry), address(feeToken)
+        );
     }
 
     function test_E2E_RevertUnverifiedCustomerClaim() public {
