@@ -105,6 +105,13 @@ contract MerkleDropTest is MerkleTestBase {
         );
     }
 
+    function test_Constructor_RevertTokenNotContract() public {
+        // A non-zero address with no code is rejected (solmate would otherwise
+        // silently treat transfers to it as succeeding).
+        vm.expectRevert(MerkleDrop.NotAContract.selector);
+        new MerkleDrop(ERC20(address(0xDEAD)), root, deadline, IIdentityRegistry(address(registry)), OPERATOR);
+    }
+
     function test_Constructor_RevertDeadlineInPast() public {
         vm.expectRevert(MerkleDrop.DeadlineInPast.selector);
         new MerkleDrop(

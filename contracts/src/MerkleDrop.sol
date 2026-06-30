@@ -65,6 +65,7 @@ contract MerkleDrop {
     //////////////////////////////////////////////////////////////*/
 
     error ZeroAddress();
+    error NotAContract();
     error DeadlineInPast();
     error ClaimClosed();
     error NotSelfClaim();
@@ -96,6 +97,11 @@ contract MerkleDrop {
         ) {
             revert ZeroAddress();
         }
+        // Guard standalone deployments: solmate's SafeTransferLib treats a call
+        // to a codeless address as success, so a non-contract token would let
+        // claims "succeed" while moving nothing. The factory path already checks
+        // this, but MerkleDrop can be deployed directly.
+        if (address(token_).code.length == 0) revert NotAContract();
         if (deadline_ <= block.timestamp) revert DeadlineInPast();
 
         factory = msg.sender;
@@ -127,9 +133,16 @@ contract MerkleDrop {
         bytes32 leaf = keccak256(abi.encodePacked(index, account, amount));
         if (!MerkleProof.verify(proof, merkleRoot, leaf)) revert InvalidProof();
 
+        // Effects before interactions (CEI): mark the index claimed before the
+        // external identity call and the transfer. `verifiedUntil` is `view`
+        // (STATICCALL), so reentry is already blocked today; setting here keeps
+        // the no-double-claim guarantee even if a standalone deployment ever
+        // wired a non-view/reentrant registry. A later `NotVerified` revert
+        // rolls this back with the rest of the call.
+        _claimed.set(index);
+
         if (identityRegistry.verifiedUntil(msg.sender) < block.timestamp) revert NotVerified();
 
-        _claimed.set(index);
         token.safeTransfer(msg.sender, amount);
 
         emit Claimed(index, account, amount);
