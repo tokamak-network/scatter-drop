@@ -1,7 +1,5 @@
 import { Fragment, type ReactNode } from "react";
 import Link from "next/link";
-import { airdropTypeLabel } from "@tokamak-network/scatter-drop-sdk";
-import type { Campaign } from "@/lib/stub";
 
 export function PageHeader({
   title,
@@ -132,28 +130,3 @@ export function StubButton({
   );
 }
 
-export function CampaignCard({ c }: { c: Campaign }) {
-  return (
-    <Link href={`/c/${c.id}`} className="card" style={{ display: "block" }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 8,
-          marginBottom: 8,
-        }}
-      >
-        <strong>{c.name}</strong>
-        <Badge>{airdropTypeLabel(c.type)}</Badge>
-      </div>
-      <p className="muted" style={{ margin: "0 0 12px", fontSize: 14 }}>
-        {c.description}
-      </p>
-      <div className="muted" style={{ fontSize: 13, display: "flex", gap: 16 }}>
-        <span>{c.claimedPct}% claimed</span>
-        <span>Registry: {c.identityRegistry}</span>
-        <span>Ends {c.deadline}</span>
-      </div>
-    </Link>
-  );
-}
