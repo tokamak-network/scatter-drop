@@ -71,8 +71,13 @@ export async function getClaimReceipt(
 
 /** Build a CSV string from a header row + data rows (RFC-4180 escaping). */
 export function toCsv(headers: string[], rows: string[][]): string {
-  const escape = (v: string) =>
-    /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+  // Mitigate CSV formula injection: cells beginning with = + - @ (or a control
+  // char) are prefixed with a single quote so spreadsheets do not execute them.
+  const sanitize = (v: string) => (/^[=+\-@\t\r]/.test(v) ? `'${v}` : v);
+  const escape = (v: string) => {
+    const s = sanitize(v);
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
   const lines = [headers, ...rows].map((r) => r.map(escape).join(","));
   return lines.join("\r\n");
 }

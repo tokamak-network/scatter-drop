@@ -151,8 +151,10 @@ a {
   }
 }
 
-/* Print: hide chrome and non-document controls so "Save as PDF" yields a clean
-   document. Tax-document pages wrap their printable content in `.print-doc`. */
+/* Print: global rules that hide app chrome (header) and any `.no-print`
+   controls so "Save as PDF" yields a clean document. Tax-document pages wrap
+   their content in `.print-doc` as a semantic marker (no scoped rules needed —
+   hiding the chrome is enough since each doc page renders only its document). */
 @media print {
   header,
   .no-print {

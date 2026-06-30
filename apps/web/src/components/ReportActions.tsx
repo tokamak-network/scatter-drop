@@ -20,9 +20,12 @@ export function ReportActions({
     const a = document.createElement("a");
     a.href = url;
     a.download = filename;
+    // Attach to the DOM before clicking (more robust than clicking a detached
+    // anchor in some browsers), then defer revoke so the download starts
+    // reliably (synchronous revoke can cancel it in iOS Safari / older browsers).
+    document.body.appendChild(a);
     a.click();
-    // Defer revoke so the download starts reliably across browsers
-    // (synchronous revoke can cancel it in iOS Safari / older browsers).
+    a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 100);
   }
 
