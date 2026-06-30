@@ -331,6 +331,59 @@ contract DropFactoryTest is Test {
         );
     }
 
+    // -- contract-address validation (NotAContract) ----------------------
+
+    function test_constructor_revertsOnEoaOperatorRegistry() public {
+        address eoa = makeAddr("eoa");
+        vm.expectRevert(DropFactory.NotAContract.selector);
+        new DropFactory(admin, IERC20(address(feeToken)), eoa, zkFactory, treasury);
+    }
+
+    function test_constructor_revertsOnEoaZkFactory() public {
+        address eoa = makeAddr("eoa");
+        vm.expectRevert(DropFactory.NotAContract.selector);
+        new DropFactory(admin, IERC20(address(feeToken)), address(opReg), IRegistryFactoryLike(eoa), treasury);
+    }
+
+    function test_constructor_revertsOnEoaFeeToken() public {
+        address eoa = makeAddr("eoa");
+        vm.expectRevert(DropFactory.NotAContract.selector);
+        new DropFactory(admin, IERC20(eoa), address(opReg), zkFactory, treasury);
+    }
+
+    function test_constructor_allowsZeroFeeToken() public {
+        // address(0) fee token is permitted (valid only when all fees stay 0).
+        DropFactory f = new DropFactory(admin, IERC20(address(0)), address(opReg), zkFactory, treasury);
+        assertEq(address(f.feeToken()), address(0));
+    }
+
+    function test_setFeeToken_revertsOnEoa() public {
+        vm.prank(admin);
+        vm.expectRevert(DropFactory.NotAContract.selector);
+        factory.setFeeToken(IERC20(makeAddr("eoa")));
+    }
+
+    function test_setOperatorRegistry_revertsOnEoa() public {
+        vm.prank(admin);
+        vm.expectRevert(DropFactory.NotAContract.selector);
+        factory.setOperatorRegistry(makeAddr("eoa"));
+    }
+
+    function test_setZkFactory_revertsOnEoa() public {
+        vm.prank(admin);
+        vm.expectRevert(DropFactory.NotAContract.selector);
+        factory.setZkFactory(IRegistryFactoryLike(makeAddr("eoa")));
+    }
+
+    function test_createDrop_revertsOnEoaAirdropToken() public {
+        _verifyOperator(operator);
+        vm.prank(operator);
+        vm.expectRevert(DropFactory.NotAContract.selector);
+        factory.createDrop(
+            uint8(DropFactory.AirdropType.CSV), makeAddr("eoa"), ROOT, TOTAL, deadline, custReg
+        );
+    }
+
     // -- withdrawFees: fixed treasury ------------------------------------
 
     function test_withdrawFees_toTreasuryOnly() public {

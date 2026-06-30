@@ -82,6 +82,7 @@ contract DropFactory is Ownable {
     error InvalidMerkleRoot();
     error FeeTokenNotSet();
     error InsufficientCollectedFees();
+    error NotAContract();
 
     /// @param initialOwner       Admin (can set fees, registries, treasury, and withdraw).
     /// @param feeToken_          ERC20 charged on `createDrop`. May be zero only if all fees are 0.
@@ -98,6 +99,9 @@ contract DropFactory is Ownable {
         if (operatorRegistry_ == address(0) || address(zkFactory_) == address(0) || treasury_ == address(0)) {
             revert InvalidAddress();
         }
+        _requireContract(operatorRegistry_);
+        _requireContract(address(zkFactory_));
+        if (address(feeToken_) != address(0)) _requireContract(address(feeToken_));
         feeToken = feeToken_;
         operatorRegistry = operatorRegistry_;
         zkFactory = zkFactory_;
@@ -117,6 +121,8 @@ contract DropFactory is Ownable {
 
     /// @notice Change the fee token. Past accruals stay keyed by their original token.
     function setFeeToken(IERC20 feeToken_) external onlyOwner {
+        // Allow address(0) (only valid when all fees are 0); otherwise require a contract.
+        if (address(feeToken_) != address(0)) _requireContract(address(feeToken_));
         feeToken = feeToken_;
         emit FeeTokenUpdated(address(feeToken_));
     }
@@ -124,6 +130,7 @@ contract DropFactory is Ownable {
     /// @notice Update the operator (gate 1) registry.
     function setOperatorRegistry(address operatorRegistry_) external onlyOwner {
         if (operatorRegistry_ == address(0)) revert InvalidAddress();
+        _requireContract(operatorRegistry_);
         operatorRegistry = operatorRegistry_;
         emit OperatorRegistryUpdated(operatorRegistry_);
     }
@@ -131,6 +138,7 @@ contract DropFactory is Ownable {
     /// @notice Update the zk-X509 RegistryFactory used to validate customer registries.
     function setZkFactory(IRegistryFactoryLike zkFactory_) external onlyOwner {
         if (address(zkFactory_) == address(0)) revert InvalidAddress();
+        _requireContract(address(zkFactory_));
         zkFactory = zkFactory_;
         emit ZkFactoryUpdated(address(zkFactory_));
     }
@@ -185,6 +193,9 @@ contract DropFactory is Ownable {
         if (merkleRoot == bytes32(0)) revert InvalidMerkleRoot();
         if (totalAmount == 0) revert ZeroTotalAmount();
         if (deadline <= block.timestamp) revert InvalidDeadline();
+        // The airdrop token must be a real contract; identityRegistry's authenticity is
+        // enforced below by zkFactory.isRegistry (a genuine registry is itself a contract).
+        _requireContract(airdropToken);
 
         // Gate 1: campaign creator must be a verified operator.
         if (IIdentityRegistry(operatorRegistry).verifiedUntil(msg.sender) < block.timestamp) {
@@ -253,5 +264,11 @@ contract DropFactory is Ownable {
     function _toType(uint8 airdropType) private pure returns (AirdropType) {
         if (airdropType > uint8(type(AirdropType).max)) revert InvalidAirdropType();
         return AirdropType(airdropType);
+    }
+
+    /// @dev Revert `NotAContract` if `a` has no code. Fails misconfiguration fast with a
+    ///      clear error instead of an opaque ABI-decode/AddressEmptyCode revert downstream.
+    function _requireContract(address a) private view {
+        if (a.code.length == 0) revert NotAContract();
     }
 }
