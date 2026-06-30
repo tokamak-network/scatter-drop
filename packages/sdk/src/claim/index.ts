@@ -73,7 +73,8 @@ export function buildCreateDropRequest(factory: Address, params: CreateDropParam
   // The airdrop token is escrowed via ERC-20 transferFrom (approve-first), not
   // msg.value. A native airdrop token would be silently underfunded — reject it
   // so the caller can't build a doomed/underfunded createDrop.
-  if (getAddress(params.airdropToken) === NATIVE_FEE_TOKEN) {
+  const airdropToken = getAddress(params.airdropToken);
+  if (airdropToken === NATIVE_FEE_TOKEN) {
     throw new Error("airdropToken cannot be the native token (address(0)); use an ERC-20");
   }
   const feeToken = getAddress(params.feeToken);
@@ -85,7 +86,7 @@ export function buildCreateDropRequest(factory: Address, params: CreateDropParam
       functionName: "createDrop",
       args: [
         params.airdropType,
-        getAddress(params.airdropToken),
+        airdropToken,
         params.merkleRoot,
         params.totalAmount,
         params.startTime,
