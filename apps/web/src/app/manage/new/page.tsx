@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { isAddress, parseUnits, type Address, type Hex } from "viem";
+import { isAddress, parseUnits, zeroAddress, type Address, type Hex } from "viem";
 import { AirdropType, airdropTypeLabel } from "@tokamak-network/scatter-drop-sdk";
 import { PageHeader, StubButton } from "@/components/ui";
 import { ConnectGate } from "@/components/ConnectGate";
@@ -21,7 +21,7 @@ const ZERO_ROOT: Hex = `0x${"0".repeat(64)}`;
 export default function NewCampaignPage() {
   const [type, setType] = useState<AirdropType>(AirdropType.CSV);
   const [registry, setRegistry] = useState<Address>(
-    STANDARD_REGISTRIES[0]?.address ?? ("0x" as Address),
+    STANDARD_REGISTRIES[0]?.address ?? zeroAddress,
   );
   const [token, setToken] = useState("");
   const [amount, setAmount] = useState("");
@@ -30,7 +30,9 @@ export default function NewCampaignPage() {
 
   const tokenValid = isAddress(token);
   const amountValid = isPositiveDecimal(amount);
-  const deadlineParsed = deadline ? Date.parse(deadline) : 0;
+  // Parse the date input (YYYY-MM-DD) as explicit UTC midnight so the encoded
+  // deadline is deterministic regardless of the user's local timezone.
+  const deadlineParsed = deadline ? Date.parse(`${deadline}T00:00:00Z`) : 0;
   const deadlineUnix = Number.isNaN(deadlineParsed)
     ? 0
     : Math.floor(deadlineParsed / 1000);

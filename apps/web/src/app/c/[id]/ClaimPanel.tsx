@@ -32,7 +32,10 @@ import {
 export function ClaimPanel({ campaign }: { campaign: Campaign }) {
   const { address } = useAccount();
   const [request, setRequest] = useState<ClaimRequest | null>(null);
-  const [now] = useState(() => BigInt(Math.floor(Date.now() / 1000)));
+  // Computed at render so gate/window checks stay accurate across a deadline
+  // boundary. In M5 the gate reads chain block.timestamp via SDK
+  // getIdentityStatus; this client clock is only the stub stand-in.
+  const now = BigInt(Math.floor(Date.now() / 1000));
 
   const identity = useQuery({
     queryKey: ["identity", campaign.identityRegistry, address],
