@@ -60,7 +60,11 @@ export async function getTokenTier(
     functionName: "tokenTier",
     args: [token],
   });
-  return Number(t) as TokenTier;
+  const n = Number(t);
+  if (n !== TokenTier.NONE && n !== TokenTier.COMMUNITY && n !== TokenTier.OFFICIAL) {
+    throw new Error(`Unexpected TokenTier ordinal from contract: ${n}`);
+  }
+  return n;
 }
 
 /** Whether a token may be used for airdrops (tier != NONE). */
