@@ -59,7 +59,7 @@ function registryLabel(addr: Address, chainId: number): string {
 async function scanDropCreated(
   client: PublicClient,
   dep: WebDeployment,
-  filter?: { drop: Address },
+  filter?: { drop?: Address; operator?: Address },
 ): Promise<DropCreatedArgs[]> {
   const latest = await client.getBlockNumber();
   let fromBlock =
@@ -118,13 +118,30 @@ export function useCampaigns() {
     staleTime: 15_000,
     // Wait until the deployment resolves (null or object) to avoid a flash of
     // stub content before the live query key is known.
-    enabled: dep !== undefined,
+    enabled: dep !== undefined && !!client,
     queryFn: async (): Promise<{ live: boolean; campaigns: Campaign[] }> => {
       if (!client || !dep) {
         return { live: false, campaigns: await listStubCampaigns() };
       }
       const args = await scanDropCreated(client, dep);
       return { live: true, campaigns: args.map((a) => toCampaign(a, dep.chainId)) };
+    },
+  });
+}
+
+/** Campaigns created by `address` (DropCreated logs filtered by operator). */
+export function useManagedCampaigns(address: Address | undefined) {
+  const client = usePublicClient({ chainId: fork.id });
+  const { data: dep } = useDeployment();
+
+  return useQuery({
+    queryKey: ["managedCampaigns", dep?.dropFactory, address],
+    enabled: dep !== undefined && !!address && !!client,
+    staleTime: 15_000,
+    queryFn: async (): Promise<Campaign[]> => {
+      if (!client || !dep || !address) return [];
+      const args = await scanDropCreated(client, dep, { operator: address });
+      return args.map((a) => toCampaign(a, dep.chainId));
     },
   });
 }
@@ -141,7 +158,7 @@ export function useCampaign(id: string) {
   return useQuery({
     queryKey: ["campaign", id, dep?.dropFactory],
     staleTime: 15_000,
-    enabled: dep !== undefined,
+    enabled: dep !== undefined && !!client,
     queryFn: async (): Promise<Campaign | undefined> => {
       if (isAddress(id) && client && dep) {
         const [args] = await scanDropCreated(client, dep, { drop: id as Address });
