@@ -224,7 +224,7 @@ GatedDrop (캠페인 1개 — 온체인 검증 규칙)  [후속 단계]
   예) 1000 토큰 × 50bps = 5 → 운영자 예치 1005, 풀 1000, 볼트 5.
 
 ### createDrop 납부 흐름
-- `fee = totalAmount × bpsOf(airdropToken) / 10000` (bpsOf = 설정값 or default 300).
+- `fee = totalAmount × bpsOf(airdropToken) / 10000` (bpsOf = 설정값 or default 50).
 - 운영자 approve(airdropToken, totalAmount + fee) → createDrop:
   `airdropToken.safeTransferFrom(operator, drop, totalAmount)` (풀) +
   `airdropToken.safeTransferFrom(operator, address(this), fee)` (볼트) → `collectedFees[airdropToken] += fee`.
