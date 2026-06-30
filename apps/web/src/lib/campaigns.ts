@@ -38,6 +38,7 @@ type DropCreatedArgs = {
   identityRegistry: Address;
   merkleRoot: `0x${string}`;
   totalAmount: bigint;
+  startTime: bigint;
   deadline: bigint;
   fee: bigint;
 };
@@ -94,6 +95,7 @@ function toCampaign(args: DropCreatedArgs, chainId: number): Campaign {
       deadlineMs <= 8.64e15
         ? new Date(deadlineMs).toISOString().slice(0, 10)
         : "No deadline",
+    startTimeUnix: args.startTime,
     deadlineUnix: args.deadline,
     identityRegistry: args.identityRegistry,
     identityRegistryLabel: registryLabel(args.identityRegistry, chainId),

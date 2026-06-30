@@ -35,6 +35,8 @@ export interface Campaign {
   claimedPct: number;
   /** Display date (YYYY-MM-DD). */
   deadline: string;
+  /** Claim window start as unix seconds (0 = open immediately). */
+  startTimeUnix: bigint;
   /** Claim window deadline as unix seconds (for isClaimWindowOpen). */
   deadlineUnix: bigint;
   identityRegistry: Address;
@@ -63,6 +65,7 @@ const CAMPAIGNS: Campaign[] = [
     totalAmount: "1,000,000 ACME",
     claimedPct: 42,
     deadline: "2026-08-01",
+    startTimeUnix: 0n,
     deadlineUnix: 1785535200n,
     identityRegistry: addr("c0a1"),
     identityRegistryLabel: "KR-NPKI",
@@ -80,6 +83,7 @@ const CAMPAIGNS: Campaign[] = [
     totalAmount: "500,000 DAO",
     claimedPct: 88,
     deadline: "2026-07-10",
+    startTimeUnix: 0n,
     deadlineUnix: 1783684800n,
     identityRegistry: addr("c0a2"),
     identityRegistryLabel: "EE-eID",
@@ -97,6 +101,7 @@ const CAMPAIGNS: Campaign[] = [
     totalAmount: "250,000 QST",
     claimedPct: 100,
     deadline: "2026-05-01",
+    startTimeUnix: 0n,
     deadlineUnix: 1777660800n,
     identityRegistry: addr("c0a1"),
     identityRegistryLabel: "KR-NPKI",
