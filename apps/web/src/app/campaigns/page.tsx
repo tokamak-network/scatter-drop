@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { AirdropType, airdropTypeLabel } from "@tokamak-network/scatter-drop-sdk";
-import { AlertCircle, Calendar, ChevronRight, Search } from "lucide-react";
+import { AlertCircle, Calendar, ChevronRight, Loader2, Search } from "lucide-react";
 import { useCampaigns } from "@/lib/campaigns";
 import type { Campaign } from "@/lib/stub";
 
@@ -65,6 +65,7 @@ export default function CampaignsPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
           <input
             type="text"
+            aria-label="Search campaigns"
             placeholder="Search campaigns, tokens, descriptions..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -107,12 +108,20 @@ export default function CampaignsPage() {
 
       {/* List */}
       {isPending ? (
-        <EmptyBox icon>Loading campaigns…</EmptyBox>
+        <EmptyBox icon={<Loader2 className="w-8 h-8 text-slate-600 animate-spin" />}>
+          Loading campaigns…
+        </EmptyBox>
       ) : isError ? (
-        <EmptyBox icon>Could not load campaigns. Is the fork running?</EmptyBox>
+        <EmptyBox icon={<AlertCircle className="w-8 h-8 text-red-500" />}>
+          Could not load campaigns. Is the fork running?
+        </EmptyBox>
+      ) : campaigns.length === 0 ? (
+        <EmptyBox icon={<AlertCircle className="w-8 h-8 text-slate-600" />}>
+          No campaigns on-chain yet. Be the first to launch one.
+        </EmptyBox>
       ) : filtered.length === 0 ? (
-        <EmptyBox icon>
-          No campaigns found. Try adjusting your search or filters.
+        <EmptyBox icon={<Search className="w-8 h-8 text-slate-600" />}>
+          No campaigns match your search or filters.
         </EmptyBox>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -180,7 +189,7 @@ function CampaignCard({ c }: { c: Campaign }) {
       <div className="mt-5 pt-4 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-400 font-mono">
         <span className="flex items-center gap-1">
           <Calendar className="w-3 h-3 text-slate-500" />
-          Ends {c.deadline}
+          {c.deadline === "No deadline" ? "No deadline" : `Ends ${c.deadline}`}
         </span>
         <span className="flex items-center text-emerald-600 group-hover:translate-x-1 transition-transform">
           Check Eligibility <ChevronRight className="w-3.5 h-3.5 ml-0.5" />
@@ -190,10 +199,16 @@ function CampaignCard({ c }: { c: Campaign }) {
   );
 }
 
-function EmptyBox({ children }: { children: React.ReactNode; icon?: boolean }) {
+function EmptyBox({
+  children,
+  icon,
+}: {
+  children: React.ReactNode;
+  icon?: React.ReactNode;
+}) {
   return (
     <div className="flex flex-col items-center justify-center p-12 bg-slate-950 border border-slate-800 rounded-xl text-center space-y-3">
-      <AlertCircle className="w-8 h-8 text-slate-600" />
+      {icon}
       <p className="text-slate-400 text-sm max-w-sm">{children}</p>
     </div>
   );
