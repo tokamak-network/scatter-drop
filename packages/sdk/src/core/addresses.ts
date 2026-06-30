@@ -44,12 +44,15 @@ export function getZkX509(chainId: number): ZkX509Addresses | undefined {
  * ScatterDropDeployment (checksums addresses). Throws if required fields are missing.
  */
 export function parseDeployment(raw: unknown): ScatterDropDeployment {
+  if (typeof raw !== "object" || raw === null) {
+    throw new Error("deployment: expected a JSON object");
+  }
   const o = raw as Record<string, unknown>;
-  if (typeof o?.chainId !== "number") throw new Error("deployment: missing numeric chainId");
+  if (typeof o.chainId !== "number") throw new Error("deployment: missing numeric chainId");
   if (typeof o?.dropFactory !== "string") throw new Error("deployment: missing dropFactory address");
   return {
     chainId: o.chainId,
-    dropFactory: getAddress(o.dropFactory),
+    dropFactory: getAddress(o.dropFactory as string),
     feeToken: typeof o.feeToken === "string" ? getAddress(o.feeToken) : undefined,
     treasury: typeof o.treasury === "string" ? getAddress(o.treasury) : undefined,
   };

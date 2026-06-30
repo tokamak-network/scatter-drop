@@ -9,8 +9,11 @@ export interface TxRequest {
   data: Hex;
 }
 
-/** @deprecated alias of {@link TxRequest}; kept for back-compat. */
-export type ClaimRequest = TxRequest;
+/**
+ * @deprecated use {@link TxRequest}. Kept as an interface (not a type alias)
+ * for back-compat with consumers that extend/implement it.
+ */
+export interface ClaimRequest extends TxRequest {}
 
 /**
  * ABI-encode a `MerkleDrop.claim(index, account, amount, proof)` call from a
