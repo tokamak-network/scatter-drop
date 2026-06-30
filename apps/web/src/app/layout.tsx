@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "./providers";
 import { Nav } from "@/components/Nav";
-import { NetworkBanner } from "@/components/NetworkBanner";
 
 export const metadata: Metadata = {
   title: "scatter-drop",
@@ -19,11 +18,12 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <Providers>
-          <Nav />
-          <NetworkBanner />
-          <main className="container" style={{ padding: "32px 24px 64px" }}>
-            {children}
-          </main>
+          <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+            <Nav />
+            <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-8 md:px-8 space-y-8 pb-32">
+              {children}
+            </main>
+          </div>
         </Providers>
       </body>
     </html>

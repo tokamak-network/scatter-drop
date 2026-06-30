@@ -17,7 +17,7 @@ export function TxButton({
   primary,
   onConfirmed,
 }: {
-  request?: { to: Address; data: Hex } | null;
+  request?: { to: Address; data: Hex; value?: bigint } | null;
   label: string;
   disabled?: boolean;
   primary?: boolean;
@@ -55,7 +55,12 @@ export function TxButton({
           request &&
           // Pin the write to the fork so it cannot broadcast to whatever chain
           // the wallet happens to be on (reads are pinned to the same chain).
-          sendTransaction({ to: request.to, data: request.data, chainId: fork.id })
+          sendTransaction({
+            to: request.to,
+            data: request.data,
+            value: request.value,
+            chainId: fork.id,
+          })
         }
       >
         {text}
