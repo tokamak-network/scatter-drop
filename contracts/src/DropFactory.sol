@@ -297,6 +297,10 @@ contract DropFactory is Ownable {
         // Collect the creation fee in `feeToken` (ETH for native). CEI: credit before any pull.
         uint256 fee = _feeOf[feeToken][t];
         if (feeToken == ETH) {
+            // Symmetric with the ERC20 branch: an unpriced (fee == 0) tier is not a free tier —
+            // it is simply not accepted, so a missing ETH price can't be used to bypass the
+            // configured ERC20 price for the same airdrop type.
+            if (fee == 0) revert FeeNotConfigured();
             if (msg.value != fee) revert IncorrectFee();
             collectedFees[ETH] += fee;
         } else {
