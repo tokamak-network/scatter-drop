@@ -269,11 +269,12 @@ contract DropFactoryTest is Test {
         );
     }
 
-    function test_createDrop_revertsOnZeroRegistry() public {
+    function test_createDrop_openGate_zeroRegistryAllowed() public {
+        // W24: identityRegistry == address(0) is a valid "open claim" campaign.
         _verifyOperator(operator);
+        _fund(operator, TOTAL);
         vm.prank(operator);
-        vm.expectRevert(DropFactory.InvalidAddress.selector);
-        factory.createDrop(
+        address drop = factory.createDrop(
             uint8(DropFactory.AirdropType.CSV),
             address(airdropToken),
             ROOT,
@@ -282,6 +283,8 @@ contract DropFactoryTest is Test {
             deadline,
             address(0)
         );
+        assertEq(address(MerkleDrop(drop).identityRegistry()), address(0), "open gate");
+        assertEq(airdropToken.balanceOf(drop), TOTAL, "funded");
     }
 
     function test_createDrop_revertsOnZeroRoot() public {

@@ -17,10 +17,10 @@ DEPLOY_JSON="$ROOT/contracts/deployments/$CHAIN_ID.json"
 
 json_addr() { grep -o "\"$1\"[^,}]*" "$DEPLOY_JSON" | grep -oiE '0x[0-9a-f]{40}' | head -1; }
 FACTORY="$(json_addr dropFactory)"
-FEE_TOKEN="$(json_addr feeToken)"
 AIRDROP="$(json_addr airdropToken)"
-if [ -z "$FACTORY" ] || [ -z "$FEE_TOKEN" ] || [ -z "$AIRDROP" ]; then
-  echo "ERROR: could not parse dropFactory/feeToken/airdropToken from $DEPLOY_JSON" >&2
+# Fee is now charged in the airdrop token itself (no separate fee token).
+if [ -z "$FACTORY" ] || [ -z "$AIRDROP" ]; then
+  echo "ERROR: could not parse dropFactory/airdropToken from $DEPLOY_JSON" >&2
   exit 1
 fi
 REGISTRY="${SEPOLIA_IDENTITY_REGISTRY:-0x3cF6A96f1970053ffDf957074F988aD53D13ada3}"
@@ -68,8 +68,10 @@ echo "[seed] verifying operator + customer on the fork..."
 
 echo "[seed] approving airdrop token (distribution + on-top fee)..."
 # The fee is charged on top in the airdrop token, so approve TOTAL + FEE
-# (python handles >2^63 arithmetic that bash $(( )) would overflow).
-APPROVE="$(python3 -c "print($TOTAL + $FEE)")"
+# (python handles >2^63 arithmetic that bash $(( )) would overflow). Values are
+# passed as argv (not interpolated into source) so an RPC-derived FEE can't
+# inject code.
+APPROVE="$(python3 -c 'import sys; print(int(sys.argv[1]) + int(sys.argv[2]))' "$TOTAL" "$FEE")"
 cast send "$AIRDROP" 'approve(address,uint256)' "$FACTORY" "$APPROVE" --private-key "$OP_KEY" --rpc-url "$RPC_URL" >/dev/null
 
 echo "[seed] createDrop..."

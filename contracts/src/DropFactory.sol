@@ -274,7 +274,8 @@ contract DropFactory is Ownable {
         address identityRegistry
     ) external returns (address drop) {
         AirdropType t = _toType(airdropType);
-        if (airdropToken == address(0) || identityRegistry == address(0)) revert InvalidAddress();
+        // identityRegistry is OPTIONAL (W24): address(0) = no customer gate (open claim).
+        if (airdropToken == address(0)) revert InvalidAddress();
         if (merkleRoot == bytes32(0)) revert InvalidMerkleRoot();
         if (totalAmount == 0) revert ZeroTotalAmount();
         // Claim window: deadline in the future, opens before it closes, and at least MIN_DURATION
@@ -283,14 +284,19 @@ contract DropFactory is Ownable {
         if (startTime >= deadline) revert InvalidWindow();
         uint256 effectiveStart = startTime < block.timestamp ? block.timestamp : startTime;
         if (deadline - effectiveStart < MIN_DURATION) revert InvalidWindow();
-        _requireContract(airdropToken);
 
+        // Allow-list check first: a local storage read is far cheaper than the
+        // external calls below, so an unlisted token reverts early. (No separate
+        // _requireContract here — a token can only reach ALLOWED via
+        // setAllowedToken, which already enforces _requireContract.)
+        if (tokenTier[airdropToken] != TokenTier.ALLOWED) revert TokenNotAllowed();
         // Gate 1: campaign creator must be a verified operator.
         _requireVerifiedOperator();
-        // Customer registry must be a genuine zk-X509 IdentityRegistry.
-        if (!zkFactory.isRegistry(identityRegistry)) revert NotAStandardRegistry();
-        // The airdrop token must be on the admin-curated allow-list.
-        if (tokenTier[airdropToken] != TokenTier.ALLOWED) revert TokenNotAllowed();
+        // Customer gate is optional (W24): when set, it must be a genuine zk-X509
+        // IdentityRegistry; address(0) leaves the campaign open (no identity gate).
+        if (identityRegistry != address(0) && !zkFactory.isRegistry(identityRegistry)) {
+            revert NotAStandardRegistry();
+        }
 
         uint256 fee = _computeFee(airdropToken, totalAmount);
 

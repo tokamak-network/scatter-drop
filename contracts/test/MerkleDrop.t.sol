@@ -98,11 +98,27 @@ contract MerkleDropTest is MerkleTestBase {
         );
     }
 
-    function test_Constructor_RevertZeroRegistry() public {
-        vm.expectRevert(MerkleDrop.ZeroAddress.selector);
-        new MerkleDrop(
+    function test_Constructor_ZeroRegistryAllowed() public {
+        // W24: a zero identityRegistry is valid — it means "open claim" (no gate).
+        MerkleDrop open = new MerkleDrop(
             ERC20(address(token)), root, startTime, deadline, IIdentityRegistry(address(0)), OPERATOR
         );
+        assertEq(address(open.identityRegistry()), address(0));
+    }
+
+    function test_Claim_OpenGate_NoIdentityRequired() public {
+        // W24: with identityRegistry == 0, an unverified wallet can claim
+        // (merkle proof + self-claim still enforced).
+        MerkleDrop open = new MerkleDrop(
+            ERC20(address(token)), root, startTime, deadline, IIdentityRegistry(address(0)), OPERATOR
+        );
+        token.mint(address(open), TOTAL);
+
+        // ACC0 is not verified in any registry; the open gate skips the check.
+        vm.prank(ACC0);
+        open.claim(0, ACC0, AMT0, proof0);
+        assertEq(token.balanceOf(ACC0), AMT0);
+        assertTrue(open.isClaimed(0));
     }
 
     function test_Constructor_RevertZeroOperator() public {
