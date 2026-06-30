@@ -494,6 +494,18 @@ contract DropFactoryTest is Test {
         factory.setFee(address(feeToken), uint8(DropFactory.AirdropType.CSV), 1);
     }
 
+    function test_setFee_revertsOnEoaFeeToken() public {
+        vm.prank(admin);
+        vm.expectRevert(DropFactory.NotAContract.selector);
+        factory.setFee(makeAddr("eoa"), uint8(DropFactory.AirdropType.CSV), 1);
+    }
+
+    function test_setFee_allowsEthSentinel() public {
+        vm.prank(admin);
+        factory.setFee(ETH, uint8(DropFactory.AirdropType.SOCIAL), 1);
+        assertEq(factory.feeOf(ETH, uint8(DropFactory.AirdropType.SOCIAL)), 1);
+    }
+
     // -- token registry --------------------------------------------------
 
     function test_addAllowedToken_byVerifiedOperator_setsCommunity() public {

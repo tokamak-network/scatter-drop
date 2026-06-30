@@ -140,6 +140,9 @@ contract DropFactory is Ownable {
     ///         prices the native-ETH payment option.
     function setFee(address feeToken, uint8 airdropType, uint256 amount) external onlyOwner {
         AirdropType t = _toType(airdropType);
+        // Reject a non-contract ERC20 fee token up front (the ETH sentinel is exempt), so a
+        // misconfiguration fails here with NotAContract rather than opaquely inside createDrop.
+        if (feeToken != ETH) _requireContract(feeToken);
         _feeOf[feeToken][t] = amount;
         emit FeeUpdated(feeToken, t, amount);
     }
