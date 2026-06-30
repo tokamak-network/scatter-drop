@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import { Test } from "forge-std/Test.sol";
-
 import { ERC20 } from "solmate/tokens/ERC20.sol";
 
 import { MerkleDrop } from "../src/MerkleDrop.sol";
@@ -10,6 +8,7 @@ import { IIdentityRegistry } from "../src/interfaces/IIdentityRegistry.sol";
 
 import { MockERC20 } from "./mocks/MockERC20.sol";
 import { MockIdentityRegistry } from "./mocks/MockIdentityRegistry.sol";
+import { MerkleTestBase } from "./util/MerkleTestBase.sol";
 
 /// @notice Unit + fuzz tests for MerkleDrop.
 /// @dev The 4-leaf Merkle tree is rebuilt in `setUp` from the agreed scheme —
@@ -19,7 +18,7 @@ import { MockIdentityRegistry } from "./mocks/MockIdentityRegistry.sol";
 ///      so a passing `claim` confirms the contract's on-chain leaf encoding
 ///      agrees with that scheme. `EXPECTED_ROOT` pins the exact bytes as a
 ///      known-answer check, so any drift in encoding or hashing fails loudly.
-contract MerkleDropTest is Test {
+contract MerkleDropTest is MerkleTestBase {
     MockERC20 internal token;
     MockIdentityRegistry internal registry;
     MerkleDrop internal drop;
@@ -74,14 +73,6 @@ contract MerkleDropTest is Test {
 
         // Only ACC0 reaches the verification gate in these tests.
         registry.setVerifiedUntil(ACC0, type(uint64).max);
-    }
-
-    function _leaf(uint256 index, address account, uint256 amount) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(index, account, amount));
-    }
-
-    function _hashPair(bytes32 a, bytes32 b) internal pure returns (bytes32) {
-        return a <= b ? keccak256(abi.encodePacked(a, b)) : keccak256(abi.encodePacked(b, a));
     }
 
     /*//////////////////////////////////////////////////////////////

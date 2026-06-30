@@ -1,23 +1,29 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {Script, console2} from "forge-std/Script.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { Script, console2 } from "forge-std/Script.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import {DropFactory} from "../src/DropFactory.sol";
-import {IRegistryFactoryLike} from "../src/interfaces/IRegistryFactoryLike.sol";
+import { DropFactory } from "../src/DropFactory.sol";
+import { IRegistryFactoryLike } from "../src/interfaces/IRegistryFactoryLike.sol";
 
-import {MockERC20} from "../test/mocks/MockERC20.sol";
-import {MockIdentityRegistry} from "../test/mocks/MockIdentityRegistry.sol";
-import {MockRegistryFactory} from "../test/mocks/MockRegistryFactory.sol";
+import { MockERC20 } from "../test/mocks/MockERC20.sol";
+import { MockIdentityRegistry } from "../test/mocks/MockIdentityRegistry.sol";
+import { MockRegistryFactory } from "../test/mocks/MockRegistryFactory.sol";
 
 /// @title DeployLocal
-/// @notice Stands up the full scatter-drop stack on a local anvil node with
-///         mocked zk-X509 (M3). Deploys a fee token + airdrop token, the
-///         operator/customer identity registries, a registry factory, and a
-///         `DropFactory`, then verifies the deployer (operator) and a demo
-///         customer and funds the operator. The create→claim→sweep flow runs on
-///         top of this from the E2E harness (SDK) / integration test.
+/// @notice Local-only (M3) deploy/seed scaffolding: stands up the full
+///         scatter-drop stack on an anvil node with mocked zk-X509 and prints
+///         the addresses for an off-chain SDK/frontend harness to drive over
+///         RPC. Deploys a fee token + airdrop token, the operator/customer
+///         identity registries, a registry factory, and a `DropFactory`, then
+///         verifies the deployer (operator) and a demo customer and funds the
+///         operator. The create→claim→sweep behaviour itself is asserted in
+///         `test/E2E.t.sol` (in-VM); this script only provisions the environment.
+///
+/// @dev MOCK-ONLY — imports test doubles from `test/`. Do NOT use as a template
+///      for a real (non-anvil) deployment; production deploys must wire the
+///      genuine zk-X509 RegistryFactory / IdentityRegistry, not these mocks.
 ///
 /// @dev Usage (anvil):
 ///   anvil &
@@ -60,7 +66,11 @@ contract DeployLocal is Script {
 
         // The factory itself, then its CSV fee tier.
         DropFactory factory = new DropFactory(
-            deployer, IERC20(address(feeToken)), address(operatorRegistry), IRegistryFactoryLike(address(zkFactory)), treasury
+            deployer,
+            IERC20(address(feeToken)),
+            address(operatorRegistry),
+            IRegistryFactoryLike(address(zkFactory)),
+            treasury
         );
         factory.setFee(CSV, feeAmount);
 
