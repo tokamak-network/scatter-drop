@@ -155,26 +155,32 @@ export interface Eligibility {
 }
 
 /**
- * Stub eligibility check. M5 swaps this for a real proofs.json / on-chain
- * lookup; the returned `claim` already matches the SDK `ClaimProof` shape so
- * `buildClaimRequest(drop, claim)` works unchanged.
+ * Off-chain eligibility (proofs.json) seam. The returned `claim` matches the
+ * SDK `ClaimProof` shape so `buildClaimRequest(drop, claim)` works unchanged;
+ * the `alreadyClaimed` state is overridden by the live on-chain `isClaimed`
+ * read in the claim panel.
+ *
+ * Stub values track the dev-fork seed (index 0, 1000e18, fixed single-leaf
+ * proof) so the seeded recipient's claim succeeds against the real drop. A full
+ * proofs.json lookup (per address) is the follow-up once the seed publishes one.
  */
+const DEMO_PROOF: Hex[] = [
+  "0x38e53589afaea9410bbb608dab49a3b28297ff97d5cea6d06ba5937dfec9ef93",
+];
+
 export async function getStubEligibility(
-  campaignId: string,
+  _campaignId: string,
   account?: Address,
 ): Promise<Eligibility> {
   if (!account) return { eligible: false, alreadyClaimed: false };
-  // Campaign 3 is closed → not eligible; campaign 1 already claimed (shows the
-  // receipt path); others get a fresh sample allocation (claim path).
-  if (campaignId === "3") return { eligible: false, alreadyClaimed: false };
   return {
     eligible: true,
-    alreadyClaimed: campaignId === "1",
+    alreadyClaimed: false,
     claim: {
       index: 0,
       account,
-      amount: "120000000000000000000",
-      proof: [`0x${"ab".repeat(32)}` as Hex, `0x${"cd".repeat(32)}` as Hex],
+      amount: "1000000000000000000000",
+      proof: DEMO_PROOF,
     },
   };
 }

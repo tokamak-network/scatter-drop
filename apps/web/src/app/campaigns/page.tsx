@@ -1,17 +1,28 @@
-import { PageHeader, CampaignCard } from "@/components/ui";
-import { EmptyState } from "@/components/states";
-import { listCampaigns } from "@/lib/stub";
+"use client";
 
-export default async function CampaignsPage() {
-  const campaigns = await listCampaigns();
+import { PageHeader, CampaignCard } from "@/components/ui";
+import { EmptyState, ErrorState, Loading } from "@/components/states";
+import { useCampaigns } from "@/lib/campaigns";
+
+export default function CampaignsPage() {
+  const { data, isLoading, isError } = useCampaigns();
+  const campaigns = data?.campaigns ?? [];
 
   return (
     <>
       <PageHeader
         title="Explore"
-        subtitle="All active campaigns. No wallet required."
+        subtitle={
+          data?.live
+            ? "All on-chain campaigns. No wallet required."
+            : "All active campaigns. No wallet required."
+        }
       />
-      {campaigns.length === 0 ? (
+      {isLoading ? (
+        <Loading label="Loading campaigns…" />
+      ) : isError ? (
+        <ErrorState>Could not load campaigns. Is the fork running?</ErrorState>
+      ) : campaigns.length === 0 ? (
         <EmptyState
           title="No campaigns yet"
           description="Be the first to launch a compliant airdrop."

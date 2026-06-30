@@ -1,17 +1,30 @@
-import { notFound } from "next/navigation";
+"use client";
+
+import { use } from "react";
 import { airdropTypeLabel } from "@tokamak-network/scatter-drop-sdk";
 import { PageHeader, Badge, DescriptionList } from "@/components/ui";
-import { getCampaign } from "@/lib/stub";
+import { EmptyState, Loading } from "@/components/states";
+import { useCampaign } from "@/lib/campaigns";
 import { ClaimPanel } from "./ClaimPanel";
 
-export default async function CampaignDetailPage({
+export default function CampaignDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = await params;
-  const campaign = await getCampaign(id);
-  if (!campaign) notFound();
+  const { id } = use(params);
+  const { data: campaign, isLoading } = useCampaign(id);
+
+  if (isLoading) return <Loading label="Loading campaign…" />;
+  if (!campaign) {
+    return (
+      <EmptyState
+        title="Campaign not found"
+        description="This campaign is not on-chain on the connected network."
+        action={{ href: "/campaigns", label: "Explore campaigns" }}
+      />
+    );
+  }
 
   return (
     <>
@@ -27,9 +40,9 @@ export default async function CampaignDetailPage({
           <DescriptionList
             items={[
               { label: "Total", value: campaign.totalAmount },
-              { label: "Claimed", value: `${campaign.claimedPct}%` },
               { label: "Deadline", value: campaign.deadline },
               { label: "Token", value: campaign.token },
+              { label: "Operator", value: campaign.operator },
               {
                 label: "CA Registry",
                 value: `${campaign.identityRegistryLabel} (${campaign.identityRegistry})`,
