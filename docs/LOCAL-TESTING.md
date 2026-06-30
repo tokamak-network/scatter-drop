@@ -53,8 +53,43 @@ pnpm --filter @scatter-drop/web dev
   `0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d`) → 데모 캠페인에서 claim.
 - **또는** 내 지갑을 §2로 검증 후 연결 → 생성 마법사(createDrop)·클레임·볼트 출금 클릭.
 
-## 5. 종료
-- 터미널 A에서 **Ctrl-C** → anvil 종료. (포크 상태는 휘발 — 다시 띄우면 새 배포)
+## 5. 종료 / 재시작
+
+### 종료
+- 터미널 A에서 **Ctrl-C** → anvil 종료. 터미널 B에서 **Ctrl-C** → dev 서버 종료.
+- (포크 상태는 휘발 — 다시 띄우면 새 배포/새 주소)
+
+### 떠 있는 걸 강제로 내리기 (포트로)
+터미널을 잃었거나 백그라운드로 띄웠을 때:
+```bash
+lsof -ti tcp:8545 | xargs kill   # anvil 종료
+lsof -ti tcp:3000 | xargs kill   # 프론트 종료
+```
+
+### 코드가 바뀐 뒤 깨끗하게 재시작 (가장 흔한 경우)
+컨트랙트/SDK가 바뀌면 **반드시 anvil을 새로 띄워 재배포**해야 한다(옛 anvil엔 옛 컨트랙트).
+```bash
+# 0) 기존 것 내리기
+lsof -ti tcp:8545 | xargs kill 2>/dev/null
+lsof -ti tcp:3000 | xargs kill 2>/dev/null
+
+# 1) 최신 코드 + 의존성
+git pull
+pnpm install
+
+# 2) 포크 재기동 + 재배포 (터미널 A)
+scripts/dev-fork.sh
+#   → 끝의 "Frontend env" 5줄을 apps/web/.env.local에 다시 붙임 (주소가 새로 바뀜!)
+
+# 3) 내 지갑 다시 검증 (포크가 새로 떠서 초기화됨)
+scripts/dev-verify.sh 0xMY_WALLET
+
+# 4) 프론트 재시작 (터미널 B)
+pnpm --filter @scatter-drop/web dev
+```
+> 핵심: **dev-fork.sh를 새로 돌리면 DropFactory 주소가 매번 바뀐다** → `apps/web/.env.local`의
+> `NEXT_PUBLIC_*`를 새 출력으로 갱신하고 dev 서버를 재시작(또는 새로 시작)해야 화면이 맞는다.
+> 프론트 코드만 바뀐 경우(컨트랙트 그대로)는 dev 서버가 핫리로드하므로 anvil 재배포 불필요.
 
 ---
 
