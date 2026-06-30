@@ -1,8 +1,8 @@
 # W5 — Local deployment & anvil E2E (M3)
 
-> Status: **draft, pending W4 (DropFactory) merge to `main`.** The deploy script
-> below is written against the frozen signatures from coordination (시임②); the
-> `DropFactory` / `MockRegistryFactory` imports go live once W4 lands.
+> Status: **active.** W3 (MerkleDrop) and W4 (DropFactory) are merged to `main`;
+> `DeployLocal.s.sol` builds and simulates, and the create→claim→sweep flow is
+> asserted in `test/E2E.t.sol`.
 
 ## Goal
 Stand up the full scatter-drop stack on a local anvil node and run one end-to-end
@@ -50,8 +50,8 @@ createDrop(uint8 airdropType, address airdropToken, bytes32 merkleRoot,
            uint256 totalAmount, uint64 deadline, address identityRegistry) -> address drop
 MockRegistryFactory.setRegistry(address,bool) / isRegistry(address) -> bool
 ```
-`DeployLocal.s.sol` is written against these and is ready to compile the moment
-W4 lands on `main` (just rebase). Create→claim→sweep E2E added on top after merge.
+`DeployLocal.s.sol` is written against these and compiles on `main`; the
+create→claim→sweep flow is asserted in `test/E2E.t.sol`.
 
 ## Open items (confirm with K0 before finalizing)
 - Local zk-X509: keep mock-only for M3 (assumed), real integration deferred.
