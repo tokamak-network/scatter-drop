@@ -3,11 +3,18 @@ import { decodeFunctionData, getAddress, type Address } from "viem";
 import {
   AirdropType,
   airdropTypeLabel,
+  buildApproveRequest,
   buildClaimRequest,
+  buildCreateDropRequest,
+  buildWithdrawFeesRequest,
+  dropFactoryAbi,
   encodeClaim,
+  erc20Abi,
+  getZkX509,
   isClaimWindowOpen,
   isVerificationValid,
   merkleDropAbi,
+  parseDeployment,
 } from "../src/index.js";
 import { buildDrop } from "../src/merkle/index.js";
 
@@ -63,5 +70,58 @@ describe("claim encoding", () => {
     const req = buildClaimRequest(A(99), drop.claims[A(1)]!);
     expect(req.to).toBe(A(99));
     expect(req.data.startsWith("0x")).toBe(true);
+  });
+});
+
+describe("factory / erc20 calldata builders", () => {
+  it("buildCreateDropRequest encodes createDrop args", () => {
+    const req = buildCreateDropRequest(A(7), {
+      airdropType: AirdropType.CSV,
+      airdropToken: A(2),
+      merkleRoot: `0x${"ab".repeat(32)}`,
+      totalAmount: 1000n,
+      deadline: 1_900_000_000n,
+      identityRegistry: A(3),
+    });
+    expect(req.to).toBe(A(7));
+    const d = decodeFunctionData({ abi: dropFactoryAbi, data: req.data });
+    expect(d.functionName).toBe("createDrop");
+    expect(d.args[0]).toBe(AirdropType.CSV);
+    expect(d.args[1]).toBe(A(2));
+    expect(d.args[3]).toBe(1000n);
+    expect(d.args[5]).toBe(A(3));
+  });
+
+  it("buildWithdrawFeesRequest encodes token + amount", () => {
+    const req = buildWithdrawFeesRequest(A(7), A(2), 50n);
+    const d = decodeFunctionData({ abi: dropFactoryAbi, data: req.data });
+    expect(d.functionName).toBe("withdrawFees");
+    expect(d.args).toEqual([A(2), 50n]);
+  });
+
+  it("buildApproveRequest targets the token with approve calldata", () => {
+    const req = buildApproveRequest(A(2), A(7), 1000n);
+    expect(req.to).toBe(A(2));
+    const d = decodeFunctionData({ abi: erc20Abi, data: req.data });
+    expect(d.functionName).toBe("approve");
+    expect(d.args).toEqual([A(7), 1000n]);
+  });
+});
+
+describe("addresses", () => {
+  it("knows zk-X509 Sepolia addresses", () => {
+    const z = getZkX509(11155111)!;
+    expect(z.registryFactory).toBe("0x9e937dF6ac0E85979622519068412A518fa085d9");
+    expect(z.usersRegistry).toBe("0x3cF6A96f1970053ffDf957074F988aD53D13ada3");
+  });
+
+  it("returns undefined for unknown chains", () => {
+    expect(getZkX509(999)).toBeUndefined();
+  });
+
+  it("parseDeployment checksums and validates", () => {
+    const d = parseDeployment({ chainId: 31337, dropFactory: A(5).toLowerCase() });
+    expect(d.dropFactory).toBe(A(5));
+    expect(() => parseDeployment({ chainId: 1 })).toThrow(/dropFactory/);
   });
 });
