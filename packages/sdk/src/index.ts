@@ -1,5 +1,5 @@
 // Types
-export { AirdropType, type CampaignInfo, type IdentityStatus } from "./types/index.js";
+export { AirdropType, TokenTier, type CampaignInfo, type IdentityStatus } from "./types/index.js";
 
 // Util
 export { airdropTypeLabel, isClaimWindowOpen } from "./util/index.js";
@@ -16,6 +16,8 @@ export {
   erc20Abi,
   getCampaignInfo,
   isClaimed,
+  getTokenTier,
+  isTokenAllowed,
   ZK_X509,
   getZkX509,
   parseDeployment,
@@ -38,6 +40,9 @@ export {
   buildCreateDropRequest,
   buildWithdrawFeesRequest,
   buildApproveRequest,
+  buildAddAllowedTokenRequest,
+  buildSetOfficialTokenRequest,
+  buildRemoveAllowedTokenRequest,
   type TxRequest,
   type ClaimRequest,
   type CreateDropParams,

@@ -2,10 +2,14 @@ import { describe, expect, it } from "vitest";
 import { decodeFunctionData, getAddress, type Address } from "viem";
 import {
   AirdropType,
+  TokenTier,
   airdropTypeLabel,
+  buildAddAllowedTokenRequest,
   buildApproveRequest,
   buildClaimRequest,
   buildCreateDropRequest,
+  buildRemoveAllowedTokenRequest,
+  buildSetOfficialTokenRequest,
   buildWithdrawFeesRequest,
   dropFactoryAbi,
   encodeClaim,
@@ -116,6 +120,40 @@ describe("events", () => {
     expect(names).toContain("drop");
     expect(names).toContain("airdropToken");
     expect(names).toContain("merkleRoot");
+  });
+});
+
+describe("token registry builders", () => {
+  it("buildAddAllowedTokenRequest encodes addAllowedToken", () => {
+    const req = buildAddAllowedTokenRequest(A(7), A(2));
+    expect(req.to).toBe(A(7));
+    const d = decodeFunctionData({ abi: dropFactoryAbi, data: req.data });
+    expect(d.functionName).toBe("addAllowedToken");
+    expect(d.args).toEqual([A(2)]);
+  });
+
+  it("buildSetOfficialTokenRequest encodes token + flag", () => {
+    const d = decodeFunctionData({
+      abi: dropFactoryAbi,
+      data: buildSetOfficialTokenRequest(A(7), A(2), true).data,
+    });
+    expect(d.functionName).toBe("setOfficialToken");
+    expect(d.args).toEqual([A(2), true]);
+  });
+
+  it("buildRemoveAllowedTokenRequest encodes removeAllowedToken", () => {
+    const d = decodeFunctionData({
+      abi: dropFactoryAbi,
+      data: buildRemoveAllowedTokenRequest(A(7), A(2)).data,
+    });
+    expect(d.functionName).toBe("removeAllowedToken");
+    expect(d.args).toEqual([A(2)]);
+  });
+
+  it("TokenTier ordinals match the on-chain enum", () => {
+    expect(TokenTier.NONE).toBe(0);
+    expect(TokenTier.COMMUNITY).toBe(1);
+    expect(TokenTier.OFFICIAL).toBe(2);
   });
 });
 

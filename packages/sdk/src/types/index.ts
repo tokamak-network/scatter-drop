@@ -12,6 +12,16 @@ export enum AirdropType {
   SOCIAL = 3,
 }
 
+/**
+ * Tier of an airdrop token in the DropFactory registry.
+ * MUST match the Solidity `enum TokenTier` ordering. Display official first.
+ */
+export enum TokenTier {
+  NONE = 0,
+  COMMUNITY = 1,
+  OFFICIAL = 2,
+}
+
 /** On-chain immutable view of a deployed MerkleDrop campaign. */
 export interface CampaignInfo {
   drop: Address;
