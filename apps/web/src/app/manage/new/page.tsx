@@ -30,7 +30,10 @@ export default function NewCampaignPage() {
 
   const tokenValid = isAddress(token);
   const amountValid = isPositiveDecimal(amount);
-  const deadlineUnix = deadline ? Math.floor(new Date(deadline).getTime() / 1000) : 0;
+  const deadlineParsed = deadline ? Date.parse(deadline) : 0;
+  const deadlineUnix = Number.isNaN(deadlineParsed)
+    ? 0
+    : Math.floor(deadlineParsed / 1000);
   const ready = tokenValid && amountValid && deadlineUnix > 0;
 
   function prepareCreate() {

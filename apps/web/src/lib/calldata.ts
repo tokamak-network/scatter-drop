@@ -16,9 +16,17 @@ import {
  * `encodeFunctionData` in multiple page components.
  */
 
-/** True for a positive decimal string (token amount input validation). */
-export function isPositiveDecimal(s: string): boolean {
-  return /^\d+(\.\d+)?$/.test(s) && Number(s) > 0;
+/**
+ * True for a positive decimal string with at most `maxDecimals` fractional
+ * digits. The decimals cap matches `parseUnits(s, maxDecimals)` so a value
+ * with too many fractional digits is rejected here instead of throwing
+ * "fractional part exceeds decimals" downstream.
+ */
+export function isPositiveDecimal(s: string, maxDecimals = 18): boolean {
+  const match = s.match(/^\d+(?:\.(\d+))?$/);
+  if (!match) return false;
+  const decimals = match[1]?.length ?? 0;
+  return decimals <= maxDecimals && Number(s) > 0;
 }
 
 export interface CreateDropParams {
