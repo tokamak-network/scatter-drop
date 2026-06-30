@@ -149,6 +149,7 @@ Campaign 관리     /manage/[id]     (본인이 createDrop한 캠페인만)
 ```
 Step 0  운영자 신원검증  operatorRegistry.verifiedUntil(me) ≥ now 확인 (미검증 시 차단)
 Step 1  기본 정보   이름·설명·로고·배포 토큰·총량·마감일
+                  · 배포 토큰: 등록부 picker (OFFICIAL 먼저 → COMMUNITY). 없으면 "+ 토큰 추가"(addAllowedToken)
                   + zk-X509 고객 CA Registry *필수 (§0-2 — 수령자 신원 게이트)
 Step 2  자격 방식   ○ CSV 업로드                      → type=CSV
                     ○ 규칙: 스냅샷                     → type=ONCHAIN_SNAPSHOT
@@ -196,6 +197,11 @@ Identity Registries /admin/identity ★ 신원 레지스트리 관리
  └ Standard(고객) 큐레이션 — 국가수준 "기본 금융 신원" 표준 레지스트리 목록 관리
      ├ KR-NPKI / EE-eID … 추가·삭제 (운영자 마법사에서 추천 노출)
      └ 운영자가 verify-once로 재사용하도록 정준 레지스트리 제공
+
+Tokens            /admin/tokens     ★ 에어드랍 토큰 등록부 (§8.7)
+ ├ OFFICIAL 지정/해제  setOfficialToken — 공식 토큰(목록 상단)
+ ├ COMMUNITY 목록      운영자가 addAllowedToken으로 추가한 토큰
+ └ Remove             removeAllowedToken — 악성/사칭 사후 제거
 
 Fee Vault         /admin/vault      ★ 캠페인 생성 자금(수수료) 볼트
  ├ 적립 잔액       collectedFees(token) — 토큰별 누적 잔액 조회

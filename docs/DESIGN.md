@@ -142,15 +142,20 @@
 
 ## 7. 컨트랙트 구조
 ```
-DropFactory (어드민이 feeToken, feeOf[type], operatorRegistry 관리 + 수수료 볼트 보관)
+DropFactory (어드민이 feeToken, feeOf[type], operatorRegistry, allowedToken 관리 + 수수료 볼트 보관)
  ├ operatorRegistry                          운영자용 CA 레지스트리 (어드민 전역 설정)
  ├ feeOf[AirdropType] → uint                 에어드랍 종류별 생성 수수료 (어드민 설정)
+ ├ tokenTier[address] → {NONE,COMMUNITY,OFFICIAL}  에어드랍 토큰 등록·등급 (§8.7)
  ├ setOperatorRegistry(addr)   onlyAdmin     운영자 신원 게이트 변경
  ├ setFee(type, amount)        onlyAdmin     종류별 생성 수수료 설정
+ ├ addAllowedToken(token)      operator      검증 운영자가 직접 등록(승인 불요) → COMMUNITY. 게이트1 + token.code>0
+ ├ setOfficialToken(token,on)  onlyAdmin     플랫폼 공식 토큰 지정/해제 → OFFICIAL (목록 상단 노출)
+ ├ removeAllowedToken(token)   onlyAdmin     악성 토큰 제거 → NONE (모더레이션)
  ├ createDrop(type, airdropToken, merkleRoot, totalAmount, deadline, identityRegistry)  Merkle 방식
  │     · type ∈ {CSV, ONCHAIN_SNAPSHOT, SOCIAL}  (오프체인 명단 → Merkle)
  │     0a. require(operatorRegistry.verifiedUntil(msg.sender) >= now)  운영자 신원검증 (게이트1)
  │     0b. require(zkFactory.isRegistry[identityRegistry])             정식 고객 CA 레지스트리 검증
+ │     0c. require(tokenTier[airdropToken] != NONE)                    등록 토큰만 배포 (미등록 시 운영자가 addAllowedToken)
  │     1. feeToken.transferFrom(operator, address(this), feeOf[type]) 종류별 수수료 → 볼트 적립
  │     2. airdropToken.transferFrom(operator, newDrop, totalAmount)   배포 토큰 예치
  │     3. MerkleDrop 배포 (identityRegistry 주입)
@@ -310,6 +315,34 @@ GatedDrop (캠페인 1개 — 온체인 검증 규칙)  [후속 단계]
   - **토큰 비수탁 구조 유지**(예치 토큰은 캠페인 컨트랙트가 보관, 플랫폼 임의 인출 불가)
   - 수수료 수취로 *촉진*하므로 완전 면책은 아님 → 정책·심사로 보강.
 - v1 미결정(§12 후속): 증권형 배제 심사 절차, 지역 차단 범위, ToS 초안.
+
+---
+
+## 8.7 에어드랍 토큰 등록 (퍼미션리스 + 공식 큐레이션)
+에어드랍에 쓸 토큰은 온체인 **토큰 등록부**에 있어야 한다(`createDrop`이 강제). 등록은 **승인 절차 없이**
+이뤄지되, 표시 우선순위를 위해 **등급(tier)**을 둔다.
+
+### 등급 모델 (`tokenTier[address]`)
+| 등급 | 누가 등록 | 의미 | 목록 노출 |
+|------|----------|------|-----------|
+| **OFFICIAL** | 플랫폼 어드민 (`setOfficialToken`) | 플랫폼이 공식 인정한 토큰 | **상단 우선** |
+| **COMMUNITY** | 검증된 운영자 (`addAllowedToken`) | 운영자가 셀프 등록(승인 불요) | 공식 다음 |
+| **NONE** | — | 미등록 | createDrop 불가 |
+
+### 원칙
+- **승인 불요(퍼미션리스):** 운영자가 에어드랍하려는 토큰이 목록에 없으면 **직접 `addAllowedToken`로 추가**.
+  PR·어드민 승인 과정 없음. 단 **게이트1(검증 운영자)** + `token.code.length>0`(컨트랙트 여부) 기본검증으로 스팸 차단.
+- **공식 우선 노출:** 어드민이 `setOfficialToken`으로 지정한 토큰이 토큰 선택 UI에서 **항상 먼저** 표시.
+  나머지(커뮤니티)는 그 아래(예: 최근 등록순/심볼순).
+- **사후 모더레이션:** 악성·사칭 토큰은 어드민이 `removeAllowedToken`으로 제거(→ NONE). 사전 검열 아님.
+- **createDrop 게이트:** `require(tokenTier[airdropToken] != NONE)`. 미등록이면 운영자가 먼저 등록(마법사가 "토큰 추가" 버튼 제공 → 같은 트랜잭션 흐름).
+
+### 프론트 (FRONTEND-IA 반영)
+- **생성 마법사 토큰 선택:** OFFICIAL 그룹 먼저 → COMMUNITY 그룹. 검색 가능. 없으면 "+ 토큰 추가"(addAllowedToken).
+- **어드민 화면:** 토큰 등록부 관리 — setOfficialToken 지정/해제, removeAllowedToken, 등급별 목록.
+
+### 메타데이터
+온체인은 주소+등급만. 심볼·이름·로고는 토큰의 ERC-20 메타(symbol/name) + 오프체인 보강(로고 등).
 
 ---
 
