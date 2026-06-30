@@ -108,6 +108,17 @@ describe("factory / erc20 calldata builders", () => {
   });
 });
 
+describe("events", () => {
+  it("dropFactoryAbi includes the DropCreated event for log indexing", () => {
+    const ev = dropFactoryAbi.find((e) => e.type === "event" && e.name === "DropCreated");
+    expect(ev).toBeDefined();
+    const names = ev?.inputs.map((i) => i.name) ?? [];
+    expect(names).toContain("drop");
+    expect(names).toContain("airdropToken");
+    expect(names).toContain("merkleRoot");
+  });
+});
+
 describe("addresses", () => {
   it("knows zk-X509 Sepolia addresses", () => {
     const z = getZkX509(11155111)!;
