@@ -1,10 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getJob } from "@/lib/server/snapshot";
+import { getJob, snapshotAuthError } from "@/lib/server/snapshot";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
+  if (snapshotAuthError(req.headers.get("authorization"))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   const id = req.nextUrl.searchParams.get("jobId");
   if (!id) return NextResponse.json({ error: "jobId required" }, { status: 400 });
 

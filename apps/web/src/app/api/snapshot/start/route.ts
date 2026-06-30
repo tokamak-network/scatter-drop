@@ -3,6 +3,7 @@ import {
   getServerRpcUrl,
   parseSnapshotRequest,
   rateLimited,
+  snapshotAuthError,
   startSnapshotJob,
 } from "@/lib/server/snapshot";
 
@@ -10,6 +11,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
+  if (snapshotAuthError(req.headers.get("authorization"))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   if (!getServerRpcUrl()) {
     return NextResponse.json(
       { error: "Snapshot service not configured on the server." },

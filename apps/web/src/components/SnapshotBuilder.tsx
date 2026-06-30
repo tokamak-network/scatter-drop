@@ -40,7 +40,8 @@ export function SnapshotBuilder({
     isUint(block) &&
     BigInt(block || "0") > 0n &&
     (minBalance === "" || isUint(minBalance)) &&
-    (fromBlock === "" || isUint(fromBlock)) &&
+    (fromBlock === "" ||
+      (isUint(fromBlock) && BigInt(fromBlock) <= BigInt(block || "0"))) &&
     amountValid;
 
   // Keep the latest onResult in a ref so the lift effect depends only on the
@@ -53,6 +54,15 @@ export function SnapshotBuilder({
   useEffect(() => {
     onResultRef.current(phase === "done" ? result : null);
   }, [phase, result]);
+
+  // If inputs are edited after a finished run, drop the stale manifest so the
+  // wizard can't proceed with a root/total that no longer matches the inputs.
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
+  useEffect(() => {
+    if (phaseRef.current === "done" || phaseRef.current === "error") reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, block, fromBlock, minBalance, kind, perWallet, totalAmount]);
 
   const topN = useMemo(() => {
     if (!result) return [];

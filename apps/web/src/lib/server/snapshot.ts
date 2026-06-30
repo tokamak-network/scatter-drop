@@ -25,6 +25,19 @@ export function getServerRpcUrl(): string | null {
   return process.env.ALCHEMY_RPC_URL || process.env.SEPOLIA_RPC_URL || null;
 }
 
+/**
+ * Optional shared-secret gate for the snapshot routes. When SNAPSHOT_API_SECRET
+ * is set, callers must send `Authorization: Bearer <secret>`; when unset the
+ * routes are open (dev default — abuse is bounded by the per-IP rate limit).
+ * Returns an error string when the request should be rejected, else null.
+ * (A full operator-session auth — SIWE, see M3 — is the production path.)
+ */
+export function snapshotAuthError(authHeader: string | null): string | null {
+  const secret = process.env.SNAPSHOT_API_SECRET;
+  if (!secret) return null;
+  return authHeader === `Bearer ${secret}` ? null : "Unauthorized";
+}
+
 function createSnapshotClient(rpc: string): PublicClient {
   // The archive node serves real Sepolia state (chain id 11155111) — the dev
   // fork re-labels to 31337 but keeps Sepolia state, so snapshots still work.

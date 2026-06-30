@@ -67,9 +67,10 @@ export function useSnapshotJob() {
       return;
     }
     try {
-      const res = await fetch(`/api/snapshot/status?jobId=${jobId}`, {
-        cache: "no-store",
-      });
+      const res = await fetch(
+        `/api/snapshot/status?jobId=${encodeURIComponent(jobId)}`,
+        { cache: "no-store" },
+      );
       const data = await res.json();
       if (stopped.current) return;
       if (!res.ok) {
@@ -88,9 +89,10 @@ export function useSnapshotJob() {
         return;
       }
       // done → fetch the manifest
-      const rr = await fetch(`/api/snapshot/result?jobId=${jobId}`, {
-        cache: "no-store",
-      });
+      const rr = await fetch(
+        `/api/snapshot/result?jobId=${encodeURIComponent(jobId)}`,
+        { cache: "no-store" },
+      );
       const rdata = await rr.json();
       if (stopped.current) return;
       if (!rr.ok || rdata.state !== "done") {
