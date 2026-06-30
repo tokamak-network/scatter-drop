@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { formatUnits, isAddress, type Address, type Hex } from "viem";
 import {
   AirdropType,
@@ -22,6 +22,7 @@ import { TxButton } from "@/components/TxButton";
 import {
   deploymentIssue,
   useDeployment,
+  useErc20Decimals,
   useFeeOf,
   useTokenTier,
 } from "@/lib/contracts";
@@ -108,13 +109,28 @@ export default function NewCampaignPage() {
   const isEthFee = feeToken === NATIVE_FEE_TOKEN;
   const { data: fee } = useFeeOf(factory, feeToken, type);
 
-  const { manifest, error: csvError } = useMemo(
-    () => parseRecipients(csv),
-    [csv],
-  );
+  // Debounce parsing/Merkle build so large lists don't rebuild on every keystroke.
+  const [parsed, setParsed] = useState<{
+    manifest: DropManifest | null;
+    error: string | null;
+  }>({ manifest: null, error: null });
+  useEffect(() => {
+    const t = setTimeout(() => setParsed(parseRecipients(csv)), 400);
+    return () => clearTimeout(t);
+  }, [csv]);
+  const { manifest, error: csvError } = parsed;
   const recipientCount = manifest?.count ?? 0;
   const totalAmount = manifest ? BigInt(manifest.totalAmount) : 0n;
   const merkleRoot = (manifest?.merkleRoot ?? `0x${"0".repeat(64)}`) as Hex;
+
+  // Token decimals for human-readable display (amounts in CSV are base units).
+  const { data: decimals } = useErc20Decimals(
+    tokenValid ? (token as Address) : undefined,
+  );
+  const fmtAmount = (v: bigint) =>
+    decimals !== undefined
+      ? `${formatUnits(v, decimals)} tokens`
+      : `${v.toString()} base units`;
 
   const startParsed = startDate ? Date.parse(`${startDate}T00:00:00Z`) : 0;
   const startUnix = Number.isNaN(startParsed)
@@ -377,7 +393,7 @@ export default function NewCampaignPage() {
                       {csvError
                         ? csvError
                         : manifest
-                          ? `${recipientCount} recipients · total ${totalAmount.toString()} base units (auto)`
+                          ? `${recipientCount} recipients · total ${fmtAmount(totalAmount)} (auto)`
                           : "Paste address,amount per line (amount in base units)"}
                     </span>
                     <button
@@ -422,8 +438,8 @@ export default function NewCampaignPage() {
                   <dd>{airdropTypeLabel(type)}</dd>
                   <dt className="muted">Recipients</dt>
                   <dd>{recipientCount}</dd>
-                  <dt className="muted">Total (Σ, base units)</dt>
-                  <dd>{totalAmount.toString()}</dd>
+                  <dt className="muted">Total (Σ)</dt>
+                  <dd>{fmtAmount(totalAmount)}</dd>
                   <dt className="muted">Merkle root</dt>
                   <dd className="font-mono text-xs break-all">{merkleRoot}</dd>
                   <dt className="muted">Fee</dt>
