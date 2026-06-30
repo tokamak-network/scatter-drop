@@ -52,7 +52,7 @@ export const dropFactoryAbi = [
   {
     type: "function",
     name: "createDrop",
-    stateMutability: "nonpayable",
+    stateMutability: "payable",
     inputs: [
       { name: "airdropType", type: "uint8" },
       { name: "airdropToken", type: "address" },
@@ -60,14 +60,29 @@ export const dropFactoryAbi = [
       { name: "totalAmount", type: "uint256" },
       { name: "deadline", type: "uint64" },
       { name: "identityRegistry", type: "address" },
+      { name: "feeToken", type: "address" },
     ],
     outputs: [{ name: "drop", type: "address" }],
   },
   {
     type: "function",
+    name: "setFee",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "feeToken", type: "address" },
+      { name: "airdropType", type: "uint8" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
     name: "feeOf",
     stateMutability: "view",
-    inputs: [{ name: "airdropType", type: "uint8" }],
+    inputs: [
+      { name: "feeToken", type: "address" },
+      { name: "airdropType", type: "uint8" },
+    ],
     outputs: [{ name: "", type: "uint256" }],
   },
   {
