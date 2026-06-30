@@ -5,7 +5,8 @@
 #
 # Usage:
 #   scripts/dev-fork.sh            # starts anvil, deploys, keeps anvil running
-#   FORK_CHAIN_ID=11155111 scripts/dev-fork.sh
+#   FORK_CHAIN_ID=1337 scripts/dev-fork.sh    # override the default 31337
+#   (avoid 11155111 — it collides with real Sepolia, the issue this fixes)
 #
 # Requires SEPOLIA_RPC_URL in contracts/.env (gitignored). Modelled on
 # scatter-dex/scripts/dev-fork.sh.
@@ -22,7 +23,11 @@ set +a
 : "${SEPOLIA_RPC_URL:?set SEPOLIA_RPC_URL in contracts/.env}"
 
 RPC_URL="http://127.0.0.1:8545"
-FORK_CHAIN_ID="${FORK_CHAIN_ID:-11155111}"
+# Default to anvil's 31337, NOT Sepolia's 11155111: the fork must be
+# distinguishable from the real chain so a wallet can't silently send
+# createDrop/approve to live Sepolia (it forks Sepolia *state*, so the real
+# zk-X509 contracts are still present and chainid-independent).
+FORK_CHAIN_ID="${FORK_CHAIN_ID:-31337}"
 # Anvil account #0 — a publicly-known dev key, hardcoded on purpose. Not
 # overridable: this helper only ever targets a local anvil fork, and accepting a
 # key from the environment would risk leaking a real one into process args.

@@ -11,7 +11,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # Exported so the child dev-verify.sh inherits a custom RPC_URL.
 export RPC_URL="${RPC_URL:-http://127.0.0.1:8545}"
-CHAIN_ID="${FORK_CHAIN_ID:-11155111}"
+CHAIN_ID="${FORK_CHAIN_ID:-31337}" # matches dev-fork.sh (fork relabelled off Sepolia)
 DEPLOY_JSON="$ROOT/contracts/deployments/$CHAIN_ID.json"
 [ -f "$DEPLOY_JSON" ] || { echo "ERROR: $DEPLOY_JSON not found — run dev-fork.sh first" >&2; exit 1; }
 
