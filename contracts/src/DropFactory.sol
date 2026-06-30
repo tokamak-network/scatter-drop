@@ -297,6 +297,10 @@ contract DropFactory is Ownable {
         // Collect the creation fee in `feeToken` (ETH for native). CEI: credit before any pull.
         uint256 fee = _feeOf[feeToken][t];
         if (feeToken == ETH) {
+            // Symmetric with the ERC20 branch: an unpriced (ETH, type) pair is
+            // "not accepted", not "free" — otherwise a type whose ETH fee the
+            // admin never set could be created for free with msg.value == 0.
+            if (fee == 0) revert FeeNotConfigured();
             if (msg.value != fee) revert IncorrectFee();
             collectedFees[ETH] += fee;
         } else {

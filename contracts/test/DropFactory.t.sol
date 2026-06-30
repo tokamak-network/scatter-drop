@@ -137,15 +137,17 @@ contract DropFactoryTest is Test {
         assertEq(address(factory).balance, ETH_FEE, "factory holds eth");
     }
 
-    function test_createDrop_payWithEthZeroFeeType() public {
-        // SOCIAL has no ETH price (0); paying ETH with value 0 succeeds (free).
+    function test_createDrop_eth_revertsWhenFeeNotConfigured() public {
+        // SOCIAL has no ETH price (0) → ETH is "not accepted" for it (M-1):
+        // an unpriced (ETH, type) pair must revert, not create for free.
         _verifyOperator(operator);
         airdropToken.mint(operator, TOTAL);
         vm.prank(operator);
         airdropToken.approve(address(factory), TOTAL);
 
         vm.prank(operator);
-        address drop = factory.createDrop(
+        vm.expectRevert(DropFactory.FeeNotConfigured.selector);
+        factory.createDrop(
             uint8(DropFactory.AirdropType.SOCIAL),
             address(airdropToken),
             ROOT,
@@ -155,8 +157,6 @@ contract DropFactoryTest is Test {
             custReg,
             ETH
         );
-        assertEq(airdropToken.balanceOf(drop), TOTAL);
-        assertEq(factory.collectedFees(ETH), 0);
     }
 
     function test_createDrop_emitsDropCreated() public {
@@ -511,14 +511,18 @@ contract DropFactoryTest is Test {
         MockFeeOnTransferERC20 fot = new MockFeeOnTransferERC20("Tax", "TAX", 100);
         vm.prank(admin);
         factory.setOfficialToken(address(fot), true);
+        // Price the ETH fee for SOCIAL so the call gets past the fee gate and
+        // reaches the airdrop-funding receipt check (the subject of this test).
+        vm.prank(admin);
+        factory.setFee(ETH, uint8(DropFactory.AirdropType.SOCIAL), ETH_FEE);
         _verifyOperator(operator);
         fot.mint(operator, TOTAL);
         vm.prank(operator);
         fot.approve(address(factory), TOTAL);
-        // SOCIAL + ETH (value 0) isolates the airdrop-funding receipt check.
+        vm.deal(operator, ETH_FEE);
         vm.prank(operator);
         vm.expectRevert(DropFactory.IncorrectAmountReceived.selector);
-        factory.createDrop(
+        factory.createDrop{ value: ETH_FEE }(
             uint8(DropFactory.AirdropType.SOCIAL),
             address(fot),
             ROOT,
@@ -919,29 +923,13 @@ contract DropFactoryTest is Test {
 
     function testFuzz_feeAccrual(uint96 fee, uint96 total) public {
         vm.assume(total > 0);
+        // Both fee paths now require a configured (nonzero) fee — an unpriced
+        // (token, type) pair is "not accepted", so fuzz only the priced range.
+        vm.assume(fee > 0);
         vm.prank(admin);
         factory.setFee(address(feeToken), uint8(DropFactory.AirdropType.CSV), fee);
 
         _verifyOperator(operator);
-        // ERC20 path requires fee > 0; for fee == 0 use the ETH path instead.
-        if (fee == 0) {
-            airdropToken.mint(operator, total);
-            vm.prank(operator);
-            airdropToken.approve(address(factory), total);
-            vm.prank(operator);
-            address drop = factory.createDrop(
-                uint8(DropFactory.AirdropType.SOCIAL),
-                address(airdropToken),
-                ROOT,
-                total,
-                startTime,
-                deadline,
-                custReg,
-                ETH
-            );
-            assertEq(airdropToken.balanceOf(drop), total);
-            return;
-        }
         _fund(operator, fee, total);
         vm.prank(operator);
         address drop2 = factory.createDrop(
