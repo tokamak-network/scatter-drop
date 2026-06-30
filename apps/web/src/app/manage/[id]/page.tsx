@@ -16,6 +16,7 @@ import {
 import { TxButton } from "@/components/TxButton";
 import { useCampaign } from "@/lib/campaigns";
 import { getParticipantStats } from "@/lib/stub";
+import { useMounted } from "@/lib/useMounted";
 
 const TABS = ["Overview", "Participants", "Sweep"] as const;
 type Tab = (typeof TABS)[number];
@@ -28,6 +29,7 @@ export default function ManageCampaignPage({
   const { id } = use(params);
   const { data: campaign, isPending, isError } = useCampaign(id);
   const { address } = useAccount();
+  const mounted = useMounted();
   const [tab, setTab] = useState<Tab>("Overview");
 
   if (isPending) {
@@ -51,10 +53,13 @@ export default function ManageCampaignPage({
     );
   }
 
-  const now = BigInt(Math.floor(Date.now() / 1000));
-  const ended = now > campaign.deadlineUnix;
+  // Guard wallet/time-derived state behind mount to avoid SSR hydration drift.
+  const now = BigInt(Math.floor((mounted ? Date.now() : 0) / 1000));
+  const ended = mounted && now > campaign.deadlineUnix;
   const isOperator =
-    !!address && address.toLowerCase() === campaign.operator.toLowerCase();
+    mounted &&
+    !!address &&
+    address.toLowerCase() === campaign.operator.toLowerCase();
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -151,16 +156,23 @@ function Kpi({ label, value }: { label: string; value: string }) {
 }
 
 function Participants({ id }: { id: string }) {
-  const { data: stats, isPending } = useQuery({
+  const { data: stats, isPending, isError } = useQuery({
     queryKey: ["participantStats", id],
     queryFn: () => getParticipantStats(id),
   });
 
-  if (isPending || !stats) {
+  if (isPending) {
     return (
       <div className="flex items-center justify-center p-12 text-slate-500">
         <Loader2 className="w-6 h-6 animate-spin" />
       </div>
+    );
+  }
+  if (isError || !stats) {
+    return (
+      <p className="text-sm text-amber-600">
+        Could not load participant stats.
+      </p>
     );
   }
 
