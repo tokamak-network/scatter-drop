@@ -11,16 +11,18 @@ import { defineChain } from "viem";
  * dumps for copy-paste), falling back to the older `NEXT_PUBLIC_FORK_*` names.
  */
 const DEFAULT_FORK_CHAIN_ID = 11155111;
+// Use || (not ??) so an empty-string env var (NEXT_PUBLIC_CHAIN_ID=) falls
+// through to the next source instead of being treated as set.
 const parsedChainId = Number(
-  process.env.NEXT_PUBLIC_CHAIN_ID ?? process.env.NEXT_PUBLIC_FORK_CHAIN_ID,
+  process.env.NEXT_PUBLIC_CHAIN_ID || process.env.NEXT_PUBLIC_FORK_CHAIN_ID,
 );
 const FORK_CHAIN_ID =
   Number.isFinite(parsedChainId) && parsedChainId > 0
     ? parsedChainId
     : DEFAULT_FORK_CHAIN_ID;
 export const FORK_RPC_URL =
-  process.env.NEXT_PUBLIC_RPC_URL ??
-  process.env.NEXT_PUBLIC_FORK_RPC ??
+  process.env.NEXT_PUBLIC_RPC_URL ||
+  process.env.NEXT_PUBLIC_FORK_RPC ||
   "http://127.0.0.1:8545";
 
 export const fork = defineChain({
