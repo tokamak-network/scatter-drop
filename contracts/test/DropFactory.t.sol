@@ -339,6 +339,26 @@ contract DropFactoryTest is Test {
         vm.stopPrank();
     }
 
+    function test_setFeeToken_updatesToken() public {
+        MockERC20 newFee = new MockERC20("Fee2", "FEE2", 18);
+        vm.prank(admin);
+        factory.setFeeToken(IERC20(address(newFee)));
+        assertEq(address(factory.feeToken()), address(newFee));
+    }
+
+    function test_setFeeToken_allowsZero() public {
+        vm.prank(admin);
+        factory.setFeeToken(IERC20(address(0)));
+        assertEq(address(factory.feeToken()), address(0));
+    }
+
+    function test_setZkFactory_updatesFactory() public {
+        MockRegistryFactory newZk = new MockRegistryFactory();
+        vm.prank(admin);
+        factory.setZkFactory(newZk);
+        assertEq(address(factory.zkFactory()), address(newZk));
+    }
+
     function test_setOperatorRegistry_takesEffect() public {
         MockIdentityRegistry newReg = new MockIdentityRegistry();
         vm.prank(admin);
@@ -415,6 +435,23 @@ contract DropFactoryTest is Test {
         // address(0) fee token is permitted (valid only when all fees stay 0).
         DropFactory f = new DropFactory(admin, IERC20(address(0)), address(opReg), zkFactory, treasury);
         assertEq(address(f.feeToken()), address(0));
+    }
+
+    function test_constructor_revertsOnZeroOperatorRegistry() public {
+        vm.expectRevert(DropFactory.InvalidAddress.selector);
+        new DropFactory(admin, IERC20(address(feeToken)), address(0), zkFactory, treasury);
+    }
+
+    function test_constructor_revertsOnZeroZkFactory() public {
+        vm.expectRevert(DropFactory.InvalidAddress.selector);
+        new DropFactory(
+            admin, IERC20(address(feeToken)), address(opReg), IRegistryFactoryLike(address(0)), treasury
+        );
+    }
+
+    function test_constructor_revertsOnZeroTreasury() public {
+        vm.expectRevert(DropFactory.InvalidAddress.selector);
+        new DropFactory(admin, IERC20(address(feeToken)), address(opReg), zkFactory, address(0));
     }
 
     function test_setFeeToken_revertsOnEoa() public {
