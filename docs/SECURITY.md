@@ -89,6 +89,13 @@ findings below are resolved or accepted with rationale.
 | I-2 | Info | Enumeration (DropFactory) | `_drops` is unbounded; `allDrops()` could exceed the gas limit for on-chain consumers. | **Accepted** — `allDrops()` is a view; paginated `dropsLength()` / `dropAt()` are provided for on-chain/large use. |
 | I-3 | Info | Admin fee front-running | `setFee` can change the fee an operator pays within the same block; the frozen `createDrop` ABI cannot take a `maxFee` slippage bound. | **Accepted** — owner is trusted; integrators should approve exact per-campaign amounts rather than unlimited. |
 
+### Full-stack security audit (post-W19/W20)
+
+| ID | Severity | Area | Finding | Resolution |
+| -- | -------- | ---- | ------- | ---------- |
+| M-2 | Medium | Fee bypass (DropFactory) | After multi-token fees (W19), the ETH fee path (`feeToken == address(0)`) lacked the `FeeNotConfigured` guard the ERC20 path has. If `feeOf[ETH][type]` was unset (`0`), an operator could pass `feeToken = ETH`, `msg.value = 0` and create a campaign **for free**, bypassing the configured ERC20 price for that airdrop type. | **Fixed** — the ETH branch now reverts `FeeNotConfigured` when the tier is unpriced, symmetric with ERC20: an unpriced tier is *not* a free tier. Full-stack audit M-1; PR #40 (`2f8a1625`). |
+| I-4 | Info | Permissionless registry spam (DropFactory) | `addAllowedToken` is permissionless (gated only by operator verification), so verified operators can register arbitrary `COMMUNITY` tokens, polluting the allow-list with spam/malicious entries. | **Accepted risk** — no fund loss (registration only marks a tier; `createDrop` still enforces all gates and exact-receipt). Mitigated operationally: the admin can `removeAllowedToken` and curate `OFFICIAL` tokens surfaced first. Full-stack audit L-1. |
+
 ### Verified-safe (no action)
 
 - Reentrancy: `createDrop` and `withdrawFees` follow CEI; a hooked fee/airdrop
