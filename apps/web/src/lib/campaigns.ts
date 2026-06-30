@@ -118,7 +118,7 @@ export function useCampaigns() {
     staleTime: 15_000,
     // Wait until the deployment resolves (null or object) to avoid a flash of
     // stub content before the live query key is known.
-    enabled: dep !== undefined,
+    enabled: dep !== undefined && !!client,
     queryFn: async (): Promise<{ live: boolean; campaigns: Campaign[] }> => {
       if (!client || !dep) {
         return { live: false, campaigns: await listStubCampaigns() };
@@ -136,7 +136,7 @@ export function useManagedCampaigns(address: Address | undefined) {
 
   return useQuery({
     queryKey: ["managedCampaigns", dep?.dropFactory, address],
-    enabled: dep !== undefined && !!address,
+    enabled: dep !== undefined && !!address && !!client,
     staleTime: 15_000,
     queryFn: async (): Promise<Campaign[]> => {
       if (!client || !dep || !address) return [];
@@ -158,7 +158,7 @@ export function useCampaign(id: string) {
   return useQuery({
     queryKey: ["campaign", id, dep?.dropFactory],
     staleTime: 15_000,
-    enabled: dep !== undefined,
+    enabled: dep !== undefined && !!client,
     queryFn: async (): Promise<Campaign | undefined> => {
       if (isAddress(id) && client && dep) {
         const [args] = await scanDropCreated(client, dep, { drop: id as Address });
