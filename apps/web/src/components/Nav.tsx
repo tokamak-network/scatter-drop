@@ -37,27 +37,6 @@ export function Nav() {
 
   return (
     <>
-      {/* Network banner — reflects the actual connected chain */}
-      {!connected || chainId === fork.id ? (
-        <div className="bg-slate-900 border-b border-slate-800 text-[11px] font-mono py-1.5 px-4 text-center text-slate-400 flex items-center justify-center gap-2">
-          <span
-            className={`w-2 h-2 rounded-full ${connected ? "bg-emerald-400 animate-pulse" : "bg-slate-500"}`}
-          />
-          {connected ? "Connected: " : "Target chain: "}
-          <strong className="text-slate-200">{fork.name}</strong>
-        </div>
-      ) : (
-        <div className="bg-amber-500 text-[11px] font-mono py-1.5 px-4 text-center text-amber-950 flex items-center justify-center gap-2">
-          Wrong network. Switch to {fork.name}.
-          <button
-            onClick={() => switchChain({ chainId: fork.id })}
-            className="underline font-bold cursor-pointer"
-          >
-            Switch
-          </button>
-        </div>
-      )}
-
       {/* Header */}
       <header className="border-b border-slate-900 bg-slate-950/80 backdrop-blur-md sticky top-0 z-40 px-4 py-4 md:px-8">
         <div className="max-w-7xl mx-auto flex justify-between items-center gap-4">
@@ -99,6 +78,26 @@ export function Nav() {
           </nav>
 
           <div className="flex items-center gap-3 font-mono text-xs">
+            {/* Network chip — left of the wallet button, reflects the connected chain */}
+            {!connected || chainId === fork.id ? (
+              <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-400">
+                <span
+                  className={`w-2 h-2 rounded-full ${connected ? "bg-emerald-400 animate-pulse" : "bg-slate-500"}`}
+                />
+                {connected ? "Connected: " : "Target chain: "}
+                <strong className="text-slate-200">{fork.name}</strong>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500 px-2.5 py-1 text-[11px] text-amber-950">
+                Wrong network.
+                <button
+                  onClick={() => switchChain({ chainId: fork.id })}
+                  className="underline font-bold cursor-pointer"
+                >
+                  Switch
+                </button>
+              </span>
+            )}
             {connected ? (
               <button
                 onClick={() => disconnect()}
