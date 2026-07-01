@@ -5,6 +5,7 @@ import {
   TokenTier,
   FeeMode,
   NATIVE_FEE_TOKEN,
+  NATIVE_ETH,
   airdropTypeLabel,
   buildApproveRequest,
   buildClaimRequest,
@@ -119,7 +120,7 @@ describe("factory / erc20 calldata builders", () => {
     expect(d.args[6]).toBe(NATIVE_FEE_TOKEN);
   });
 
-  it("buildCreateDropRequest rejects a native airdrop token", () => {
+  it("buildCreateDropRequest rejects address(0) as the airdrop token", () => {
     expect(() =>
       buildCreateDropRequest(A(7), {
         airdropType: AirdropType.CSV,
@@ -130,7 +131,38 @@ describe("factory / erc20 calldata builders", () => {
         deadline: 1_900_000_000n,
         identityRegistry: A(3),
       }),
-    ).toThrow(/native token/);
+    ).toThrow(/address\(0\)/);
+  });
+
+  it("buildCreateDropRequest funds a native ETH drop via msg.value (total + fee)", () => {
+    const req = buildCreateDropRequest(A(7), {
+      airdropType: AirdropType.CSV,
+      airdropToken: NATIVE_ETH,
+      merkleRoot: `0x${"ab".repeat(32)}`,
+      totalAmount: 1000n,
+      startTime: 1_800_000_000n,
+      deadline: 1_900_000_000n,
+      identityRegistry: NATIVE_FEE_TOKEN, // open claim
+      fee: 5n,
+    });
+    expect(req.value).toBe(1005n);
+    const d = decodeFunctionData({ abi: dropFactoryAbi, data: req.data });
+    expect(getAddress(d.args[1] as Address)).toBe(NATIVE_ETH);
+  });
+
+  it("buildCreateDropRequest requires fee for a native ETH drop (fail fast)", () => {
+    expect(() =>
+      buildCreateDropRequest(A(7), {
+        airdropType: AirdropType.CSV,
+        airdropToken: NATIVE_ETH,
+        merkleRoot: `0x${"ab".repeat(32)}`,
+        totalAmount: 1000n,
+        startTime: 1_800_000_000n,
+        deadline: 1_900_000_000n,
+        identityRegistry: NATIVE_FEE_TOKEN,
+        // fee omitted
+      }),
+    ).toThrow(/require `fee`/);
   });
 
   it("fee builders encode per-token mode/rate setters", () => {

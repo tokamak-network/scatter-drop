@@ -15,6 +15,7 @@ import {
   buildCreateDropRequest,
   buildDrop,
   getZkX509,
+  NATIVE_ETH,
   parseCsv,
   TokenTier,
   type DropManifest,
@@ -138,13 +139,20 @@ export default function NewCampaignPage() {
   );
   const totalDeposit = totalAmount + (fee ?? 0n);
 
+  // Native ETH airdrop: the sentinel token, funded via msg.value (no approve).
+  const isNative =
+    tokenValid && (token as string).toLowerCase() === NATIVE_ETH.toLowerCase();
+
   // Token decimals for human-readable display (amounts in CSV are base units).
-  const { data: decimals } = useErc20Decimals(
-    tokenValid ? (token as Address) : undefined,
+  // Native ETH has no ERC-20 contract, so use 18 directly.
+  const { data: erc20Decimals } = useErc20Decimals(
+    tokenValid && !isNative ? (token as Address) : undefined,
   );
+  const decimals = isNative ? 18 : erc20Decimals;
+  const unit = isNative ? "ETH" : "tokens";
   const fmtAmount = (v: bigint) =>
     decimals !== undefined
-      ? `${formatUnits(v, decimals)} tokens`
+      ? `${formatUnits(v, decimals)} ${unit}`
       : `${v.toString()} base units`;
 
   const startParsed = startDate ? Date.parse(`${startDate}T00:00:00Z`) : 0;
@@ -176,8 +184,10 @@ export default function NewCampaignPage() {
 
   // On-top: a single approval of the airdrop token for total + fee. Gate on the
   // fee being resolved so we never approve total-only (which would under-fund).
+  // ERC-20 drops need one approval for total + fee. Native ETH drops carry the
+  // funds in msg.value, so there's no approval step.
   const approveTokenReq =
-    factory && tokenValid && fee !== undefined && totalDeposit > 0n
+    !isNative && factory && tokenValid && fee !== undefined && totalDeposit > 0n
       ? buildApproveRequest(token as Address, factory, totalDeposit)
       : null;
   const createReq =
@@ -191,6 +201,8 @@ export default function NewCampaignPage() {
           deadline: BigInt(deadlineUnix),
           identityRegistry:
             identityRequired && registryAddr ? registryAddr : zeroAddress,
+          // For native ETH, the builder sets msg.value = totalAmount + fee.
+          fee: fee ?? 0n,
         })
       : null;
 
@@ -287,8 +299,26 @@ export default function NewCampaignPage() {
                     className="input"
                     value={token}
                     onChange={(e) => setToken(e.target.value)}
-                    placeholder="0x…"
+                    placeholder="0x… (or pick ETH)"
                   />
+                  <div className="flex gap-2 mt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setToken(NATIVE_ETH)}
+                      className={`px-3 py-1 rounded-lg border text-xs font-mono transition ${
+                        isNative
+                          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600"
+                          : "border-slate-800 bg-slate-950 text-slate-200 hover:border-slate-700"
+                      }`}
+                    >
+                      Ξ ETH (native)
+                    </button>
+                    {isNative && (
+                      <span className="text-[11px] text-slate-500 self-center">
+                        Funded with ETH via your wallet — no token approval.
+                      </span>
+                    )}
+                  </div>
                   {token && !tokenValid && (
                     <span className="text-xs text-red-500">Invalid address.</span>
                   )}
@@ -470,19 +500,21 @@ export default function NewCampaignPage() {
                 </dl>
 
                 <p className="text-xs text-slate-500 font-mono">
-                  On-top fee: you deposit total + fee in the airdrop token (one
-                  approval). The pool gets the full distribution; the platform
-                  vault gets the fee. Then createDrop deploys the campaign.
+                  {isNative
+                    ? "On-top fee: your wallet sends total + fee in ETH (msg.value). The pool gets the full distribution; the platform vault gets the fee. No approval needed."
+                    : "On-top fee: you deposit total + fee in the airdrop token (one approval). The pool gets the full distribution; the platform vault gets the fee. Then createDrop deploys the campaign."}
                 </p>
                 <div className="grid gap-2">
-                  <TxButton
-                    request={approveTokenReq}
-                    label="1. Approve token (total + fee)"
-                    disabled={!approveTokenReq}
-                  />
+                  {!isNative && (
+                    <TxButton
+                      request={approveTokenReq}
+                      label="1. Approve token (total + fee)"
+                      disabled={!approveTokenReq}
+                    />
+                  )}
                   <TxButton
                     request={createReq}
-                    label="2. Create campaign"
+                    label={isNative ? "Create campaign (pay in ETH)" : "2. Create campaign"}
                     primary
                     disabled={!createReq}
                   />

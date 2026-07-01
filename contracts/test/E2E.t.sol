@@ -80,8 +80,10 @@ contract E2ETest is MerkleTestBase {
         vm.startPrank(operator);
         airdropToken.approve(address(factory), TOTAL + FEE);
         drop = MerkleDrop(
-            factory.createDrop(
-                CSV, address(airdropToken), root, TOTAL, startTime, deadline, address(customerRegistry)
+            payable(
+                factory.createDrop(
+                    CSV, address(airdropToken), root, TOTAL, startTime, deadline, address(customerRegistry)
+                )
             )
         );
         vm.stopPrank();
@@ -127,8 +129,10 @@ contract E2ETest is MerkleTestBase {
         vm.startPrank(operator);
         airdropToken.approve(address(factory), TOTAL + FEE);
         MerkleDrop drop = MerkleDrop(
-            factory.createDrop(
-                CSV, address(airdropToken), root, TOTAL, futureStart, deadline, address(customerRegistry)
+            payable(
+                factory.createDrop(
+                    CSV, address(airdropToken), root, TOTAL, futureStart, deadline, address(customerRegistry)
+                )
             )
         );
         vm.stopPrank();

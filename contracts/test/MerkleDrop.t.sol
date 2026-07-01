@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import { ERC20 } from "solmate/tokens/ERC20.sol";
 
 import { MerkleDrop } from "../src/MerkleDrop.sol";
 import { IIdentityRegistry } from "../src/interfaces/IIdentityRegistry.sol";
@@ -67,7 +66,7 @@ contract MerkleDropTest is MerkleTestBase {
         token = new MockERC20("Drop", "DRP", 18);
         registry = new MockIdentityRegistry();
         drop = new MerkleDrop(
-            ERC20(address(token)), root, startTime, deadline, IIdentityRegistry(address(registry)), OPERATOR
+            address(token), root, startTime, deadline, IIdentityRegistry(address(registry)), OPERATOR
         );
 
         // Fund the drop with exactly the total allocation.
@@ -94,14 +93,14 @@ contract MerkleDropTest is MerkleTestBase {
     function test_Constructor_RevertZeroToken() public {
         vm.expectRevert(MerkleDrop.ZeroAddress.selector);
         new MerkleDrop(
-            ERC20(address(0)), root, startTime, deadline, IIdentityRegistry(address(registry)), OPERATOR
+            address(0), root, startTime, deadline, IIdentityRegistry(address(registry)), OPERATOR
         );
     }
 
     function test_Constructor_ZeroRegistryAllowed() public {
         // W24: a zero identityRegistry is valid — it means "open claim" (no gate).
         MerkleDrop open = new MerkleDrop(
-            ERC20(address(token)), root, startTime, deadline, IIdentityRegistry(address(0)), OPERATOR
+            address(token), root, startTime, deadline, IIdentityRegistry(address(0)), OPERATOR
         );
         assertEq(address(open.identityRegistry()), address(0));
     }
@@ -110,7 +109,7 @@ contract MerkleDropTest is MerkleTestBase {
         // W24: with identityRegistry == 0, an unverified wallet can claim
         // (merkle proof + self-claim still enforced).
         MerkleDrop open = new MerkleDrop(
-            ERC20(address(token)), root, startTime, deadline, IIdentityRegistry(address(0)), OPERATOR
+            address(token), root, startTime, deadline, IIdentityRegistry(address(0)), OPERATOR
         );
         token.mint(address(open), TOTAL);
 
@@ -124,7 +123,7 @@ contract MerkleDropTest is MerkleTestBase {
     function test_Constructor_RevertZeroOperator() public {
         vm.expectRevert(MerkleDrop.ZeroAddress.selector);
         new MerkleDrop(
-            ERC20(address(token)), root, startTime, deadline, IIdentityRegistry(address(registry)), address(0)
+            address(token), root, startTime, deadline, IIdentityRegistry(address(registry)), address(0)
         );
     }
 
@@ -133,14 +132,14 @@ contract MerkleDropTest is MerkleTestBase {
         // silently treat transfers to it as succeeding).
         vm.expectRevert(MerkleDrop.NotAContract.selector);
         new MerkleDrop(
-            ERC20(address(0xDEAD)), root, startTime, deadline, IIdentityRegistry(address(registry)), OPERATOR
+            address(0xDEAD), root, startTime, deadline, IIdentityRegistry(address(registry)), OPERATOR
         );
     }
 
     function test_Constructor_RevertDeadlineInPast() public {
         vm.expectRevert(MerkleDrop.DeadlineInPast.selector);
         new MerkleDrop(
-            ERC20(address(token)),
+            address(token),
             root,
             startTime,
             uint64(block.timestamp), // deadline == now → not in the future
@@ -153,7 +152,7 @@ contract MerkleDropTest is MerkleTestBase {
         // deadline must be strictly after startTime (non-empty claim window).
         vm.expectRevert(MerkleDrop.InvalidWindow.selector);
         new MerkleDrop(
-            ERC20(address(token)),
+            address(token),
             root,
             deadline, // startTime == deadline
             deadline,
@@ -205,7 +204,7 @@ contract MerkleDropTest is MerkleTestBase {
         // A drop whose window hasn't opened yet rejects claims.
         uint64 future = uint64(block.timestamp + 1 days);
         MerkleDrop pending = new MerkleDrop(
-            ERC20(address(token)), root, future, deadline, IIdentityRegistry(address(registry)), OPERATOR
+            address(token), root, future, deadline, IIdentityRegistry(address(registry)), OPERATOR
         );
         token.mint(address(pending), TOTAL);
 

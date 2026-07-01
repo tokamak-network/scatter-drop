@@ -4,7 +4,7 @@ pragma solidity 0.8.28;
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { ERC20 } from "solmate/tokens/ERC20.sol";
+import { SafeTransferLib } from "solmate/utils/SafeTransferLib.sol";
 
 import { IIdentityRegistry } from "./interfaces/IIdentityRegistry.sol";
 import { IRegistryFactoryLike } from "./interfaces/IRegistryFactoryLike.sol";
@@ -55,6 +55,10 @@ contract DropFactory is Ownable {
 
     /// @notice Basis-points denominator and the maximum allowed percentage fee (10%).
     uint16 public constant MAX_FEE_BPS = 1000;
+
+    /// @notice Sentinel `airdropToken` value meaning "distribute native ETH".
+    ///         Matches `MerkleDrop.NATIVE`; funding/fees are paid in ETH via `msg.value`.
+    address public constant NATIVE = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     /// @notice Minimum effective claim window (`deadline - max(startTime, now)`). Prevents a
     ///         publish-and-instantly-sweep campaign that would mislead would-be claimers.
@@ -130,6 +134,7 @@ contract DropFactory is Ownable {
     error TokenNotAllowed();
     error FeeNotConfigured();
     error FeeTooHigh();
+    error IncorrectValue();
 
     /// @param initialOwner       Admin (sets fees/registries/treasury, curates tokens, withdraws).
     /// @param operatorRegistry_  zk-X509 IdentityRegistry gating campaign creators (gate 1).
@@ -222,7 +227,8 @@ contract DropFactory is Ownable {
     function setAllowedToken(address token, bool allowed) external onlyOwner {
         if (allowed) {
             if (tokenTier[token] != TokenTier.ALLOWED) {
-                _requireContract(token);
+                // The NATIVE sentinel has no code; every other allowed token must be a contract.
+                if (token != NATIVE) _requireContract(token);
                 tokenTier[token] = TokenTier.ALLOWED;
                 emit AllowedTokenSet(token, true, msg.sender);
             }
@@ -242,7 +248,11 @@ contract DropFactory is Ownable {
                 collectedFees[token] = collected - amount;
             }
             address to = treasury;
-            IERC20(token).safeTransfer(to, amount);
+            if (token == NATIVE) {
+                SafeTransferLib.safeTransferETH(to, amount);
+            } else {
+                IERC20(token).safeTransfer(to, amount);
+            }
             emit FeesWithdrawn(token, to, amount);
         }
     }
@@ -252,13 +262,15 @@ contract DropFactory is Ownable {
     // ---------------------------------------------------------------------
 
     /// @notice Create an identity-gated Merkle airdrop campaign.
-    /// @dev The fee is charged on top of the distribution: the operator must approve
+    /// @dev The fee is charged on top of the distribution. For an ERC20, the operator must approve
     ///      `totalAmount + fee` of `airdropToken`; the drop is funded with `totalAmount` and the
-    ///      vault accrues `fee`.
+    ///      vault accrues `fee`. For native ETH (`airdropToken == NATIVE`), the operator sends
+    ///      `msg.value == totalAmount + fee`; the drop is funded with `totalAmount` ETH and `fee`
+    ///      ETH stays in the factory vault. ERC20 drops must send no ETH.
     /// @param airdropType      Distribution type (must be a valid `AirdropType`).
-    /// @param airdropToken     ERC20 distributed to claimers (must be allow-listed).
+    /// @param airdropToken     ERC20 distributed to claimers, or `NATIVE` for ETH (must be allow-listed).
     /// @param merkleRoot       Root over `keccak256(abi.encodePacked(index, account, amount))` leaves.
-    /// @param totalAmount      Total `airdropToken` funded into the drop.
+    /// @param totalAmount      Total `airdropToken` (or wei) funded into the drop.
     /// @param startTime        Unix time at/after which claims open (may be now or future).
     /// @param deadline         Unix time after which claims close and the operator may sweep;
     ///                         the effective claim window must be at least `MIN_DURATION`.
@@ -272,7 +284,7 @@ contract DropFactory is Ownable {
         uint64 startTime,
         uint64 deadline,
         address identityRegistry
-    ) external returns (address drop) {
+    ) external payable returns (address drop) {
         AirdropType t = _toType(airdropType);
         // identityRegistry is OPTIONAL (W24): address(0) = no customer gate (open claim).
         if (airdropToken == address(0)) revert InvalidAddress();
@@ -299,11 +311,18 @@ contract DropFactory is Ownable {
         }
 
         uint256 fee = _computeFee(airdropToken, totalAmount);
+        bool native = airdropToken == NATIVE;
+        // Native drops carry funding in msg.value; ERC20 drops must send none.
+        if (native) {
+            if (msg.value != totalAmount + fee) revert IncorrectValue();
+        } else if (msg.value != 0) {
+            revert IncorrectValue();
+        }
 
         // Deploy the drop (operator = msg.sender, factory = this via MerkleDrop's msg.sender).
         drop = address(
             new MerkleDrop(
-                ERC20(airdropToken),
+                airdropToken,
                 merkleRoot,
                 startTime,
                 deadline,
@@ -314,11 +333,18 @@ contract DropFactory is Ownable {
         _drops.push(drop);
 
         // Fund the drop with the full distribution; the fee is charged on top into the vault.
-        // Exact-receipt guards reject fee-on-transfer / rebasing tokens.
-        _pullExact(IERC20(airdropToken), msg.sender, drop, totalAmount);
-        if (fee > 0) {
-            collectedFees[airdropToken] += fee; // CEI: credit before the external pull
-            _pullExact(IERC20(airdropToken), msg.sender, address(this), fee);
+        if (native) {
+            // Credit the fee (retained in this contract's ETH balance) before the
+            // external value transfer, then fund the drop with the distribution.
+            if (fee > 0) collectedFees[NATIVE] += fee;
+            SafeTransferLib.safeTransferETH(drop, totalAmount);
+        } else {
+            // Exact-receipt guards reject fee-on-transfer / rebasing tokens.
+            _pullExact(IERC20(airdropToken), msg.sender, drop, totalAmount);
+            if (fee > 0) {
+                collectedFees[airdropToken] += fee; // CEI: credit before the external pull
+                _pullExact(IERC20(airdropToken), msg.sender, address(this), fee);
+            }
         }
 
         emit DropCreated(
