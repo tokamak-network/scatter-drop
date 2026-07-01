@@ -28,8 +28,14 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   if (typeof body.enabled === "boolean") data.enabled = body.enabled;
   if (typeof body.name === "string" && body.name.trim()) data.name = body.name.trim();
   if (typeof body.rpcUrl === "string" && /^https?:\/\//.test(body.rpcUrl)) data.rpcUrl = body.rpcUrl;
-  if (typeof body.publicRpcUrl === "string") data.publicRpcUrl = body.publicRpcUrl || null;
-  if (typeof body.explorerUrl === "string") data.explorerUrl = body.explorerUrl || null;
+  // Optional URLs: null/empty clears; otherwise must be http(s).
+  for (const f of ["publicRpcUrl", "explorerUrl"] as const) {
+    if (!(f in body)) continue;
+    const v = body[f];
+    if (v === null || v === "") data[f] = null;
+    else if (typeof v === "string" && /^https?:\/\//.test(v)) data[f] = v;
+    else return NextResponse.json({ error: `${f} must be an http(s) URL or null` }, { status: 400 });
+  }
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "No editable fields" }, { status: 400 });
   }

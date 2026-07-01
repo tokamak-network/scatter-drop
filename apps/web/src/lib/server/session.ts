@@ -7,15 +7,25 @@ export interface SessionData {
   address?: string; // lowercased, set after a successful SIWE verify
 }
 
-const password =
-  process.env.SESSION_SECRET ??
-  "dev-only-insecure-session-secret-change-me-please-32b"; // ≥32 chars; override in prod
-
 const cookieName = "scatterdrop_session";
+
+/**
+ * Session cookie password. In production a real ≥32-char SESSION_SECRET is
+ * mandatory — never fall back to a hard-coded value there (forgeable sessions).
+ * The dev fallback only applies outside production.
+ */
+function sessionPassword(): string {
+  const s = process.env.SESSION_SECRET;
+  if (s && s.length >= 32) return s;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("SESSION_SECRET (≥32 chars) is required in production");
+  }
+  return "dev-only-insecure-session-secret-change-me-please-32b";
+}
 
 export async function getSession(): Promise<IronSession<SessionData>> {
   return getIronSession<SessionData>(await cookies(), {
-    password,
+    password: sessionPassword(),
     cookieName,
     cookieOptions: { secure: process.env.NODE_ENV === "production", sameSite: "lax" },
   });

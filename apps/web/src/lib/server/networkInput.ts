@@ -30,15 +30,19 @@ export function parseNetwork(body: unknown): NetworkInput | { error: string } {
     if (typeof v !== "string" || !ADDR.test(v)) throw new Error(`${f} must be an address`);
     return v;
   };
-  const optStr = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
+  const optUrl = (v: unknown, f: string): string | null => {
+    if (v === undefined || v === null || v === "") return null;
+    if (typeof v !== "string" || !/^https?:\/\//.test(v)) throw new Error(`${f} must be an http(s) URL`);
+    return v;
+  };
 
   try {
     return {
       chainId,
       name: b.name.trim(),
       rpcUrl: b.rpcUrl,
-      publicRpcUrl: optStr(b.publicRpcUrl),
-      explorerUrl: optStr(b.explorerUrl),
+      publicRpcUrl: optUrl(b.publicRpcUrl, "publicRpcUrl"),
+      explorerUrl: optUrl(b.explorerUrl, "explorerUrl"),
       nativeSymbol: typeof b.nativeSymbol === "string" && b.nativeSymbol ? b.nativeSymbol : "ETH",
       dropFactory: b.dropFactory,
       feeToken: optAddr(b.feeToken, "feeToken"),

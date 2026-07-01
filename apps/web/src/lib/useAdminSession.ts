@@ -20,9 +20,11 @@ export function useAdminSession() {
   const refresh = useCallback(async () => {
     try {
       const r = await fetch("/api/auth/me");
-      if (r.ok) setMe((await r.json()) as AdminSession);
+      // Clear admin state if the session expired/was revoked, so the UI can't
+      // keep rendering admin-only controls against a dead session.
+      setMe(r.ok ? ((await r.json()) as AdminSession) : { address: null, isAdmin: false });
     } catch {
-      /* ignore */
+      setMe({ address: null, isAdmin: false });
     }
   }, []);
   useEffect(() => {
