@@ -4,7 +4,8 @@ Audience: external auditors and reviewers. Scope: the v1 on-chain core
 (`contracts/src/DropFactory.sol`, `contracts/src/MerkleDrop.sol`) and its
 read-only dependency on the zk-X509 identity contracts. This document summarizes
 the W13 internal security pass, the trust/threat model, resolved findings, and an
-external-audit checklist.
+external-audit checklist. **§7 packages the post-W13 delta** (native-ETH airdrops
+and on-chain proofs CID) so a re-review can focus on the changed surface only.
 
 Commit references are the merge commits on `main` at the time of writing.
 
@@ -126,6 +127,13 @@ fixed-treasury withdrawal, fuzz (fee/amount accrual), and a vault-conservation
 multi-op test. Deployment scripts and test mocks are intentionally not coverage
 targets.
 
+The post-W13 delta (§7) adds: `NativeDrop.t.sol` (native funding/claim/sweep/
+withdraw), `NativeHardening.t.sol` (adversarial reentrancy pinned to the guard
+selector, `receive()` guard, ETH conservation, gas), `invariant/NativeDropInvariant.t.sol`
+(stateful ETH-conservation + fee-vault invariants), `ProofsPublished.t.sol`
+(`publishProofs` access control / provenance / re-publish), and `GasSnapshot.t.sol`
+(the §7.3 regression table).
+
 ## 6. External-audit checklist
 
 - [ ] Re-confirm leaf encoding parity between `MerkleDrop.claim` and
@@ -142,8 +150,107 @@ targets.
 - [ ] Re-run `forge test` and `forge coverage`; review fuzz/invariant depth.
 - [ ] Consider the `setFee` front-running surface (I-3) for the production fee
       policy (timelock or per-call bound).
+- [ ] **Native-ETH path (§7.1):** confirm the `msg.value == totalAmount + fee`
+      accounting, CEI + `nonReentrant` on `claim`/`sweep`, the `receive()`
+      accept-only-if-native guard, and `collectedFees[NATIVE] == factory ETH
+      balance`. Note the CLAIM_SAME test-sensitivity finding (assert the guard
+      selector, not just "reverted").
+- [ ] **`publishProofs` (§7.2):** confirm operator-only provenance via the
+      immutable `factory` field, event-only (no storage), and that the spoofable
+      self-address case is inert for indexers keyed by real drop addresses.
 
-## 7. Out of scope (v1)
+## 7. Post-W13 delta — re-review scope (native ETH + on-chain proofs)
+
+Two **additive** changes landed in the core after the W13 pass. Both were flagged
+"audit re-review". Neither modifies an existing path: the ERC20 distribution flow,
+fee accounting, gates, exact-receipt guard, `MIN_DURATION`, leaf encoding, and the
+fixed-treasury withdrawal invariant are all unchanged. A reviewer can therefore
+scope to the native-ETH path and `publishProofs` alone.
+
+### 7.1 Native-ETH airdrops (#55 support `b283a21`, #56 hardening `23a411b`)
+
+Distributes native ETH as the airdrop asset, selected by the sentinel
+`airdropToken == NATIVE` (`0xEeee…EEeE`, matching `MerkleDrop.NATIVE`).
+
+- **`createDrop` (payable):** for `NATIVE`, `msg.value == totalAmount + fee`
+  (`IncorrectValue` otherwise); ERC20 drops must send **no** ETH. The fee is
+  credited to `collectedFees[NATIVE]` **before** the ETH is forwarded to the drop
+  (CEI); the drop is funded with `totalAmount` via `SafeTransferLib.safeTransferETH`.
+- **`MerkleDrop` native path:** immutable `isNative` flag; `claim`/`sweep` pay ETH
+  via `safeTransferETH`. `claim` keeps CEI (`_claimed.set(index)` before the
+  transfer) and both `claim` and `sweep` are `nonReentrant`.
+- **`receive()`:** accepts ETH **only** for native drops (that is how the factory
+  funds them); ERC20 drops revert `EthNotAccepted`, so ETH can't get stuck.
+- **ETH fee vault:** `withdrawFees` sends `collectedFees[NATIVE]` to the fixed
+  `treasury` via `safeTransferETH`, decrementing before the transfer.
+
+**Audit focus points**
+
+- *Reentrancy.* A malicious ETH receiver reenters `claim` (same leaf and a sibling
+  leaf) and `sweep` from its `receive`; every attempt is pinned to OpenZeppelin's
+  `ReentrancyGuardReentrantCall` selector. Mutation-verified: removing `nonReentrant`
+  fails all three. ⚠️ **CLAIM_SAME false-confidence finding** — a bare `catch{}`
+  passed even without the guard (CEI's `AlreadyClaimed` fires first); the tests now
+  assert the *guard* selector so they stay sensitive to guard removal.
+- *ETH transfer.* `safeTransferETH` reverts on a failed send, so a claim to a
+  rejecting recipient reverts (no silent loss); no push-payment griefing beyond the
+  caller's own claim.
+- *Conservation.* Stateful invariant (claim/sweep/warp handler, ~128k calls, 0
+  reverts): `claimed + swept + remaining == funded total` and
+  `collectedFees[NATIVE] == factory ETH balance`.
+- *Files.* `MerkleDrop.sol` (`isNative`, `receive`, `claim`, `sweep`),
+  `DropFactory.sol` (`createDrop` native branch, `withdrawFees` NATIVE branch).
+  Tests: `NativeDrop.t.sol`, `NativeHardening.t.sol`, `invariant/NativeDropInvariant.t.sol`.
+
+### 7.2 On-chain proofs CID (#62 `publishProofs` `97a23ba`)
+
+Lets a drop's operator record the IPFS CID of its `proofs.json` on-chain so
+claimers can locate inclusion proofs without a trusted server.
+
+- **`publishProofs(address drop, string cid)`** — **event-only** (`ProofsPublished(drop, cid)`),
+  no storage. Latest event for a `drop` is its current CID; re-publishing is allowed.
+- **Guards (cheapest-first):** non-empty `cid` (`EmptyCid`); `drop` has code and
+  `MerkleDrop(drop).factory() == address(this)` — read via `try/catch` so a non-drop
+  contract yields a clean `UnknownDrop`, not an opaque decode revert; caller must be
+  `MerkleDrop(drop).operator()` (`NotDropOperator`).
+
+**Audit focus points**
+
+- *Access control.* Operator-only, per drop. Provenance is reconstructed from
+  `MerkleDrop`'s **immutable** `factory` field — no `isDrop` mapping, no O(n) scan.
+- *Trust model.* The guards prove the target *reports* this factory as deployer and
+  `msg.sender` as its operator (authoritative immutables for a genuine drop). A
+  contrived contract can spoof those values only about **itself**; it cannot make a
+  real drop's `operator()` return a non-operator, so no one can publish a CID under
+  another party's real drop, and indexers key events by known drop addresses (a
+  spoofed self-address is inert noise).
+- *Surface.* No value transfer and no storage write → no reentrancy or fund surface.
+  Pure addition: `createDrop` and all prior state/paths are untouched.
+- *Files.* `DropFactory.sol` (`publishProofs`, `ProofsPublished`, `UnknownDrop` /
+  `NotDropOperator` / `EmptyCid`). Test: `ProofsPublished.t.sol`.
+
+### 7.3 Gas snapshot (regression baseline)
+
+Outer-call gas from `test/GasSnapshot.t.sol` (single-leaf tree, empty proof;
+`optimizer_runs = 200`). Indicative, not a guarantee.
+
+| Operation | ERC20 | Native ETH | Note |
+| --------- | ----: | ---------: | ---- |
+| `createDrop` (deploys a `MerkleDrop`) | 848,308 | 771,447 | native is cheaper — no ERC20 `transferFrom` pulls |
+| `claim` | 51,886 | 58,606 | native +~6.7k: `safeTransferETH` low-level call |
+| `sweep` | 26,773 | 34,561 | native +~7.8k: ETH send vs ERC20 transfer |
+| `publishProofs` (event-only) | 5,579 | — | no value transfer, no storage write |
+
+### 7.4 Re-review scope vs. W13
+
+- **New:** `DropFactory.publishProofs` (+ `ProofsPublished` event, 3 errors).
+- **Changed (native branch added; ERC20 path byte-for-byte unchanged):**
+  `DropFactory.createDrop` (payable + NATIVE funding), `DropFactory.withdrawFees`
+  (NATIVE branch), `MerkleDrop` constructor / `claim` / `sweep` / `receive`.
+- **Unchanged:** fee accounting & vault conservation, allow-list, gates 1/2,
+  exact-receipt, `MIN_DURATION`, leaf encoding, fixed-treasury withdrawal.
+
+## 8. Out of scope (v1)
 
 GatedDrop (on-chain snapshot/gated verification), social/task backends, vesting,
 gasless, multichain, and notifications are deferred (see `docs/DEV-PLAN.md`).
