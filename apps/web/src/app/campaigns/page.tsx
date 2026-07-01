@@ -42,23 +42,6 @@ export default function CampaignsPage() {
 
   return (
     <div className="space-y-8 animate-fade-in">
-      {/* Hero */}
-      <div className="relative overflow-hidden bg-slate-900 border border-slate-800 rounded-2xl p-8 md:p-12 shadow-xl">
-        <div className="relative z-10 max-w-2xl space-y-4">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-medium bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            Decentralized Sybil-Resistant Distribution
-          </div>
-          <h1 className="text-3xl md:text-4xl font-display font-bold tracking-tight text-slate-50">
-            Distribute tokens securely with zk-X509 identities.
-          </h1>
-          <p className="text-slate-400 text-sm md:text-base leading-relaxed">
-            ScatterDrop binds on-chain national-PKI digital signatures to wallet
-            claims. Operators deposit funds, define rules, and prevent bot farms.
-          </p>
-        </div>
-      </div>
-
       {/* Filters */}
       <div className="flex flex-col lg:flex-row gap-4 justify-between items-center bg-slate-900/50 p-4 rounded-xl border border-slate-800/60">
         <div className="relative w-full lg:max-w-md">

@@ -68,9 +68,15 @@ export function getEnvDeployment(): WebDeployment | null {
 }
 
 export async function fetchDeployment(): Promise<WebDeployment | null> {
+  // Build-time env is the primary source (per the precedence above) and needs
+  // no network round-trip. Only the dev fork drops a runtime deployment.json,
+  // so probe for it only when env is unset — otherwise a fixed deploy would
+  // 404 on `/deployment.json` every load.
+  const env = getEnvDeployment();
+  if (env) return env;
   try {
     const res = await fetch("/deployment.json", { cache: "no-store" });
-    if (!res.ok) return getEnvDeployment();
+    if (!res.ok) return null;
     const raw = await res.json();
     return {
       ...parseDeployment(raw),
@@ -78,6 +84,6 @@ export async function fetchDeployment(): Promise<WebDeployment | null> {
       deployer: toAddr(raw?.deployer),
     };
   } catch {
-    return getEnvDeployment();
+    return null;
   }
 }
