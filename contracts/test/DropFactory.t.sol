@@ -85,7 +85,7 @@ contract DropFactoryTest is Test {
 
         address drop = _createCsv(operator);
 
-        MerkleDrop md = MerkleDrop(drop);
+        MerkleDrop md = MerkleDrop(payable(drop));
         assertEq(md.factory(), address(factory), "factory");
         assertEq(address(md.token()), address(airdropToken), "token");
         assertEq(md.operator(), operator, "operator");
@@ -100,6 +100,18 @@ contract DropFactoryTest is Test {
         assertEq(factory.dropsLength(), 1);
         assertEq(factory.dropAt(0), drop);
         assertEq(factory.allDrops()[0], drop);
+    }
+
+    function test_createDrop_revertsWhenEthSentForErc20() public {
+        // ERC20 drops carry no msg.value; stray ETH would otherwise be stuck.
+        _verifyOperator(operator);
+        _fund(operator, TOTAL);
+        vm.deal(operator, 1 ether);
+        vm.prank(operator);
+        vm.expectRevert(DropFactory.IncorrectValue.selector);
+        factory.createDrop{ value: 1 }(
+            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, startTime, deadline, custReg
+        );
     }
 
     function test_createDrop_emitsDropCreated() public {
@@ -283,7 +295,7 @@ contract DropFactoryTest is Test {
             deadline,
             address(0)
         );
-        assertEq(address(MerkleDrop(drop).identityRegistry()), address(0), "open gate");
+        assertEq(address(MerkleDrop(payable(drop)).identityRegistry()), address(0), "open gate");
         assertEq(airdropToken.balanceOf(drop), TOTAL, "funded");
     }
 

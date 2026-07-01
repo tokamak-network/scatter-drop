@@ -97,8 +97,10 @@ contract ForkE2ETest is MerkleTestBase {
         vm.startPrank(operator);
         airdropToken.approve(address(factory), TOTAL + FEE);
         MerkleDrop drop = MerkleDrop(
-            factory.createDrop(
-                CSV, address(airdropToken), root, TOTAL, uint64(block.timestamp), deadline, USERS_REGISTRY
+            payable(
+                factory.createDrop(
+                    CSV, address(airdropToken), root, TOTAL, uint64(block.timestamp), deadline, USERS_REGISTRY
+                )
             )
         );
         vm.stopPrank();
