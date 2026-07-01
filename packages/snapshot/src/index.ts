@@ -4,7 +4,13 @@ import { scanHolders, type ScanOptions } from "./scan.js";
 import { allocate, totalOf } from "./allocate.js";
 import type { AllocationMode, SnapshotParams } from "./types.js";
 
-export type { Holder, AllocationMode, SnapshotParams, ScanProgress } from "./types.js";
+export type {
+  Holder,
+  AllocationMode,
+  SnapshotParams,
+  ScanProgress,
+  TokenStandard,
+} from "./types.js";
 export { scanHolders, type ScanOptions } from "./scan.js";
 export { allocate, totalOf } from "./allocate.js";
 

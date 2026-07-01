@@ -117,6 +117,23 @@ export function parseSnapshotRequest(
     fromBlock = fb;
   }
 
+  let kind: SnapshotParams["kind"];
+  if (b.kind !== undefined) {
+    if (b.kind !== "erc20" && b.kind !== "erc721" && b.kind !== "erc1155") {
+      return { error: "Invalid kind (erc20 | erc721 | erc1155)" };
+    }
+    kind = b.kind;
+  }
+  let tokenId: bigint | undefined;
+  if (b.tokenId !== undefined) {
+    const t = toBigInt(b.tokenId);
+    if (t === null || t < 0n) return { error: "Invalid tokenId" };
+    tokenId = t;
+  }
+  if (kind === "erc1155" && tokenId === undefined) {
+    return { error: "erc1155 requires a tokenId" };
+  }
+
   const m = b.mode as Record<string, unknown> | undefined;
   if (!m || typeof m !== "object") return { error: "Invalid mode" };
   let mode: AllocationMode;
@@ -137,6 +154,8 @@ export function parseSnapshotRequest(
     block,
     minBalance,
     ...(fromBlock !== undefined ? { fromBlock } : {}),
+    ...(kind ? { kind } : {}),
+    ...(tokenId !== undefined ? { tokenId } : {}),
   };
   return { params, mode };
 }

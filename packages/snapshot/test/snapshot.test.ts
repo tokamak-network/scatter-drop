@@ -119,3 +119,49 @@ describe("buildSnapshotDrop (end-to-end)", () => {
     ).rejects.toThrow(/no holders/);
   });
 });
+
+// ERC-1155 mock: getLogs returns TransferSingle recipients (empty for Batch to
+// avoid double-count); multicall returns balanceOf(addr, id) — args[0] = address.
+function mock1155Client(transfersTo: Address[], balances: Record<string, bigint>) {
+  return {
+    getLogs: vi.fn(async ({ event }: { event?: { name?: string } }) =>
+      event?.name === "TransferSingle"
+        ? transfersTo.map((to) => ({ args: { operator: A(0), from: A(0), to, id: 1n, value: 1n } }))
+        : [],
+    ),
+    multicall: vi.fn(
+      async ({ contracts }: { contracts: { args: readonly [Address, bigint] }[] }) =>
+        contracts.map((c) => ({
+          status: "success" as const,
+          result: balances[c.args[0].toLowerCase()] ?? 0n,
+        })),
+    ),
+  } as never;
+}
+
+describe("scanHolders — erc1155", () => {
+  it("scans TransferSingle/Batch recipients and filters by balanceOf(addr, id)", async () => {
+    const client = mock1155Client([A(1), A(2), A(3)], {
+      [A(1).toLowerCase()]: 3n,
+      [A(2).toLowerCase()]: 1n,
+      [A(3).toLowerCase()]: 0n,
+    });
+    const holders = await scanHolders(client, {
+      token: A(9),
+      block: 100n,
+      minBalance: 2n,
+      kind: "erc1155",
+      tokenId: 1n,
+    });
+    // A1 (3 ≥ 2) kept; A2 (1 < 2) and A3 (0) dropped.
+    expect(holders.map((h) => h.address)).toEqual([A(1)]);
+    expect(holders[0]!.balance).toBe(3n);
+  });
+
+  it("requires tokenId for erc1155", async () => {
+    const client = mock1155Client([], {});
+    await expect(
+      scanHolders(client, { token: A(9), block: 1n, minBalance: 0n, kind: "erc1155" }),
+    ).rejects.toThrow(/tokenId/);
+  });
+});

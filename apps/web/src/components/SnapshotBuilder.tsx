@@ -18,15 +18,20 @@ const isUint = (s: string) => /^\d+$/.test(s);
  */
 export function SnapshotBuilder({
   onResult,
+  standard = "erc20",
 }: {
   onResult: (m: SnapshotManifest | null) => void;
+  standard?: "erc20" | "erc721" | "erc1155";
 }) {
   const { phase, progress, result, error, start, reset } = useSnapshotJob();
+  const isNft = standard !== "erc20";
+  const is1155 = standard === "erc1155";
 
   const [token, setToken] = useState("");
   const [block, setBlock] = useState("");
   const [fromBlock, setFromBlock] = useState("");
   const [minBalance, setMinBalance] = useState("0");
+  const [tokenId, setTokenId] = useState("");
   const [kind, setKind] = useState<"equal" | "proRata">("equal");
   const [perWallet, setPerWallet] = useState("");
   const [totalAmount, setTotalAmount] = useState("");
@@ -42,6 +47,7 @@ export function SnapshotBuilder({
     (minBalance === "" || isUint(minBalance)) &&
     (fromBlock === "" ||
       (isUint(fromBlock) && BigInt(fromBlock) <= BigInt(block || "0"))) &&
+    (!is1155 || isUint(tokenId)) &&
     amountValid;
 
   // Keep the latest onResult in a ref so the lift effect depends only on the
@@ -62,7 +68,7 @@ export function SnapshotBuilder({
   useEffect(() => {
     if (phaseRef.current === "done" || phaseRef.current === "error") reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, block, fromBlock, minBalance, kind, perWallet, totalAmount]);
+  }, [token, block, fromBlock, minBalance, tokenId, kind, perWallet, totalAmount]);
 
   const topN = useMemo(() => {
     if (!result) return [];
@@ -86,6 +92,8 @@ export function SnapshotBuilder({
       minBalance: minBalance || "0",
       mode,
       ...(fromBlock ? { fromBlock } : {}),
+      ...(standard !== "erc20" ? { kind: standard } : {}),
+      ...(is1155 ? { tokenId } : {}),
     };
     void start(input);
   }
@@ -95,18 +103,35 @@ export function SnapshotBuilder({
   return (
     <div className="bg-slate-950 border border-slate-800 rounded-lg p-4 space-y-3">
       <div className="text-xs font-mono text-slate-300">
-        On-chain snapshot — scan ERC-20 holders at a block (server-side)
+        On-chain snapshot — scan{" "}
+        {standard === "erc20"
+          ? "ERC-20 holders"
+          : is1155
+            ? "ERC-1155 owners"
+            : "ERC-721 owners"}{" "}
+        at a block (server-side)
       </div>
 
       <input
         className="input"
         value={token}
         onChange={(e) => setToken(e.target.value)}
-        placeholder="Snapshot token address 0x… (whose holders to scan)"
+        placeholder={
+          isNft ? "Collection address 0x…" : "Snapshot token address 0x… (whose holders to scan)"
+        }
         disabled={running}
       />
       {token && !isAddress(token) && (
         <span className="text-xs text-red-500">Invalid address.</span>
+      )}
+      {is1155 && (
+        <input
+          className="input"
+          value={tokenId}
+          onChange={(e) => setTokenId(e.target.value)}
+          placeholder="Token id (ERC-1155)"
+          disabled={running}
+        />
       )}
 
       <div className="grid grid-cols-2 gap-2">
@@ -130,7 +155,7 @@ export function SnapshotBuilder({
         className="input"
         value={minBalance}
         onChange={(e) => setMinBalance(e.target.value)}
-        placeholder="Min balance (base units, 0 = any)"
+        placeholder={isNft ? "Min held (count, 0 = any)" : "Min balance (base units, 0 = any)"}
         disabled={running}
       />
 

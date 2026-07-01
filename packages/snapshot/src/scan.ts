@@ -6,6 +6,18 @@ const [transferEvent] = parseAbi([
 ]);
 const erc20Abi = parseAbi(["function balanceOf(address) view returns (uint256)"]);
 
+// ERC-1155: candidates come from TransferSingle/TransferBatch `to`; balances are
+// per-id via balanceOf(account, id).
+const [transferSingleEvent] = parseAbi([
+  "event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)",
+]);
+const [transferBatchEvent] = parseAbi([
+  "event TransferBatch(address indexed operator, address indexed from, address indexed to, uint256[] ids, uint256[] values)",
+]);
+const erc1155Abi = parseAbi([
+  "function balanceOf(address account, uint256 id) view returns (uint256)",
+]);
+
 const ZERO_ADDRESS = getAddress("0x0000000000000000000000000000000000000000");
 
 export interface ScanOptions {
@@ -36,6 +48,9 @@ export async function scanHolders(
   params: SnapshotParams,
   opts: ScanOptions = {},
 ): Promise<Holder[]> {
+  // ERC-1155 uses different events + a per-id balanceOf; ERC-20/721 share this path.
+  if (params.kind === "erc1155") return scanErc1155Holders(client, params, opts);
+
   const { token, block, minBalance, fromBlock = 0n } = params;
   const logChunk = opts.logChunk ?? 2000n;
   const balanceBatch = opts.balanceBatch ?? 500;
@@ -91,6 +106,84 @@ export async function scanHolders(
     results.forEach((r, j) => {
       // Only trust a successful call that actually returned a bigint — a
       // non-standard token could return something else; don't coerce it.
+      if (r.status === "success" && typeof r.result === "bigint") {
+        const balance = r.result;
+        if (balance > 0n && balance >= minBalance) {
+          holders.push({ address: batch[j]!, balance });
+        }
+      }
+    });
+    opts.onProgress?.({
+      phase: "balances",
+      done: BigInt(Math.min(i + batch.length, list.length)),
+      total: BigInt(list.length),
+    });
+  }
+
+  return holders;
+}
+
+/**
+ * Snapshot ERC-1155 holders of a specific `tokenId` at a past block.
+ *
+ * 1. Scan `TransferSingle` + `TransferBatch` logs (chunked) → candidate set =
+ *    every address that ever *received* (any id — the balanceOf below filters to
+ *    the requested id). The zero address (mints/burns) is excluded.
+ * 2. Read `balanceOf(addr, tokenId)` at `blockTag: block` (batched multicall) →
+ *    keep `balance >= minBalance`.
+ */
+async function scanErc1155Holders(
+  client: PublicClient,
+  params: SnapshotParams,
+  opts: ScanOptions = {},
+): Promise<Holder[]> {
+  const { token, block, minBalance, fromBlock = 0n, tokenId } = params;
+  if (tokenId === undefined) throw new Error("scanHolders: erc1155 requires tokenId");
+  const logChunk = opts.logChunk ?? 2000n;
+  const balanceBatch = opts.balanceBatch ?? 500;
+  if (logChunk <= 0n) throw new Error("scanHolders: logChunk must be > 0");
+  if (balanceBatch <= 0) throw new Error("scanHolders: balanceBatch must be > 0");
+  if (block < fromBlock) throw new Error("scanHolders: block must be >= fromBlock");
+
+  const candidates = new Set<Address>();
+  let processed = 0n;
+  const span = block - fromBlock + 1n;
+  for (let start = fromBlock; start <= block; start += logChunk) {
+    const end = start + logChunk - 1n > block ? block : start + logChunk - 1n;
+    const [singles, batches] = await Promise.all([
+      client.getLogs({ address: token, event: transferSingleEvent, fromBlock: start, toBlock: end }),
+      client.getLogs({ address: token, event: transferBatchEvent, fromBlock: start, toBlock: end }),
+    ]);
+    for (const log of [...singles, ...batches]) {
+      const to = log.args?.to;
+      if (!to) continue;
+      const addr = getAddress(to);
+      if (addr !== ZERO_ADDRESS) candidates.add(addr);
+    }
+    processed += end - start + 1n;
+    opts.onProgress?.({ phase: "logs", done: processed, total: span });
+    if (opts.maxCandidates && candidates.size > opts.maxCandidates) {
+      throw new Error(
+        `scanHolders: candidate set exceeded maxCandidates (${opts.maxCandidates}); narrow the range or raise the cap`,
+      );
+    }
+  }
+
+  const list = [...candidates];
+  const holders: Holder[] = [];
+  for (let i = 0; i < list.length; i += balanceBatch) {
+    const batch = list.slice(i, i + balanceBatch);
+    const results = await client.multicall({
+      blockNumber: block,
+      allowFailure: true,
+      contracts: batch.map((address) => ({
+        address: token,
+        abi: erc1155Abi,
+        functionName: "balanceOf" as const,
+        args: [address, tokenId] as const,
+      })),
+    });
+    results.forEach((r, j) => {
       if (r.status === "success" && typeof r.result === "bigint") {
         const balance = r.result;
         if (balance > 0n && balance >= minBalance) {
