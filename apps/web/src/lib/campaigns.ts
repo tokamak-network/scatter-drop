@@ -148,15 +148,15 @@ function formatAmount(raw: bigint, decimals: number): string {
 function taglineFor(type: AirdropType, symbol: string): string {
   switch (type) {
     case AirdropType.CSV:
-      return `Allow-list ${symbol} drop — see if your address qualifies.`;
+      return `The list is locked in — see if your address made the cut and claim your ${symbol}.`;
     case AirdropType.ONCHAIN_SNAPSHOT:
-      return `Snapshot reward for ${symbol} holders — claim your share.`;
+      return `Held ${symbol} at the snapshot? Your reward is waiting — claim your share.`;
     case AirdropType.ONCHAIN_GATED:
-      return `Eligibility-gated ${symbol} drop — check if you can claim.`;
+      return `Verify once and claim your ${symbol} — reserved for real, eligible recipients.`;
     case AirdropType.SOCIAL:
-      return `Complete campaign tasks to earn ${symbol}.`;
+      return `Finish a few tasks and earn ${symbol} — quick to complete.`;
     default:
-      return `${symbol} airdrop — check your eligibility.`;
+      return `Check your eligibility and claim your ${symbol}.`;
   }
 }
 
