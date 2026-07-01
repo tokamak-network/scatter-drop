@@ -60,7 +60,9 @@ function toChain(n: PublicNetwork): Chain {
     id: n.chainId,
     name: n.name,
     nativeCurrency: { name: n.nativeSymbol, symbol: n.nativeSymbol, decimals: 18 },
-    rpcUrls: { default: { http: [n.publicRpcUrl || FORK_RPC_URL] } },
+    // publicRpcUrl is guaranteed present (server filters out networks without one);
+    // never fall back to the fork RPC for a different chainId (RPC↔chainId mismatch).
+    rpcUrls: { default: { http: [n.publicRpcUrl] } },
     testnet: true,
   });
 }
