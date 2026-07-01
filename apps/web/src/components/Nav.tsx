@@ -12,6 +12,7 @@ const LINKS = [
   { href: "/campaigns", label: "Explore", match: ["/campaigns", "/c"] },
   { href: "/claim", label: "My Claims", match: ["/claim"] },
   { href: "/manage", label: "Manage", match: ["/manage"] },
+  { href: "/tools", label: "Tools", match: ["/tools"] },
 ];
 
 function isActive(pathname: string, match: string[]) {

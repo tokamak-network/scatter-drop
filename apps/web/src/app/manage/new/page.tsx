@@ -131,6 +131,20 @@ export default function NewCampaignPage() {
   }, [csv]);
   const { manifest, error: csvError } = parsed;
 
+  // Prefill from the /tools CSV builder ("Use in a campaign") once on mount.
+  useEffect(() => {
+    try {
+      const draft = localStorage.getItem("scatterdrop:draft-csv");
+      if (draft) {
+        setType(AirdropType.CSV);
+        setCsv(draft);
+        localStorage.removeItem("scatterdrop:draft-csv");
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   // Snapshot mode (ONCHAIN_SNAPSHOT) sources recipients from a server-side
   // holder scan instead of a pasted CSV.
   const isSnapshot = type === AirdropType.ONCHAIN_SNAPSHOT;
