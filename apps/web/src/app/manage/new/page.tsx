@@ -26,6 +26,7 @@ import { ConnectGate } from "@/components/ConnectGate";
 import { SnapshotBuilder } from "@/components/SnapshotBuilder";
 import { TxButton } from "@/components/TxButton";
 import type { SnapshotManifest } from "@/lib/useSnapshotJob";
+import { useAllowedTokens } from "@/lib/campaigns";
 import {
   deploymentIssue,
   useComputedFee,
@@ -142,6 +143,10 @@ export default function NewCampaignPage() {
   // Native ETH airdrop: the sentinel token, funded via msg.value (no approve).
   const isNative =
     tokenValid && (token as string).toLowerCase() === NATIVE_ETH.toLowerCase();
+
+  // Operators pick from the admin-curated allow-list rather than pasting an
+  // arbitrary address (the on-chain createDrop rejects non-allow-listed tokens).
+  const { data: allowedTokens } = useAllowedTokens();
 
   // Token decimals for human-readable display (amounts in CSV are base units).
   // Native ETH has no ERC-20 contract, so use 18 directly.
@@ -294,50 +299,38 @@ export default function NewCampaignPage() {
                     placeholder="Reward for verified customers"
                   />
                 </Field>
-                <Field label="Distribution token (address)">
-                  <input
-                    className="input"
-                    value={token}
-                    onChange={(e) => setToken(e.target.value)}
-                    placeholder="0x… (or pick ETH)"
-                  />
-                  <div className="flex gap-2 mt-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setToken(NATIVE_ETH)}
-                      className={`px-3 py-1 rounded-lg border text-xs font-mono transition ${
-                        isNative
-                          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600"
-                          : "border-slate-800 bg-slate-950 text-slate-200 hover:border-slate-700"
-                      }`}
-                    >
-                      Ξ ETH (native)
-                    </button>
-                    {isNative && (
-                      <span className="text-[11px] text-slate-500 self-center">
-                        Funded with ETH via your wallet — no token approval.
-                      </span>
-                    )}
-                  </div>
-                  {token && !tokenValid && (
-                    <span className="text-xs text-red-500">Invalid address.</span>
-                  )}
-                  {tokenValid && tier !== undefined && (
-                    <span
-                      className={`inline-block text-[10px] font-mono font-bold px-2 py-0.5 mt-1 rounded border ${
-                        tierAllowed
-                          ? "bg-emerald-950/40 text-emerald-600 border-emerald-900/40"
-                          : "bg-amber-950/20 text-amber-600 border-amber-500/20"
-                      }`}
-                    >
-                      {tierAllowed ? "ALLOWED" : "NOT ALLOWED"}
-                    </span>
-                  )}
-                  {tokenValid && tier !== undefined && !tierAllowed && (
-                    <span className="text-[11px] text-slate-500">
-                      This token isn&apos;t on the platform allow-list. Ask the
-                      admin to add it before creating a campaign.
-                    </span>
+                <Field label="Distribution token (allow-list)">
+                  {allowedTokens && allowedTokens.length > 0 ? (
+                    <>
+                      <select
+                        className="input"
+                        value={token}
+                        onChange={(e) => setToken(e.target.value)}
+                      >
+                        <option value="">Select a token…</option>
+                        {allowedTokens.map((a) => (
+                          <option key={a.token} value={a.token}>
+                            {a.symbol} — {a.token.slice(0, 8)}…{a.token.slice(-6)}
+                          </option>
+                        ))}
+                      </select>
+                      {token && (
+                        <p className="text-[11px] text-slate-500 font-mono mt-1 break-all">
+                          {token}
+                        </p>
+                      )}
+                      {isNative && (
+                        <span className="text-[11px] text-slate-500">
+                          Native ETH — funded via your wallet (msg.value), no token
+                          approval needed.
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-amber-600">
+                      No tokens are on the platform allow-list yet. Ask the admin to
+                      curate one (Admin → Tokens) before creating a campaign.
+                    </p>
                   )}
                 </Field>
 
