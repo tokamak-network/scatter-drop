@@ -119,6 +119,9 @@ contract DropFactory is Ownable {
         uint64 deadline,
         uint256 fee
     );
+    /// @notice Emitted when a drop's operator records the IPFS CID of its `proofs.json`.
+    ///         Event-only (no storage): the latest event for a `drop` is the current CID.
+    event ProofsPublished(address indexed drop, string cid);
 
     error InvalidAddress();
     error InvalidAirdropType();
@@ -135,6 +138,9 @@ contract DropFactory is Ownable {
     error FeeNotConfigured();
     error FeeTooHigh();
     error IncorrectValue();
+    error UnknownDrop();
+    error NotDropOperator();
+    error EmptyCid();
 
     /// @param initialOwner       Admin (sets fees/registries/treasury, curates tokens, withdraws).
     /// @param operatorRegistry_  zk-X509 IdentityRegistry gating campaign creators (gate 1).
@@ -322,12 +328,7 @@ contract DropFactory is Ownable {
         // Deploy the drop (operator = msg.sender, factory = this via MerkleDrop's msg.sender).
         drop = address(
             new MerkleDrop(
-                airdropToken,
-                merkleRoot,
-                startTime,
-                deadline,
-                IIdentityRegistry(identityRegistry),
-                msg.sender
+                airdropToken, merkleRoot, startTime, deadline, IIdentityRegistry(identityRegistry), msg.sender
             )
         );
         _drops.push(drop);
@@ -359,6 +360,43 @@ contract DropFactory is Ownable {
             deadline,
             fee
         );
+    }
+
+    // ---------------------------------------------------------------------
+    // Proofs
+    // ---------------------------------------------------------------------
+
+    /// @notice Record the IPFS CID of a drop's `proofs.json` on-chain, so claimers can
+    ///         locate their inclusion proofs without a trusted server. Only the drop's
+    ///         operator may publish, and only for a drop this factory deployed.
+    /// @dev Event-only (no storage): indexers/clients take the latest `ProofsPublished`
+    ///      for a `drop` as its current CID. Re-publishing is allowed (e.g. re-pin to a
+    ///      new CID) — the guards are the only invariant. This is a pure addition; it does
+    ///      not touch `createDrop` or any existing state.
+    ///
+    ///      Trust model: the guards check that `drop` *reports* this factory as its deployer
+    ///      and `msg.sender` as its operator. For a genuine factory-deployed MerkleDrop these
+    ///      are authoritative immutables. A contrived contract could return the same values,
+    ///      but only about *itself* — it cannot make a real drop's `operator()` return a
+    ///      non-operator, so no one can publish a CID under another party's real drop. Indexers
+    ///      key events by known drop addresses, so a spoofed self-address is inert noise. That
+    ///      is why an `isDrop` allow-list (an SSTORE in every `createDrop`) isn't warranted here.
+    /// @param drop MerkleDrop deployed by this factory.
+    /// @param cid  IPFS CID (CIDv1 base32) of the drop's `proofs.json`; must be non-empty.
+    function publishProofs(address drop, string calldata cid) external {
+        if (bytes(cid).length == 0) revert EmptyCid();
+        if (drop.code.length == 0) revert UnknownDrop(); // EOA has no factory() to call
+        MerkleDrop d = MerkleDrop(payable(drop));
+        // The drop must report this factory as its deployer (MerkleDrop's immutable `factory`),
+        // caught so a contract without a matching `factory()` yields a clean UnknownDrop instead
+        // of an opaque decode revert — no O(n) `_drops` scan, no `isDrop` storage.
+        try d.factory() returns (address deployer) {
+            if (deployer != address(this)) revert UnknownDrop();
+        } catch {
+            revert UnknownDrop();
+        }
+        if (d.operator() != msg.sender) revert NotDropOperator();
+        emit ProofsPublished(drop, cid);
     }
 
     // ---------------------------------------------------------------------
