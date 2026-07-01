@@ -1,14 +1,9 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { getPublicNetworks } from "@/lib/server/networks";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Public: enabled networks, sanitized (never expose the server rpcUrl). */
+/** Public: enabled networks, sanitized (server rpcUrl never exposed). */
 export async function GET() {
-  const nets = await prisma.network.findMany({
-    where: { enabled: true },
-    orderBy: { name: "asc" },
-  });
-  const networks = nets.map(({ rpcUrl: _rpc, ...safe }) => safe);
-  return NextResponse.json({ networks });
+  return NextResponse.json({ networks: await getPublicNetworks() });
 }
