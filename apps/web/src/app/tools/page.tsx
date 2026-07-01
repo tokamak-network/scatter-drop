@@ -19,10 +19,23 @@ import {
 } from "lucide-react";
 import { SnapshotBuilder } from "@/components/SnapshotBuilder";
 import type { SnapshotManifest } from "@/lib/useSnapshotJob";
+import { DRAFT_CSV_KEY } from "@/lib/draftCsv";
 
 type Row = { address: string; amount: string };
 const BLANK: Row = { address: "", amount: "" };
-const DRAFT_KEY = "scatterdrop:draft-csv";
+// Amounts must be non-negative base-10 integers — matches the SDK/merkle CSV
+// parser (packages/merkle/src/csv.ts), so /tools can't accept hex/signed values
+// that the create wizard would later reject.
+const DEC = /^\d+$/;
+function isPosAmount(s: string): boolean {
+  const t = s.trim();
+  if (!DEC.test(t)) return false;
+  try {
+    return BigInt(t) > 0n;
+  } catch {
+    return false;
+  }
+}
 
 type Tab = "manual" | "snapshot" | "combine";
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
@@ -50,7 +63,10 @@ function csvToRows(text: string): Row[] {
     .filter(Boolean)
     .map((line) => {
       const [a, b] = line.split(/[,\t]/);
-      return { address: (a ?? "").trim(), amount: (b ?? "").trim() };
+      // Strip wrapping quotes (Excel/CSV exports) so validation/BigInt don't fail.
+      const address = (a ?? "").trim().replace(/^["']|["']$/g, "");
+      const amount = (b ?? "").trim().replace(/^["']|["']$/g, "");
+      return { address, amount };
     })
     .filter((r) => !/^address$/i.test(r.address));
   return rows.length ? rows : [{ ...BLANK }];
@@ -71,12 +87,9 @@ function dedupSum(rows: Row[]): Row[] {
     const a = r.address.trim();
     if (!isAddress(a, { strict: false })) continue;
     const key = a.toLowerCase();
-    let amt = 0n;
-    try {
-      amt = BigInt(r.amount.trim() || "0");
-    } catch {
-      amt = 0n;
-    }
+    // Only base-10 amounts count toward the sum (hex/signed/garbage → 0).
+    const t = r.amount.trim();
+    const amt = DEC.test(t) ? BigInt(t) : 0n;
     if (!totals.has(key)) {
       totals.set(key, 0n);
       display.set(key, a);
@@ -114,7 +127,7 @@ export default function ToolsPage() {
 
   const applyEqual = () => {
     const v = equalAmount.trim();
-    if (!v) return;
+    if (!isPosAmount(v)) return; // positive base-10 integer only
     setAndPad(rows.map((r) => (r.address.trim() ? { ...r, amount: v } : r)));
   };
 
@@ -131,12 +144,24 @@ export default function ToolsPage() {
     const text = e.clipboardData.getData("text");
     if (!/[\n,\t]/.test(text)) return;
     e.preventDefault();
-    const kept = rows.slice(0, i).filter(nonEmpty);
-    setAndPad([...kept, ...csvToRows(text)]);
+    // Preserve rows both before and after the paste point (no data loss).
+    const before = rows.slice(0, i).filter(nonEmpty);
+    const after = rows.slice(i + 1).filter(nonEmpty);
+    setAndPad([...before, ...csvToRows(text), ...after]);
   };
 
   const loadSnapshot = () => {
     if (!snap) return;
+    // The editable grid renders one input per row with live validation, so a
+    // very large list can lag. Warn before loading thousands of rows.
+    if (
+      snap.count > 1000 &&
+      !window.confirm(
+        `Loading ${snap.count.toLocaleString()} rows into the editable grid may be slow. Continue? (You can still export/use the full list.)`,
+      )
+    ) {
+      return;
+    }
     setAndPad(
       Object.values(snap.claims).map((c) => ({ address: c.account, amount: c.amount })),
     );
@@ -163,20 +188,14 @@ export default function ToolsPage() {
     setAndPad(dedupSum([...rows.filter(nonEmpty), ...csvToRows(operand)]));
   const doDedup = () => setAndPad(dedupSum(rows.filter(nonEmpty)));
   const doCap = () => {
-    let cap: bigint;
-    try {
-      cap = BigInt(capInput.trim());
-    } catch {
-      return;
-    }
+    if (!isPosAmount(capInput)) return; // positive base-10 integer only
+    const cap = BigInt(capInput.trim());
     setAndPad(
-      rows.map((r) => {
-        try {
-          return BigInt(r.amount.trim() || "0") > cap ? { ...r, amount: cap.toString() } : r;
-        } catch {
-          return r;
-        }
-      }),
+      rows.map((r) =>
+        isPosAmount(r.amount) && BigInt(r.amount.trim()) > cap
+          ? { ...r, amount: cap.toString() }
+          : r,
+      ),
     );
   };
 
@@ -187,14 +206,8 @@ export default function ToolsPage() {
     const status = rows.map((r) => {
       if (!nonEmpty(r)) return { state: "blank" as const };
       const addrOk = isAddress(r.address.trim(), { strict: false });
-      let amt = 0n;
-      let amtOk = false;
-      try {
-        amt = BigInt(r.amount.trim());
-        amtOk = amt > 0n;
-      } catch {
-        amtOk = false;
-      }
+      const amtOk = isPosAmount(r.amount);
+      const amt = amtOk ? BigInt(r.amount.trim()) : 0n;
       const key = r.address.trim().toLowerCase();
       const dup = addrOk && seen.has(key);
       if (addrOk) seen.add(key);
@@ -209,6 +222,9 @@ export default function ToolsPage() {
     return { status, total, valid, invalid: filled - valid };
   }, [rows]);
   const hasValid = analysis.valid > 0;
+  // Export/Copy/Use serialize ALL rows, so block them while any row is invalid —
+  // a stray bad row would otherwise produce a CSV the wizard rejects.
+  const canUse = hasValid && analysis.invalid === 0;
 
   const download = () => {
     const blob = new Blob([`${rowsToCsv(rows)}\n`], { type: "text/csv;charset=utf-8" });
@@ -216,8 +232,11 @@ export default function ToolsPage() {
     const a = document.createElement("a");
     a.href = url;
     a.download = "scatter-drop-recipients.csv";
+    // Append to the DOM and defer revoke so the download isn't canceled (iOS Safari).
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const copyCsv = () => {
     navigator.clipboard?.writeText(rowsToCsv(rows));
@@ -226,7 +245,7 @@ export default function ToolsPage() {
   };
   const useInCampaign = () => {
     try {
-      localStorage.setItem(DRAFT_KEY, rowsToCsv(rows));
+      localStorage.setItem(DRAFT_CSV_KEY, rowsToCsv(rows));
     } catch {
       /* ignore */
     }
@@ -378,15 +397,15 @@ export default function ToolsPage() {
               )}
             </span>
           </h2>
-          <ToolbarBtn onClick={download} icon={<Download className="w-3.5 h-3.5" />} disabled={!hasValid}>
+          <ToolbarBtn onClick={download} icon={<Download className="w-3.5 h-3.5" />} disabled={!canUse}>
             Export CSV
           </ToolbarBtn>
-          <ToolbarBtn onClick={copyCsv} icon={copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />} disabled={!hasValid}>
+          <ToolbarBtn onClick={copyCsv} icon={copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />} disabled={!canUse}>
             {copied ? "Copied" : "Copy"}
           </ToolbarBtn>
           <button
             onClick={useInCampaign}
-            disabled={!hasValid}
+            disabled={!canUse}
             className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg text-sm transition"
           >
             Use in a campaign <ArrowRight className="w-4 h-4" />

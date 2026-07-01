@@ -27,6 +27,7 @@ import { SnapshotBuilder } from "@/components/SnapshotBuilder";
 import { TxButton } from "@/components/TxButton";
 import type { SnapshotManifest } from "@/lib/useSnapshotJob";
 import { useAllowedTokens } from "@/lib/campaigns";
+import { DRAFT_CSV_KEY } from "@/lib/draftCsv";
 import {
   deploymentIssue,
   useComputedFee,
@@ -134,11 +135,11 @@ export default function NewCampaignPage() {
   // Prefill from the /tools CSV builder ("Use in a campaign") once on mount.
   useEffect(() => {
     try {
-      const draft = localStorage.getItem("scatterdrop:draft-csv");
+      const draft = localStorage.getItem(DRAFT_CSV_KEY);
       if (draft) {
         setType(AirdropType.CSV);
         setCsv(draft);
-        localStorage.removeItem("scatterdrop:draft-csv");
+        localStorage.removeItem(DRAFT_CSV_KEY);
       }
     } catch {
       /* ignore */
