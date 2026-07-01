@@ -150,6 +150,21 @@ describe("factory / erc20 calldata builders", () => {
     expect(getAddress(d.args[1] as Address)).toBe(NATIVE_ETH);
   });
 
+  it("buildCreateDropRequest requires fee for a native ETH drop (fail fast)", () => {
+    expect(() =>
+      buildCreateDropRequest(A(7), {
+        airdropType: AirdropType.CSV,
+        airdropToken: NATIVE_ETH,
+        merkleRoot: `0x${"ab".repeat(32)}`,
+        totalAmount: 1000n,
+        startTime: 1_800_000_000n,
+        deadline: 1_900_000_000n,
+        identityRegistry: NATIVE_FEE_TOKEN,
+        // fee omitted
+      }),
+    ).toThrow(/require `fee`/);
+  });
+
   it("fee builders encode per-token mode/rate setters", () => {
     const bps = decodeFunctionData({
       abi: dropFactoryAbi,

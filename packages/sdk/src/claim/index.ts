@@ -110,7 +110,16 @@ export function buildCreateDropRequest(factory: Address, params: CreateDropParam
     }),
   };
   // Native drops are funded by msg.value (totalAmount + fee), not approve/transferFrom.
-  if (isNative) req.value = params.totalAmount + (params.fee ?? 0n);
+  // `fee` is required here: on-chain `createDrop` demands msg.value == totalAmount + fee,
+  // so a missing fee would build a tx guaranteed to revert (or underfund). Fail fast.
+  if (isNative) {
+    if (params.fee === undefined) {
+      throw new Error(
+        "native ETH drops require `fee` (msg.value = totalAmount + fee); compute it via feeOf()",
+      );
+    }
+    req.value = params.totalAmount + params.fee;
+  }
   return req;
 }
 
