@@ -374,36 +374,45 @@ function NativeEthToggle({ factory }: { factory: Address }) {
     void refetchList();
   };
 
+  const loading = tier === undefined;
   return (
     <Card title="Native ETH">
-      <p className="text-[11px] text-slate-500">
-        Let operators airdrop native ETH (funded from their wallet, no wrapper).
-        When enabled, ETH becomes a selectable asset in the campaign wizard.
-      </p>
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="text-xs text-slate-400">Status:</span>
-        <span
-          className={`font-mono font-bold px-2 py-0.5 rounded border text-xs ${
-            enabled
-              ? "bg-emerald-950/40 text-emerald-600 border-emerald-900/40"
-              : "bg-slate-800 text-slate-400 border-slate-700/50"
-          }`}
-        >
-          {tier === undefined ? "…" : enabled ? "ENABLED" : "DISABLED"}
-        </span>
-        <TxButton
-          request={buildSetAllowedTokenRequest(factory, NATIVE_ETH, true)}
-          label="Enable ETH"
-          primary
-          disabled={enabled}
-          onConfirmed={refresh}
-        />
-        <TxButton
-          request={buildSetAllowedTokenRequest(factory, NATIVE_ETH, false)}
-          label="Disable"
-          disabled={!enabled}
-          onConfirmed={refresh}
-        />
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-mono font-bold text-slate-100">Ξ ETH</span>
+            <span
+              className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
+                enabled
+                  ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
+                  : "bg-slate-800 text-slate-400 border border-slate-700/50"
+              }`}
+            >
+              {loading ? "…" : enabled ? "ON" : "OFF"}
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-1 max-w-md">
+            When on, operators can airdrop native ETH (funded from their wallet,
+            no wrapper) and ETH is selectable in the campaign wizard.
+          </p>
+        </div>
+        {/* One action, matching the current state — no confusing dual buttons. */}
+        {enabled ? (
+          <TxButton
+            request={buildSetAllowedTokenRequest(factory, NATIVE_ETH, false)}
+            label="Turn off"
+            disabled={loading}
+            onConfirmed={refresh}
+          />
+        ) : (
+          <TxButton
+            request={buildSetAllowedTokenRequest(factory, NATIVE_ETH, true)}
+            label="Turn on"
+            primary
+            disabled={loading}
+            onConfirmed={refresh}
+          />
+        )}
       </div>
     </Card>
   );
@@ -470,10 +479,13 @@ function Tokens({ factory }: { factory: Address }) {
         )}
       </div>
 
-      {/* Presets */}
+      {/* Add a token */}
+      <div className="pt-2 border-t border-slate-800/60 text-[10px] font-mono uppercase tracking-wider text-slate-400">
+        Add a token
+      </div>
       <div className="space-y-1.5">
-        <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
-          Common assets (Sepolia)
+        <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500">
+          Quick pick (Sepolia)
         </div>
         <div className="flex flex-wrap gap-2">
           {TOKEN_PRESETS.map((p) => (
