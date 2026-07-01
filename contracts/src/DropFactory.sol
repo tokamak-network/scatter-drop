@@ -377,11 +377,17 @@ contract DropFactory is Ownable {
     /// @param cid  IPFS CID (CIDv1 base32) of the drop's `proofs.json`; must be non-empty.
     function publishProofs(address drop, string calldata cid) external {
         if (bytes(cid).length == 0) revert EmptyCid();
+        if (drop.code.length == 0) revert UnknownDrop(); // EOA has no factory() to call
         MerkleDrop d = MerkleDrop(payable(drop));
-        // Cheap membership check first: a genuine drop reports this factory as its deployer.
-        // (Guards against EOAs — a codeless address's `factory()` call reverts — and drops
-        // from other factories, without an O(n) scan of `_drops`.)
-        if (drop.code.length == 0 || d.factory() != address(this)) revert UnknownDrop();
+        // Provenance: a genuine drop reports this factory as its deployer (reconstructed from
+        // MerkleDrop's immutable `factory`, so no O(n) `_drops` scan / `isDrop` storage). try/catch
+        // so a contract that isn't one of our drops (missing/other `factory()`) yields a clean
+        // UnknownDrop rather than an opaque decode revert.
+        try d.factory() returns (address deployer) {
+            if (deployer != address(this)) revert UnknownDrop();
+        } catch {
+            revert UnknownDrop();
+        }
         if (d.operator() != msg.sender) revert NotDropOperator();
         emit ProofsPublished(drop, cid);
     }

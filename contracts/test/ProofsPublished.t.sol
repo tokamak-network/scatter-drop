@@ -87,6 +87,14 @@ contract ProofsPublishedTest is MerkleTestBase {
         factory.publishProofs(makeAddr("notADrop"), CID);
     }
 
+    function test_publishProofs_revertsForNonDropContract() public {
+        // A contract with no `factory()` (e.g. the token) yields a clean UnknownDrop, not
+        // an opaque decode revert.
+        vm.prank(operator);
+        vm.expectRevert(DropFactory.UnknownDrop.selector);
+        factory.publishProofs(address(token), CID);
+    }
+
     function test_publishProofs_revertsForForeignFactoryDrop() public {
         // A drop from a *different* factory reports a different `factory()`.
         DropFactory other = new DropFactory(admin, address(opReg), zkFactory, treasury);
