@@ -89,10 +89,18 @@ contract NativeDropHandler is MerkleTestBase {
         ghostPaid += amounts[idx];
     }
 
-    /// @notice Fuzz entrypoint: warp past the deadline and let the operator sweep the
-    ///         remainder. Exercises the post-claim conservation surface, not just claims.
+    /// @notice Fuzz entrypoint: advance time gradually so the fuzzer explores
+    ///         claim/sweep interleavings across the window (rather than jumping
+    ///         straight to the deadline, which would no-op every later claim).
+    function warpTime(uint256 amount) external {
+        vm.warp(block.timestamp + (amount % 2 days));
+    }
+
+    /// @notice Fuzz entrypoint: once time has actually passed the deadline, the
+    ///         operator sweeps the remainder — exercising the post-claim
+    ///         conservation surface, not just claims.
     function sweep() external {
-        if (block.timestamp <= deadline) vm.warp(uint256(deadline) + 1);
+        if (block.timestamp <= deadline) return;
         uint256 remaining = address(drop).balance;
         if (remaining == 0) return;
         vm.prank(operator);
