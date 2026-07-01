@@ -28,6 +28,7 @@ import { TxButton } from "@/components/TxButton";
 import type { SnapshotManifest } from "@/lib/useSnapshotJob";
 import { useAllowedTokens } from "@/lib/campaigns";
 import { DRAFT_CSV_KEY } from "@/lib/draftCsv";
+import { publishProofs } from "@/lib/proofs";
 import {
   deploymentIssue,
   useComputedFee,
@@ -553,6 +554,13 @@ export default function NewCampaignPage() {
                     label={isNative ? "Create campaign (pay in ETH)" : "2. Create campaign"}
                     primary
                     disabled={!createReq}
+                    onConfirmed={() => {
+                      // Publish the recipient proofs so claimers can look up their
+                      // proof by the campaign's merkleRoot.
+                      if (activeManifest) {
+                        void publishProofs(merkleRoot, activeManifest.claims);
+                      }
+                    }}
                   />
                 </div>
                 {!ready && (

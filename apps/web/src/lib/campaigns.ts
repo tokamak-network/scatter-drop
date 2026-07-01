@@ -206,6 +206,7 @@ function toCampaign(
     deadlineUnix: args.deadline,
     identityRegistry: args.identityRegistry,
     identityRegistryLabel: registryLabel(args.identityRegistry, chainId),
+    merkleRoot: args.merkleRoot,
     operator: args.operator,
     status: args.deadline >= nowSeconds ? "active" : "ended",
   };
