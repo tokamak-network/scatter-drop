@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { usePublicClient } from "wagmi";
 import {
+  erc20Abi,
   formatUnits,
   getAbiItem,
   isAddress,
@@ -102,19 +103,62 @@ async function scanDropCreated(
   return logs.map((l) => l.args as DropCreatedArgs);
 }
 
+type TokenMeta = { symbol: string; decimals: number };
+
+/**
+ * Resolve ERC-20 symbol + decimals for the campaign tokens so cards show the
+ * real ticker (e.g. "WETH") and correctly-scaled amounts instead of a generic
+ * "tokens" placeholder. Reads are best-effort — a token that doesn't answer
+ * falls back to a neutral default.
+ */
+async function loadTokenMeta(
+  client: PublicClient,
+  tokens: Address[],
+): Promise<Map<string, TokenMeta>> {
+  const unique = [...new Set(tokens.map((t) => t.toLowerCase() as Address))];
+  const entries = await Promise.all(
+    unique.map(async (token) => {
+      try {
+        const [symbol, decimals] = await Promise.all([
+          client.readContract({ address: token, abi: erc20Abi, functionName: "symbol" }),
+          client.readContract({ address: token, abi: erc20Abi, functionName: "decimals" }),
+        ]);
+        return [token, { symbol: String(symbol), decimals: Number(decimals) }] as const;
+      } catch {
+        return [token, { symbol: "TOKEN", decimals: 18 }] as const;
+      }
+    }),
+  );
+  return new Map(entries);
+}
+
+/** Amount scaled by decimals, with thousands separators (max 4 dp). */
+function formatAmount(raw: bigint, decimals: number): string {
+  const n = Number(formatUnits(raw, decimals));
+  return Number.isFinite(n)
+    ? n.toLocaleString("en-US", { maximumFractionDigits: 4 })
+    : formatUnits(raw, decimals);
+}
+
 /** Map a DropCreated event into the UI Campaign shape (on-chain fields only). */
-function toCampaign(args: DropCreatedArgs, chainId: number): Campaign {
+function toCampaign(
+  args: DropCreatedArgs,
+  chainId: number,
+  meta?: TokenMeta,
+): Campaign {
   const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
   const deadlineMs = Number(args.deadline) * 1000;
+  const symbol = meta?.symbol ?? "TOKEN";
+  const decimals = meta?.decimals ?? 18;
   return {
     id: args.drop,
-    name: `Campaign ${args.drop.slice(0, 8)}`,
+    name: `${symbol} airdrop`,
     description: `Created by ${args.operator.slice(0, 10)}…`,
     type: Number(args.airdropType) as AirdropType,
     drop: args.drop,
     token: args.airdropToken,
-    tokenSymbol: "tokens",
-    totalAmount: `${formatUnits(args.totalAmount, 18)} tokens`,
+    tokenSymbol: symbol,
+    totalAmount: `${formatAmount(args.totalAmount, decimals)} ${symbol}`,
     claimedPct: 0,
     // Guard against a uint64-max deadline overflowing JS's max date.
     deadline:
@@ -150,7 +194,13 @@ export function useCampaigns() {
         return { live: false, campaigns: await listStubCampaigns() };
       }
       const args = await scanDropCreated(client, dep);
-      return { live: true, campaigns: args.map((a) => toCampaign(a, dep.chainId)) };
+      const meta = await loadTokenMeta(client, args.map((a) => a.airdropToken));
+      return {
+        live: true,
+        campaigns: args.map((a) =>
+          toCampaign(a, dep.chainId, meta.get(a.airdropToken.toLowerCase())),
+        ),
+      };
     },
   });
 }
@@ -167,7 +217,10 @@ export function useManagedCampaigns(address: Address | undefined) {
     queryFn: async (): Promise<Campaign[]> => {
       if (!client || !dep || !address) return [];
       const args = await scanDropCreated(client, dep, { operator: address });
-      return args.map((a) => toCampaign(a, dep.chainId));
+      const meta = await loadTokenMeta(client, args.map((a) => a.airdropToken));
+      return args.map((a) =>
+        toCampaign(a, dep.chainId, meta.get(a.airdropToken.toLowerCase())),
+      );
     },
   });
 }
@@ -188,7 +241,9 @@ export function useCampaign(id: string) {
     queryFn: async (): Promise<Campaign | undefined> => {
       if (isAddress(id) && client && dep) {
         const [args] = await scanDropCreated(client, dep, { drop: id as Address });
-        return args ? toCampaign(args, dep.chainId) : undefined;
+        if (!args) return undefined;
+        const meta = await loadTokenMeta(client, [args.airdropToken]);
+        return toCampaign(args, dep.chainId, meta.get(args.airdropToken.toLowerCase()));
       }
       return getStubCampaign(id);
     },
