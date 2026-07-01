@@ -1,0 +1,36 @@
+// Multi-network registry (docs/MULTI-NETWORK-DESIGN.md). SQLite for dev; swap
+// DATABASE_URL to Postgres for production.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// A supported airdrop network, curated by the platform admin.
+model Network {
+  chainId          Int      @id
+  name             String
+  rpcUrl           String   // server-side scan RPC (may hold a key)
+  publicRpcUrl     String?  // browser/wagmi RPC (safe to expose)
+  explorerUrl      String?
+  nativeSymbol     String   @default("ETH")
+  dropFactory      String   // required
+  feeToken         String?
+  treasury         String?
+  operatorRegistry String?
+  zkFactory        String?
+  deployBlock      Int?
+  enabled          Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+/// App-level platform admins allowed to manage the network registry (SIWE).
+model PlatformAdmin {
+  address   String   @id // lowercased wallet address
+  label     String?
+  createdAt DateTime @default(now())
+}
