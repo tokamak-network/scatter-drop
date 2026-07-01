@@ -9,6 +9,7 @@ import {
   Check,
   Copy,
   Download,
+  Layers,
   Plus,
   Trash2,
   Upload,
@@ -53,6 +54,34 @@ function withTrailingBlank(rows: Row[]): Row[] {
   return rows;
 }
 
+/** Merge duplicate addresses, summing amounts; preserves first-seen order and casing. */
+function dedupSum(rows: Row[]): Row[] {
+  const totals = new Map<string, bigint>();
+  const display = new Map<string, string>();
+  const order: string[] = [];
+  for (const r of rows) {
+    const a = r.address.trim();
+    if (!isAddress(a, { strict: false })) continue;
+    const key = a.toLowerCase();
+    let amt = 0n;
+    try {
+      amt = BigInt(r.amount.trim() || "0");
+    } catch {
+      amt = 0n;
+    }
+    if (!totals.has(key)) {
+      totals.set(key, 0n);
+      display.set(key, a);
+      order.push(key);
+    }
+    totals.set(key, (totals.get(key) as bigint) + amt);
+  }
+  return order.map((key) => ({
+    address: display.get(key) as string,
+    amount: (totals.get(key) as bigint).toString(),
+  }));
+}
+
 export default function ToolsPage() {
   const router = useRouter();
   const [rows, setRows] = useState<Row[]>([{ ...BLANK }]);
@@ -68,6 +97,48 @@ export default function ToolsPage() {
         address: c.account,
         amount: c.amount,
       })),
+    );
+  };
+
+  // Combine & filter (P3, §5.2) — all pure client-side set/amount ops.
+  const [operand, setOperand] = useState(""); // second list for AND/OR/exclude
+  const [capInput, setCapInput] = useState("");
+
+  const operandKeys = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of csvToRows(operand)) {
+      const a = r.address.trim();
+      if (isAddress(a, { strict: false })) s.add(a.toLowerCase());
+    }
+    return s;
+  }, [operand]);
+  const hasOperand = operandKeys.size > 0;
+  const keyOf = (r: Row) => r.address.trim().toLowerCase();
+
+  const doIntersect = () =>
+    setAndPad(rows.filter((r) => nonEmpty(r) && operandKeys.has(keyOf(r))));
+  const doExclude = () =>
+    setAndPad(rows.filter((r) => nonEmpty(r) && !operandKeys.has(keyOf(r))));
+  const doUnion = () =>
+    setAndPad(dedupSum([...rows.filter(nonEmpty), ...csvToRows(operand)]));
+  const doDedup = () => setAndPad(dedupSum(rows.filter(nonEmpty)));
+  const doCap = () => {
+    let cap: bigint;
+    try {
+      cap = BigInt(capInput.trim());
+    } catch {
+      return;
+    }
+    setAndPad(
+      rows.map((r) => {
+        try {
+          return BigInt(r.amount.trim() || "0") > cap
+            ? { ...r, amount: cap.toString() }
+            : r;
+        } catch {
+          return r;
+        }
+      }),
     );
   };
 
@@ -113,7 +184,7 @@ export default function ToolsPage() {
     let valid = 0;
     const status = rows.map((r) => {
       if (!nonEmpty(r)) return { state: "blank" as const };
-      const addrOk = isAddress(r.address.trim());
+      const addrOk = isAddress(r.address.trim(), { strict: false });
       let amt = 0n;
       let amtOk = false;
       try {
@@ -320,6 +391,60 @@ export default function ToolsPage() {
           duplicate address. Fix or remove them before using the list.
         </p>
       )}
+
+      {/* Combine & filter (P3, §5.2) */}
+      <details className="rounded-xl border border-slate-800 bg-slate-900">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-100 flex items-center gap-2">
+          <Layers className="w-4 h-4 text-emerald-600" /> Combine &amp; filter
+        </summary>
+        <div className="px-4 pb-4 space-y-4 border-t border-slate-800/60 pt-3">
+          <div>
+            <label className="text-[11px] text-slate-400">
+              Second list (address[,amount] per line) — for set operations against
+              the grid above
+            </label>
+            <textarea
+              value={operand}
+              onChange={(e) => setOperand(e.target.value)}
+              rows={4}
+              placeholder={"0xabc…\n0xdef…,50"}
+              className="input font-mono text-xs mt-1"
+            />
+            <div className="flex flex-wrap gap-2 mt-2">
+              <ToolbarBtn onClick={doUnion} disabled={!hasOperand}>
+                Union (OR)
+              </ToolbarBtn>
+              <ToolbarBtn onClick={doIntersect} disabled={!hasOperand}>
+                Intersect (AND)
+              </ToolbarBtn>
+              <ToolbarBtn onClick={doExclude} disabled={!hasOperand}>
+                Exclude (remove these)
+              </ToolbarBtn>
+              <span className="text-[11px] text-slate-500 self-center">
+                {hasOperand
+                  ? `${operandKeys.size} address(es) in second list`
+                  : "paste a second list to enable"}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 border-t border-slate-800/60 pt-3">
+            <ToolbarBtn onClick={doDedup}>Dedupe (sum amounts)</ToolbarBtn>
+            <span className="text-slate-400 text-xs font-mono ml-2">
+              Cap per wallet:
+            </span>
+            <input
+              value={capInput}
+              onChange={(e) => setCapInput(e.target.value)}
+              placeholder="max (base units)"
+              className="bg-slate-950 border border-slate-800 focus:border-slate-700 text-slate-100 px-3 py-1.5 rounded-lg font-mono text-xs outline-none w-44"
+            />
+            <ToolbarBtn onClick={doCap} disabled={!capInput.trim()}>
+              Apply cap
+            </ToolbarBtn>
+          </div>
+        </div>
+      </details>
     </div>
   );
 }
@@ -331,7 +456,7 @@ function ToolbarBtn({
   children,
 }: {
   onClick: () => void;
-  icon: React.ReactNode;
+  icon?: React.ReactNode;
   disabled?: boolean;
   children: React.ReactNode;
 }) {
