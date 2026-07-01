@@ -61,13 +61,22 @@ describe("allocate — proRata", () => {
   });
 });
 
-// Minimal mock PublicClient: getLogs returns Transfer `to`s, multicall returns balances.
-function mockClient(transfersTo: Address[], balances: Record<string, bigint>) {
+// Minimal mock PublicClient: getLogs returns transfer `to`s (optionally with a
+// per-transfer ERC-1155 `id`), multicall returns balances keyed by the first arg
+// (the holder address) — so it serves ERC-20 `balanceOf(addr)` and ERC-1155
+// `balanceOf(addr, id)` alike.
+function mockClient(
+  transfersTo: Address[],
+  balances: Record<string, bigint>,
+  logIds?: bigint[],
+) {
   return {
     getLogs: vi.fn(async () =>
-      transfersTo.map((to) => ({ args: { from: A(0), to, value: 1n } })),
+      transfersTo.map((to, i) => ({
+        args: { from: A(0), to, value: 1n, ...(logIds ? { id: logIds[i] } : {}) },
+      })),
     ),
-    multicall: vi.fn(async ({ contracts }: { contracts: { args: readonly [Address] }[] }) =>
+    multicall: vi.fn(async ({ contracts }: { contracts: { args: readonly [Address, ...unknown[]] }[] }) =>
       contracts.map((c) => ({
         status: "success" as const,
         result: balances[c.args[0].toLowerCase()] ?? 0n,
@@ -92,6 +101,77 @@ describe("scanHolders", () => {
     const out = await scanHolders(client, { token: A(9), block: 10n, minBalance: 0n });
     expect(out).toHaveLength(1);
     expect(out[0]!.balance).toBe(200n);
+  });
+});
+
+describe("scanHolders — ERC-721", () => {
+  it("uses balanceOf(addr) as the NFT count and filters by minBalance (min count)", async () => {
+    const client = mockClient([A(1), A(2), A(3)], {
+      [A(1).toLowerCase()]: 1n, // below minCount
+      [A(2).toLowerCase()]: 3n,
+      [A(3).toLowerCase()]: 0n, // sold everything by the snapshot block
+    });
+    const out = await scanHolders(client, {
+      token: A(9),
+      block: 100n,
+      minBalance: 2n,
+      kind: "erc721",
+    });
+    expect(out).toEqual([{ address: A(2), balance: 3n }]);
+  });
+});
+
+describe("scanHolders — ERC-1155", () => {
+  it("reads balanceOf(addr, tokenId) and filters by min count", async () => {
+    const client = mockClient(
+      [A(1), A(2)],
+      { [A(1).toLowerCase()]: 5n, [A(2).toLowerCase()]: 1n /* below minCount */ },
+      [7n, 7n], // both received the target id
+    );
+    const out = await scanHolders(client, {
+      token: A(9),
+      block: 50n,
+      minBalance: 2n,
+      kind: "erc1155",
+      tokenId: 7n,
+    });
+    expect(out).toEqual([{ address: A(1), balance: 5n }]);
+  });
+
+  it("excludes candidates who only received other ids (filters by id in the log scan)", async () => {
+    const client = mockClient(
+      [A(1), A(2)],
+      { [A(1).toLowerCase()]: 5n, [A(2).toLowerCase()]: 9n }, // A(2) holds plenty…
+      [7n, 99n], // …but only ever received id 99, not the target 7
+    );
+    const out = await scanHolders(client, {
+      token: A(9),
+      block: 50n,
+      minBalance: 1n,
+      kind: "erc1155",
+      tokenId: 7n,
+    });
+    expect(out).toEqual([{ address: A(1), balance: 5n }]);
+  });
+
+  it("requires a tokenId", async () => {
+    const client = mockClient([A(1)], { [A(1).toLowerCase()]: 1n });
+    await expect(
+      scanHolders(client, { token: A(9), block: 50n, minBalance: 1n, kind: "erc1155" }),
+    ).rejects.toThrow(/tokenId/);
+  });
+});
+
+describe("allocate — NFT count weighting", () => {
+  it("proRata weights by NFT count (Holder.balance)", () => {
+    const nftHolders: Holder[] = [
+      { address: A(1), balance: 1n },
+      { address: A(2), balance: 3n },
+    ];
+    const out = allocate(nftHolders, { kind: "proRata", totalAmount: 400n });
+    // shares: 1/4, 3/4 → 100, 300
+    expect(out.map((e) => e.amount)).toEqual([100n, 300n]);
+    expect(totalOf(out)).toBe(400n);
   });
 });
 

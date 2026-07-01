@@ -7,6 +7,7 @@ import {
   type ScanProgress,
   type SnapshotParams,
   type SnapshotResult,
+  type TokenKind,
 } from "@tokamak-network/scatter-drop-snapshot";
 
 /**
@@ -117,6 +118,22 @@ export function parseSnapshotRequest(
     fromBlock = fb;
   }
 
+  // Token standard (default erc20 keeps the original request shape working).
+  let kind: TokenKind = "erc20";
+  if (b.kind !== undefined) {
+    if (b.kind !== "erc20" && b.kind !== "erc721" && b.kind !== "erc1155") {
+      return { error: "kind must be 'erc20', 'erc721', or 'erc1155'" };
+    }
+    kind = b.kind;
+  }
+
+  let tokenId: bigint | undefined;
+  if (kind === "erc1155") {
+    const tid = toBigInt(b.tokenId);
+    if (tid === null) return { error: "erc1155 requires a valid tokenId" };
+    tokenId = tid;
+  }
+
   const m = b.mode as Record<string, unknown> | undefined;
   if (!m || typeof m !== "object") return { error: "Invalid mode" };
   let mode: AllocationMode;
@@ -136,7 +153,9 @@ export function parseSnapshotRequest(
     token: b.token as Address,
     block,
     minBalance,
+    kind,
     ...(fromBlock !== undefined ? { fromBlock } : {}),
+    ...(tokenId !== undefined ? { tokenId } : {}),
   };
   return { params, mode };
 }
