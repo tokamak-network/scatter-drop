@@ -55,6 +55,23 @@ function registryLabel(addr: Address, chainId: number): string {
 }
 
 /**
+ * Ask anvil for the block it forked at. Blocks at or below it are served by the
+ * (often rate-limited, free-tier) upstream provider; only blocks above it are
+ * local. Returns undefined on a non-anvil RPC (e.g. a real deployment).
+ */
+async function getForkBlock(client: PublicClient): Promise<bigint | undefined> {
+  try {
+    const info = (await client.request({
+      method: "anvil_nodeInfo",
+    } as never)) as { forkConfig?: { forkBlockNumber?: number } } | null;
+    const fb = info?.forkConfig?.forkBlockNumber;
+    return typeof fb === "number" ? BigInt(fb) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Scan DropCreated logs on the fork from the deploy block (or a bounded
  * look-back). `filter` narrows by indexed args (e.g. a single drop address).
  */
@@ -66,6 +83,13 @@ async function scanDropCreated(
   const latest = await client.getBlockNumber();
   let fromBlock =
     dep.deployBlock ?? (latest > LOOKBACK ? latest - LOOKBACK : 0n);
+  // Never scan below the fork block: campaigns are created on local blocks, and
+  // reaching into pre-fork history makes anvil proxy `eth_getLogs` to the
+  // upstream provider — whose free tier caps the range at ~10 blocks and errors
+  // out, leaving the UI stuck on "Loading campaigns…". Flooring here keeps the
+  // scan on local blocks (served by anvil, no range limit).
+  const forkBlock = await getForkBlock(client);
+  if (forkBlock !== undefined && fromBlock < forkBlock) fromBlock = forkBlock;
   // A stale deployBlock (different fork run) could exceed head → fromBlock > toBlock.
   if (fromBlock > latest) fromBlock = latest;
   const logs = await client.getLogs({
