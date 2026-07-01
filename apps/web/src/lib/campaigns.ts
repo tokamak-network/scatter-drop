@@ -132,6 +132,15 @@ async function loadTokenMeta(
   return new Map(entries);
 }
 
+/**
+ * User-facing symbol alias. Drops settle in WETH (an ERC-20, since the contracts
+ * are ERC-20-only), but users think in ETH — so show "ETH" in the app. The real
+ * token address stays visible on the detail page for disclosure.
+ */
+function displaySymbol(symbol: string): string {
+  return symbol === "WETH" ? "ETH" : symbol;
+}
+
 /** Amount scaled by decimals, with thousands separators (max 4 dp). */
 function formatAmount(raw: bigint, decimals: number): string {
   const n = Number(formatUnits(raw, decimals));
@@ -168,7 +177,7 @@ function toCampaign(
 ): Campaign {
   const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
   const deadlineMs = Number(args.deadline) * 1000;
-  const symbol = meta?.symbol ?? "TOKEN";
+  const symbol = displaySymbol(meta?.symbol ?? "TOKEN");
   const decimals = meta?.decimals ?? 18;
   const type = Number(args.airdropType) as AirdropType;
   return {

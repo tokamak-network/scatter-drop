@@ -40,6 +40,15 @@ const MAX_FEE_BPS = 1000; // 10% — mirrors the contract cap
 const isBps = (s: string) =>
   /^\d+$/.test(s) && Number(s) >= 0 && Number(s) <= MAX_FEE_BPS;
 
+// Common established assets on the Sepolia fork (verified on-chain). "ETH" is
+// WETH — the contracts are ERC-20-only, so ether is curated via its wrapper.
+const TOKEN_PRESETS = [
+  { label: "ETH (WETH)", address: "0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9" },
+  { label: "USDC", address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" },
+  { label: "USDT", address: "0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0" },
+  { label: "DAI", address: "0xFF34B3d4Aee8ddCd6F9AFFFB6Fe49bD371b8a357" },
+] as const;
+
 export default function AdminPage() {
   const { data: dep, isLoading } = useDeployment();
   const { address } = useAccount();
@@ -413,6 +422,28 @@ function Tokens({ factory }: { factory: Address }) {
             No tokens allow-listed yet. Add one below.
           </p>
         )}
+      </div>
+
+      {/* Presets */}
+      <div className="space-y-1.5">
+        <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+          Common assets (Sepolia)
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {TOKEN_PRESETS.map((p) => (
+            <button
+              key={p.address}
+              onClick={() => setToken(p.address)}
+              className={`px-3 py-1.5 rounded-lg border text-xs font-mono transition ${
+                token.toLowerCase() === p.address.toLowerCase()
+                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600"
+                  : "border-slate-800 bg-slate-950 text-slate-200 hover:border-slate-700"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <input
