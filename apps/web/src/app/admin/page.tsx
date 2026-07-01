@@ -13,6 +13,7 @@ import {
   buildSetFeeModeRequest,
   buildSetFlatFeeRequest,
   FeeMode,
+  NATIVE_ETH,
   TokenTier,
 } from "@tokamak-network/scatter-drop-sdk";
 import { Loader2, ShieldCheck } from "lucide-react";
@@ -40,10 +41,10 @@ const MAX_FEE_BPS = 1000; // 10% — mirrors the contract cap
 const isBps = (s: string) =>
   /^\d+$/.test(s) && Number(s) >= 0 && Number(s) <= MAX_FEE_BPS;
 
-// Common established assets on the Sepolia fork (verified on-chain). "ETH" is
-// WETH — the contracts are ERC-20-only, so ether is curated via its wrapper.
+// Common established assets. Native ETH uses the on-chain NATIVE sentinel; the
+// stablecoins are their canonical Sepolia deployments (verified on-chain).
 const TOKEN_PRESETS = [
-  { label: "ETH (WETH)", address: "0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9" },
+  { label: "Ξ ETH (native)", address: NATIVE_ETH },
   { label: "USDC", address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" },
   { label: "USDT", address: "0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0" },
   { label: "DAI", address: "0xFF34B3d4Aee8ddCd6F9AFFFB6Fe49bD371b8a357" },

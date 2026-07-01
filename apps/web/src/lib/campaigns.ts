@@ -14,6 +14,7 @@ import {
   AirdropType,
   dropFactoryAbi,
   getZkX509,
+  NATIVE_ETH,
 } from "@tokamak-network/scatter-drop-sdk";
 import { fork } from "./wagmi";
 import { useDeployment } from "./contracts";
@@ -118,6 +119,10 @@ async function loadTokenMeta(
   const unique = [...new Set(tokens.map((t) => t.toLowerCase() as Address))];
   const entries = await Promise.all(
     unique.map(async (token) => {
+      // Native ETH sentinel has no ERC-20 contract to read.
+      if (token === NATIVE_ETH.toLowerCase()) {
+        return [token, { symbol: "ETH", decimals: 18 }] as const;
+      }
       try {
         const [symbol, decimals] = await Promise.all([
           client.readContract({ address: token, abi: erc20Abi, functionName: "symbol" }),
