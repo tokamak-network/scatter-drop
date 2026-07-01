@@ -12,6 +12,7 @@ import { Check, CheckCircle2, Gift, Loader2, Minus, XCircle } from "lucide-react
 import { ConnectGate } from "@/components/ConnectGate";
 import { TxButton } from "@/components/TxButton";
 import { useIsClaimed, useVerifiedUntil } from "@/lib/contracts";
+import { useCampaignStats } from "@/lib/campaigns";
 import { getStubEligibility, type Campaign } from "@/lib/stub";
 
 /**
@@ -23,6 +24,12 @@ import { getStubEligibility, type Campaign } from "@/lib/stub";
 export function ClaimPanel({ campaign }: { campaign: Campaign }) {
   const { address } = useAccount();
   const now = BigInt(Math.floor(Date.now() / 1000));
+  const { data: stats } = useCampaignStats(campaign);
+  const pct = stats?.pct ?? campaign.claimedPct;
+  const startDate =
+    campaign.startTimeUnix > 0n
+      ? new Date(Number(campaign.startTimeUnix) * 1000).toISOString().slice(0, 10)
+      : "now";
 
   const { data: elig, isPending: eligLoading } = useQuery({
     queryKey: ["eligibility", campaign.id, address],
@@ -95,18 +102,43 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
         <div className="h-2 w-full bg-slate-950 rounded-full overflow-hidden border border-slate-800/50">
           <div
             className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all"
-            style={{ width: `${Math.min(100, campaign.claimedPct)}%` }}
+            style={{ width: `${Math.min(100, pct)}%` }}
           />
         </div>
         <div className="flex justify-between text-xs font-mono text-slate-500">
-          <span>Claimed: {campaign.claimedPct}%</span>
+          <span>{pct.toFixed(pct > 0 && pct < 10 ? 1 : 0)}% distributed</span>
           <span>
-            {notStarted
-              ? "Starts soon"
-              : ended
-                ? "Ended"
-                : `Ends ${campaign.deadline}`}
+            {stats
+              ? `${stats.claimedCount} claim${stats.claimedCount === 1 ? "" : "s"}`
+              : "…"}
           </span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-lg bg-slate-950 border border-slate-800/60 px-3 py-2">
+            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500">
+              Distributed
+            </div>
+            <div className="text-sm font-semibold text-slate-100 truncate">
+              {stats?.distributed ?? "…"}
+            </div>
+          </div>
+          <div className="rounded-lg bg-slate-950 border border-slate-800/60 px-3 py-2">
+            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500">
+              Remaining
+            </div>
+            <div className="text-sm font-semibold text-slate-100 truncate">
+              {stats?.remaining ?? "…"}
+            </div>
+          </div>
+        </div>
+
+        <div className="text-xs font-mono text-slate-500">
+          {notStarted
+            ? `Starts ${startDate}`
+            : ended
+              ? "Ended"
+              : `Ends ${campaign.deadline}`}
         </div>
       </div>
 

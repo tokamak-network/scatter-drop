@@ -180,6 +180,8 @@ function toCampaign(
     token: args.airdropToken,
     tokenSymbol: symbol,
     totalAmount: `${formatAmount(args.totalAmount, decimals)} ${symbol}`,
+    totalRaw: args.totalAmount,
+    decimals,
     claimedPct: 0,
     // Guard against a uint64-max deadline overflowing JS's max date.
     deadline:
@@ -193,6 +195,82 @@ function toCampaign(
     operator: args.operator,
     status: args.deadline >= nowSeconds ? "active" : "ended",
   };
+}
+
+// MerkleDrop.Claimed — every airdrop type deploys a MerkleDrop, so counting
+// these logs works uniformly (CSV, snapshot, gated, social). Not in the SDK's
+// minimal ABI, so declared here.
+const CLAIMED_EVENT = {
+  type: "event",
+  name: "Claimed",
+  inputs: [
+    { name: "index", type: "uint256", indexed: true },
+    { name: "account", type: "address", indexed: true },
+    { name: "amount", type: "uint256", indexed: false },
+  ],
+} as const;
+
+export type CampaignStats = {
+  /** Number of claims made (Claimed events). */
+  claimedCount: number;
+  /** Distributed amount, formatted with symbol. */
+  distributed: string;
+  /** Tokens still held by the drop contract, formatted with symbol. */
+  remaining: string;
+  /** Distributed as a percentage of the pool (0–100). */
+  pct: number;
+};
+
+/**
+ * Live distribution stats for one campaign — claims made, amount distributed,
+ * and funds remaining. Works for any airdrop type (all are MerkleDrop): sums
+ * `Claimed` logs and reads the drop's token balance. The recipient *count*
+ * (Merkle leaf total) is off-chain, so only claims-so-far are shown.
+ */
+export function useCampaignStats(campaign?: Campaign) {
+  const client = usePublicClient({ chainId: fork.id });
+
+  return useQuery({
+    queryKey: ["campaignStats", campaign?.drop],
+    enabled: !!client && !!campaign?.drop && campaign.totalRaw !== undefined,
+    staleTime: 15_000,
+    queryFn: async (): Promise<CampaignStats | null> => {
+      if (!client || !campaign?.totalRaw) return null;
+      const decimals = campaign.decimals ?? 18;
+      const total = campaign.totalRaw;
+      const latest = await client.getBlockNumber();
+      const forkBlock = await getForkBlock(client);
+      let fromBlock = forkBlock ?? (latest > LOOKBACK ? latest - LOOKBACK : 0n);
+      if (fromBlock > latest) fromBlock = latest;
+
+      const [balance, logs] = await Promise.all([
+        client.readContract({
+          address: campaign.token,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [campaign.drop],
+        }) as Promise<bigint>,
+        client.getLogs({
+          address: campaign.drop,
+          event: CLAIMED_EVENT,
+          fromBlock,
+          toBlock: latest,
+        }),
+      ]);
+
+      const distributed = logs.reduce(
+        (sum, l) => sum + ((l.args as { amount?: bigint }).amount ?? 0n),
+        0n,
+      );
+      const pct = total > 0n ? Number((distributed * 10000n) / total) / 100 : 0;
+      return {
+        claimedCount: logs.length,
+        distributed: `${formatAmount(distributed, decimals)} ${campaign.tokenSymbol}`,
+        remaining: `${formatAmount(balance, decimals)} ${campaign.tokenSymbol}`,
+        pct,
+      };
+    },
+  });
 }
 
 /**

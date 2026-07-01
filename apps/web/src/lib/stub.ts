@@ -32,6 +32,10 @@ export interface Campaign {
   tokenSymbol: string;
   /** Human display amount, e.g. "1,000,000 ACME". */
   totalAmount: string;
+  /** Raw pool amount (token base units) — for live distribution math. */
+  totalRaw?: bigint;
+  /** Token decimals — for scaling live amounts. */
+  decimals?: number;
   claimedPct: number;
   /** Display date (YYYY-MM-DD). */
   deadline: string;

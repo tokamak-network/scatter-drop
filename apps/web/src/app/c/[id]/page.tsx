@@ -9,6 +9,7 @@ import {
   AlertCircle,
   ArrowLeft,
   Check,
+  Clock,
   Copy,
   Link as LinkIcon,
   Loader2,
@@ -59,6 +60,10 @@ export default function CampaignDetailPage({
 
   const now = BigInt(Math.floor(Date.now() / 1000));
   const open = campaign.identityRegistry === zeroAddress;
+  const startsAt =
+    campaign.startTimeUnix > 0n
+      ? new Date(Number(campaign.startTimeUnix) * 1000).toISOString().slice(0, 10)
+      : "At launch";
   const gateState = !address
     ? "unverified"
     : verifiedUntil === undefined
@@ -124,11 +129,11 @@ export default function CampaignDetailPage({
                 label="Access"
                 value={open ? "Open claim" : "Identity-gated"}
               />
+              <StatItem label="Starts" value={startsAt} />
               <StatItem
                 label="Ends"
                 value={campaign.deadline === "No deadline" ? "—" : campaign.deadline}
               />
-              <StatItem label="Claim" value="Self-serve" />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-950 p-4 rounded-lg border border-slate-800/60 text-xs font-mono">
@@ -136,6 +141,15 @@ export default function CampaignDetailPage({
               <AddressField label="Drop Contract" value={campaign.drop} />
             </div>
           </div>
+
+          <TimelineCard
+            startUnix={campaign.startTimeUnix}
+            endUnix={campaign.deadlineUnix}
+            startLabel={startsAt}
+            endLabel={
+              campaign.deadline === "No deadline" ? "No deadline" : campaign.deadline
+            }
+          />
 
           <IdentityGate state={gateState} registryLabel={campaign.identityRegistryLabel} />
         </div>
@@ -150,6 +164,74 @@ export default function CampaignDetailPage({
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+function days(seconds: number): string {
+  const d = Math.max(0, Math.ceil(seconds / 86400));
+  return `${d} day${d === 1 ? "" : "s"}`;
+}
+
+/** Claim-window timeline with elapsed/remaining. */
+function TimelineCard({
+  startUnix,
+  endUnix,
+  startLabel,
+  endLabel,
+}: {
+  startUnix: bigint;
+  endUnix: bigint;
+  startLabel: string;
+  endLabel: string;
+}) {
+  const nowS = Math.floor(Date.now() / 1000);
+  const start = Number(startUnix);
+  const end = Number(endUnix);
+  const hasWindow = start > 0 && end > start;
+  const pct = hasWindow
+    ? Math.min(100, Math.max(0, ((nowS - start) / (end - start)) * 100))
+    : 0;
+
+  const status =
+    start > nowS
+      ? `Starts in ${days(start - nowS)}`
+      : nowS > end
+        ? `Ended ${days(nowS - end)} ago`
+        : `${days(end - nowS)} left`;
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
+      <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono flex items-center gap-1.5">
+        <Clock className="w-4 h-4 text-emerald-600" /> Timeline
+      </h3>
+      <div className="flex justify-between text-xs">
+        <div>
+          <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+            Starts
+          </div>
+          <div className="text-sm font-semibold text-slate-100 mt-0.5">
+            {startLabel}
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+            Ends
+          </div>
+          <div className="text-sm font-semibold text-slate-100 mt-0.5">
+            {endLabel}
+          </div>
+        </div>
+      </div>
+      {hasWindow && (
+        <div className="h-2 w-full bg-slate-950 rounded-full overflow-hidden border border-slate-800/50">
+          <div
+            className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
+      <div className="text-xs font-mono text-emerald-600">{status}</div>
     </div>
   );
 }
