@@ -63,18 +63,19 @@ export function Nav() {
                 {l.label}
               </Link>
             ))}
-            {isAdmin && (
-              <Link
-                href="/admin"
-                className={`hover:text-slate-50 transition flex items-center gap-1.5 ${
-                  isActive(pathname, ["/admin"])
-                    ? "text-amber-500 border-b-2 border-amber-500 pb-0.5 font-bold"
-                    : ""
-                }`}
-              >
-                <Shield className="w-3.5 h-3.5 text-amber-500" /> Admin
-              </Link>
-            )}
+            <Link
+              href="/admin"
+              title={isAdmin ? "Platform admin" : "Platform admin (owner only)"}
+              className={`hover:text-slate-50 transition flex items-center gap-1.5 ${
+                isActive(pathname, ["/admin"])
+                  ? "text-amber-500 border-b-2 border-amber-500 pb-0.5 font-bold"
+                  : isAdmin
+                    ? "text-amber-500"
+                    : "text-slate-400"
+              }`}
+            >
+              <Shield className="w-3.5 h-3.5 text-amber-500" /> Admin
+            </Link>
           </nav>
 
           <div className="flex items-center gap-3 font-mono text-xs">
@@ -134,16 +135,16 @@ export function Nav() {
             {l.label}
           </Link>
         ))}
-        {isAdmin && (
-          <Link
-            href="/admin"
-            className={`px-2 py-1 rounded flex items-center gap-1 ${
-              isActive(pathname, ["/admin"]) ? "text-amber-400 bg-slate-900/40" : ""
-            }`}
-          >
-            Admin
-          </Link>
-        )}
+        <Link
+          href="/admin"
+          className={`px-2 py-1 rounded flex items-center gap-1 ${
+            isActive(pathname, ["/admin"])
+              ? "text-amber-400 bg-slate-900/40"
+              : "text-amber-500/80"
+          }`}
+        >
+          Admin
+        </Link>
       </div>
     </>
   );
