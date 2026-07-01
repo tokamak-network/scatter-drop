@@ -46,6 +46,8 @@ export interface Campaign {
   identityRegistry: Address;
   /** Curated label for the registry, e.g. "KR-NPKI". */
   identityRegistryLabel: string;
+  /** Merkle root committing to the recipient list — key for the proofs store. */
+  merkleRoot?: Hex;
   operator: Address;
   status: CampaignStatus;
 }

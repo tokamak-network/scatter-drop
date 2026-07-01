@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useAccount } from "wagmi";
-import { useQuery } from "@tanstack/react-query";
+import { useEligibility } from "@/lib/proofs";
 import { formatUnits, zeroAddress } from "viem";
 import {
   buildClaimRequest,
@@ -13,7 +13,7 @@ import { ConnectGate } from "@/components/ConnectGate";
 import { TxButton } from "@/components/TxButton";
 import { useIsClaimed, useVerifiedUntil } from "@/lib/contracts";
 import { useCampaignStats } from "@/lib/campaigns";
-import { getStubEligibility, type Campaign } from "@/lib/stub";
+import type { Campaign } from "@/lib/stub";
 
 /**
  * Claims portal (campaign detail, right column). Live: identity gate
@@ -31,11 +31,7 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
       ? new Date(Number(campaign.startTimeUnix) * 1000).toISOString().slice(0, 10)
       : "now";
 
-  const { data: elig, isPending: eligLoading } = useQuery({
-    queryKey: ["eligibility", campaign.id, address],
-    queryFn: () => getStubEligibility(campaign.id, address),
-    enabled: !!address,
-  });
+  const { data: elig, isPending: eligLoading } = useEligibility(campaign, address);
   // W24: identityRegistry == 0 means an open campaign — no identity check.
   const gateOff = campaign.identityRegistry === zeroAddress;
   const { data: verifiedUntil, isLoading: gateLoading } = useVerifiedUntil(
