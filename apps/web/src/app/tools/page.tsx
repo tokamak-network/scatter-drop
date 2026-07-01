@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { isAddress } from "viem";
 import {
   ArrowRight,
+  Camera,
   Check,
   Copy,
   Download,
@@ -12,6 +13,8 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
+import { SnapshotBuilder } from "@/components/SnapshotBuilder";
+import type { SnapshotManifest } from "@/lib/useSnapshotJob";
 
 type Row = { address: string; amount: string };
 const BLANK: Row = { address: "", amount: "" };
@@ -56,6 +59,17 @@ export default function ToolsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [copied, setCopied] = useState(false);
   const [equalAmount, setEqualAmount] = useState("");
+  const [snap, setSnap] = useState<SnapshotManifest | null>(null);
+
+  const loadSnapshot = () => {
+    if (!snap) return;
+    setAndPad(
+      Object.values(snap.claims).map((c) => ({
+        address: c.account,
+        amount: c.amount,
+      })),
+    );
+  };
 
   const setAndPad = (next: Row[]) => setRows(withTrailingBlank(next));
 
@@ -164,6 +178,25 @@ export default function ToolsPage() {
           Amounts are in base units (wei-like, no 18-decimal scaling).
         </p>
       </div>
+
+      {/* Snapshot generator (reuses the /api/snapshot RPC-scan backend) */}
+      <details className="rounded-xl border border-slate-800 bg-slate-900 group">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-100 flex items-center gap-2">
+          <Camera className="w-4 h-4 text-emerald-600" />
+          Generate from an on-chain snapshot (ERC-20 holders)
+        </summary>
+        <div className="px-4 pb-4 space-y-3 border-t border-slate-800/60 pt-3">
+          <SnapshotBuilder onResult={setSnap} />
+          {snap && (
+            <button
+              onClick={loadSnapshot}
+              className="w-full inline-flex items-center justify-center gap-2 bg-slate-950 border border-emerald-500/40 hover:bg-emerald-500/10 text-emerald-600 font-semibold px-4 py-2 rounded-lg text-sm transition"
+            >
+              Load {snap.count.toLocaleString()} holders into the grid ↓
+            </button>
+          )}
+        </div>
+      </details>
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
