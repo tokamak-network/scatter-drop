@@ -68,7 +68,7 @@ export function SnapshotBuilder({
   useEffect(() => {
     if (phaseRef.current === "done" || phaseRef.current === "error") reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, block, fromBlock, minBalance, tokenId, kind, perWallet, totalAmount]);
+  }, [token, block, fromBlock, minBalance, tokenId, standard, kind, perWallet, totalAmount]);
 
   const topN = useMemo(() => {
     if (!result) return [];

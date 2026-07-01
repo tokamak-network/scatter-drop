@@ -133,6 +133,9 @@ export function parseSnapshotRequest(
   if (kind === "erc1155" && tokenId === undefined) {
     return { error: "erc1155 requires a tokenId" };
   }
+  if (tokenId !== undefined && kind !== "erc1155") {
+    return { error: "tokenId is only valid when kind is erc1155" };
+  }
 
   const m = b.mode as Record<string, unknown> | undefined;
   if (!m || typeof m !== "object") return { error: "Invalid mode" };

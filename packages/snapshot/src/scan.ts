@@ -154,9 +154,19 @@ async function scanErc1155Holders(
       client.getLogs({ address: token, event: transferSingleEvent, fromBlock: start, toBlock: end }),
       client.getLogs({ address: token, event: transferBatchEvent, fromBlock: start, toBlock: end }),
     ]);
-    for (const log of [...singles, ...batches]) {
+    // Filter to the requested tokenId while scanning — an active collection can
+    // have huge transfer volume across many ids; without this the candidate set
+    // (and the balanceOf multicalls) explode for a rare id.
+    for (const log of singles) {
       const to = log.args?.to;
-      if (!to) continue;
+      if (!to || log.args?.id !== tokenId) continue;
+      const addr = getAddress(to);
+      if (addr !== ZERO_ADDRESS) candidates.add(addr);
+    }
+    for (const log of batches) {
+      const to = log.args?.to;
+      const ids = log.args?.ids;
+      if (!to || !ids || !ids.includes(tokenId)) continue;
       const addr = getAddress(to);
       if (addr !== ZERO_ADDRESS) candidates.add(addr);
     }
