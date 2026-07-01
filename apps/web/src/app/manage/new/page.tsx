@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   formatUnits,
   isAddress,
@@ -20,13 +20,14 @@ import {
   TokenTier,
   type DropManifest,
 } from "@tokamak-network/scatter-drop-sdk";
-import { ArrowLeft, ArrowRight, Check, Download } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Download, Upload } from "lucide-react";
 import Link from "next/link";
 import { ConnectGate } from "@/components/ConnectGate";
 import { SnapshotBuilder } from "@/components/SnapshotBuilder";
 import { TxButton } from "@/components/TxButton";
 import type { SnapshotManifest } from "@/lib/useSnapshotJob";
 import { useAllowedTokens } from "@/lib/campaigns";
+import { DRAFT_CSV_KEY } from "@/lib/draftCsv";
 import {
   deploymentIssue,
   useComputedFee,
@@ -93,6 +94,15 @@ export default function NewCampaignPage() {
   const [registry, setRegistry] = useState<Address | "">("");
   const [type, setType] = useState<AirdropType>(AirdropType.CSV);
   const [csv, setCsv] = useState("");
+  const csvFileRef = useRef<HTMLInputElement>(null);
+  function handleCsvFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setCsv(String(reader.result ?? ""));
+    reader.readAsText(file);
+    e.target.value = ""; // allow re-selecting the same file
+  }
   const [startDate, setStartDate] = useState("");
   const [deadline, setDeadline] = useState("");
   // W24: identity gate is optional. Off → open claim (identityRegistry = 0).
@@ -121,6 +131,20 @@ export default function NewCampaignPage() {
     return () => clearTimeout(t);
   }, [csv]);
   const { manifest, error: csvError } = parsed;
+
+  // Prefill from the /tools CSV builder ("Use in a campaign") once on mount.
+  useEffect(() => {
+    try {
+      const draft = localStorage.getItem(DRAFT_CSV_KEY);
+      if (draft) {
+        setType(AirdropType.CSV);
+        setCsv(draft);
+        localStorage.removeItem(DRAFT_CSV_KEY);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   // Snapshot mode (ONCHAIN_SNAPSHOT) sources recipients from a server-side
   // holder scan instead of a pasted CSV.
@@ -160,14 +184,15 @@ export default function NewCampaignPage() {
       ? `${formatUnits(v, decimals)} ${unit}`
       : `${v.toString()} base units`;
 
-  const startParsed = startDate ? Date.parse(`${startDate}T00:00:00Z`) : 0;
-  const startUnix = Number.isNaN(startParsed)
-    ? 0
-    : Math.floor(startParsed / 1000);
-  const deadlineParsed = deadline ? Date.parse(`${deadline}T00:00:00Z`) : 0;
-  const deadlineUnix = Number.isNaN(deadlineParsed)
-    ? 0
-    : Math.floor(deadlineParsed / 1000);
+  // datetime-local values (YYYY-MM-DDTHH:MM:SS, no tz) are parsed as local time,
+  // to the second, then converted to unix seconds for the on-chain window.
+  const toUnix = (v: string) => {
+    if (!v) return 0;
+    const ms = new Date(v).getTime();
+    return Number.isNaN(ms) ? 0 : Math.floor(ms / 1000);
+  };
+  const startUnix = toUnix(startDate);
+  const deadlineUnix = toUnix(deadline);
 
   const recipientsValid = activeManifest !== null;
   // Deadline must be in the future and after the start (mirrors on-chain checks;
@@ -433,29 +458,47 @@ export default function NewCampaignPage() {
                             ? `${recipientCount} recipients · total ${fmtAmount(totalAmount)} (auto)`
                             : "Paste address,amount per line (amount in base units)"}
                       </span>
-                      <button
-                        type="button"
-                        onClick={downloadSampleCsv}
-                        className="text-[11px] text-emerald-600 inline-flex items-center gap-1 hover:underline"
-                      >
-                        <Download className="w-3 h-3" /> Sample CSV
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <input
+                          ref={csvFileRef}
+                          type="file"
+                          accept=".csv,text/csv,text/plain"
+                          className="hidden"
+                          onChange={handleCsvFile}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => csvFileRef.current?.click()}
+                          className="text-[11px] text-emerald-600 inline-flex items-center gap-1 hover:underline"
+                        >
+                          <Upload className="w-3 h-3" /> Upload CSV
+                        </button>
+                        <button
+                          type="button"
+                          onClick={downloadSampleCsv}
+                          className="text-[11px] text-emerald-600 inline-flex items-center gap-1 hover:underline"
+                        >
+                          <Download className="w-3 h-3" /> Sample CSV
+                        </button>
+                      </div>
                     </div>
                   </Field>
                 )}
                 <div className="grid grid-cols-2 gap-3">
-                  <Field label="Start (optional)">
+                  <Field label="Start (optional, to the second)">
                     <input
                       className="input"
-                      type="date"
+                      type="datetime-local"
+                      step="1"
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
                     />
                   </Field>
-                  <Field label="Deadline *">
+                  <Field label="Deadline * (to the second)">
                     <input
                       className="input"
-                      type="date"
+                      type="datetime-local"
+                      step="1"
                       value={deadline}
                       onChange={(e) => setDeadline(e.target.value)}
                     />

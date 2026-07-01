@@ -22,7 +22,7 @@ const WHY = [
   {
     icon: Fingerprint,
     title: "Sybil-resistant",
-    body: "One person, one verified identity. Bot armies and multi-account farming are stopped at the gate, not after the fact.",
+    body: "One verified identity, one claim. No single actor can split into thousands of wallets to capture a disproportionate share — fair distribution to real recipients.",
   },
   {
     icon: ToggleRight,
@@ -92,18 +92,18 @@ export default function HomePage() {
       <section className="text-center pt-10 md:pt-16">
         <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900 px-3 py-1 text-[11px] font-mono font-medium text-emerald-600">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-          zk-X509 identity infrastructure for airdrops
+          Sybil-resistant airdrops · powered by zk-X509 identity
         </span>
         <h1 className="mt-6 text-4xl md:text-6xl font-display font-bold tracking-tight text-slate-50">
-          Airdrops,
+          One verified identity,
           <br />
-          with identity when you need it.
+          one claim.
         </h1>
         <p className="mx-auto mt-6 max-w-2xl text-base md:text-lg leading-relaxed text-slate-400">
-          scatter.drop is a self-service platform for launching token and asset
-          airdrops. Distribute openly, or gate claims with legally-valid
-          national-PKI identity — Sybil-resistant, compliant, and fully
-          non-custodial.
+          Sybil-resistant by design: every claim ties to one real, verified
+          identity — so no one can farm a drop across thousands of wallets.
+          Human or AI agent, it counts once. Self-service, open or gated, and
+          always non-custodial.
         </p>
         <div className="mt-8 flex flex-wrap gap-3 justify-center">
           <Link
