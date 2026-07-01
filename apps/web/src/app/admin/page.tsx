@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useAccount } from "wagmi";
 import { formatUnits, isAddress, parseUnits, type Address } from "viem";
 import {
   airdropTypeLabel,
@@ -26,6 +27,7 @@ import {
   useFeeBpsOf,
   useFeeModeOf,
   useFlatFee,
+  useIsAdmin,
   useTokenTier,
 } from "@/lib/contracts";
 import { useCampaigns } from "@/lib/campaigns";
@@ -40,6 +42,8 @@ const isBps = (s: string) =>
 
 export default function AdminPage() {
   const { data: dep, isLoading } = useDeployment();
+  const { address } = useAccount();
+  const isAdmin = useIsAdmin(address);
   const [tab, setTab] = useState<Tab>("Overview");
 
   const issue = deploymentIssue(dep, isLoading);
@@ -47,6 +51,9 @@ export default function AdminPage() {
     return <p className="text-slate-400 text-sm">{issue ?? "No deployment."}</p>;
   }
   const factory = dep.dropFactory;
+  const ownerHint = dep.deployer
+    ? `${dep.deployer.slice(0, 6)}…${dep.deployer.slice(-4)}`
+    : "the DropFactory owner";
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -58,6 +65,20 @@ export default function AdminPage() {
           DropFactory Governance Center
         </h1>
       </div>
+
+      {!isAdmin && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 space-y-1">
+          <div className="font-bold flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5" /> View-only — you are not the platform admin
+          </div>
+          <p className="leading-relaxed text-amber-700/90">
+            Every action here is gated to the <strong>DropFactory owner</strong> (
+            <span className="font-mono">{ownerHint}</span>). Your connected wallet
+            isn&apos;t the owner, so these transactions will revert. Connect the
+            owner wallet to manage fees, the token allow-list, and fee withdrawals.
+          </p>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800 w-fit">
         {TABS.map((t) => (
