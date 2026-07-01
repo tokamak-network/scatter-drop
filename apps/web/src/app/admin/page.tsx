@@ -19,6 +19,7 @@ import {
 import { Loader2, ShieldCheck } from "lucide-react";
 import { TxButton } from "@/components/TxButton";
 import { VaultWithdraw } from "@/components/VaultWithdraw";
+import { NetworksTab } from "./NetworksTab";
 import {
   deploymentIssue,
   useDefaultFeeBps,
@@ -34,7 +35,7 @@ import {
 import { useAllowedTokens, useCampaigns } from "@/lib/campaigns";
 import { isPositiveDecimal } from "@/lib/validation";
 
-const TABS = ["Overview", "Funds", "Tokens", "Campaigns", "Vault"] as const;
+const TABS = ["Overview", "Funds", "Tokens", "Campaigns", "Vault", "Networks"] as const;
 type Tab = (typeof TABS)[number];
 
 const MAX_FEE_BPS = 1000; // 10% — mirrors the contract cap
@@ -114,6 +115,7 @@ export default function AdminPage() {
           <VaultWithdraw />
         </div>
       )}
+      {tab === "Networks" && <NetworksTab />}
     </div>
   );
 }
