@@ -10,15 +10,18 @@ import { MerkleTestBase } from "./util/MerkleTestBase.sol";
 
 /// @notice Gas snapshot for the post-W13 delta (native ETH + proofs CID) vs the
 ///         ERC20 baseline, feeding the regression table in docs/SECURITY.md §7.3.
-///         Measures the outer-call gas of each op with `gasleft()`. Informational —
-///         run `forge test --match-contract GasSnapshotTest -vv` to print the table.
+/// @dev Each op is measured in **its own test** (a fresh `setUp`, i.e. a separate
+///      transaction) so cross-op EIP-2929 warm-access doesn't skew the ERC20-vs-native
+///      comparison — each pair is measured under the same warmth profile. Numbers are the
+///      outer-call gas via `gasleft()`. Run `forge test --match-contract GasSnapshotTest -vv`.
 contract GasSnapshotTest is MerkleTestBase {
     DropFactory internal factory;
     MockIdentityRegistry internal opReg;
     MockRegistryFactory internal zkFactory;
     MockERC20 internal token;
 
-    address internal constant NATIVE = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+    // Read from the deployed factory (set in setUp) so the sentinel can't drift from production.
+    address internal NATIVE;
 
     address internal admin = makeAddr("admin");
     address internal operator = makeAddr("operator");
@@ -39,6 +42,7 @@ contract GasSnapshotTest is MerkleTestBase {
         zkFactory = new MockRegistryFactory();
         factory = new DropFactory(admin, address(opReg), zkFactory, treasury);
         token = new MockERC20("Mock", "MOCK", 18);
+        NATIVE = factory.NATIVE();
 
         vm.startPrank(admin);
         factory.setAllowedToken(address(token), true);
@@ -51,62 +55,90 @@ contract GasSnapshotTest is MerkleTestBase {
         root = _leaf(0, claimer, AMT);
     }
 
-    /// @dev Prints the gas regression table. Each number is the outer-call gas.
-    function test_gasSnapshot() public {
-        // --- createDrop (deploys a MerkleDrop) ---
-        uint256 feeErc20 = factory.feeOf(address(token), TOTAL);
-        token.mint(operator, TOTAL + feeErc20);
+    function _createErc20() internal returns (address) {
+        uint256 fee = factory.feeOf(address(token), TOTAL);
+        token.mint(operator, TOTAL + fee);
         vm.startPrank(operator);
-        token.approve(address(factory), TOTAL + feeErc20);
-        uint256 g = gasleft();
-        address dErc20 = factory.createDrop(CSV, address(token), root, TOTAL, startTime, deadline, address(0));
-        uint256 createErc20 = g - gasleft();
+        token.approve(address(factory), TOTAL + fee);
+        address d = factory.createDrop(CSV, address(token), root, TOTAL, startTime, deadline, address(0));
         vm.stopPrank();
+        return d;
+    }
 
-        uint256 valueN = TOTAL + factory.feeOf(NATIVE, TOTAL);
-        vm.deal(operator, valueN);
+    function _createNative() internal returns (address) {
+        uint256 value = TOTAL + factory.feeOf(NATIVE, TOTAL);
+        vm.deal(operator, value);
         vm.prank(operator);
-        g = gasleft();
-        address dNative =
-            factory.createDrop{ value: valueN }(CSV, NATIVE, root, TOTAL, startTime, deadline, address(0));
-        uint256 createNative = g - gasleft();
+        return factory.createDrop{ value: value }(CSV, NATIVE, root, TOTAL, startTime, deadline, address(0));
+    }
 
-        // --- claim ---
-        vm.prank(claimer);
-        g = gasleft();
-        MerkleDrop(payable(dErc20)).claim(0, claimer, AMT, new bytes32[](0));
-        uint256 claimErc20 = g - gasleft();
+    // --- createDrop (deploys a MerkleDrop) ---
 
-        vm.prank(claimer);
-        g = gasleft();
-        MerkleDrop(payable(dNative)).claim(0, claimer, AMT, new bytes32[](0));
-        uint256 claimNative = g - gasleft();
+    function test_gas_createDrop_erc20() public {
+        uint256 fee = factory.feeOf(address(token), TOTAL);
+        token.mint(operator, TOTAL + fee);
+        vm.startPrank(operator);
+        token.approve(address(factory), TOTAL + fee);
+        uint256 g = gasleft();
+        factory.createDrop(CSV, address(token), root, TOTAL, startTime, deadline, address(0));
+        emit log_named_uint("createDrop ERC20 ", g - gasleft());
+        vm.stopPrank();
+    }
 
-        // --- publishProofs (event-only) ---
+    function test_gas_createDrop_native() public {
+        uint256 value = TOTAL + factory.feeOf(NATIVE, TOTAL);
+        vm.deal(operator, value);
         vm.prank(operator);
-        g = gasleft();
-        factory.publishProofs(dErc20, CID);
-        uint256 publish = g - gasleft();
+        uint256 g = gasleft();
+        factory.createDrop{ value: value }(CSV, NATIVE, root, TOTAL, startTime, deadline, address(0));
+        emit log_named_uint("createDrop NATIVE", g - gasleft());
+    }
 
-        // --- sweep (after the deadline) ---
+    // --- claim ---
+
+    function test_gas_claim_erc20() public {
+        MerkleDrop d = MerkleDrop(payable(_createErc20()));
+        vm.prank(claimer);
+        uint256 g = gasleft();
+        d.claim(0, claimer, AMT, new bytes32[](0));
+        emit log_named_uint("claim ERC20 ", g - gasleft());
+    }
+
+    function test_gas_claim_native() public {
+        MerkleDrop d = MerkleDrop(payable(_createNative()));
+        vm.prank(claimer);
+        uint256 g = gasleft();
+        d.claim(0, claimer, AMT, new bytes32[](0));
+        emit log_named_uint("claim NATIVE", g - gasleft());
+    }
+
+    // --- sweep (after the deadline) ---
+
+    function test_gas_sweep_erc20() public {
+        MerkleDrop d = MerkleDrop(payable(_createErc20()));
         vm.warp(deadline + 1);
         vm.prank(operator);
-        g = gasleft();
-        MerkleDrop(payable(dErc20)).sweep();
-        uint256 sweepErc20 = g - gasleft();
+        uint256 g = gasleft();
+        d.sweep();
+        emit log_named_uint("sweep ERC20 ", g - gasleft());
+    }
 
+    function test_gas_sweep_native() public {
+        MerkleDrop d = MerkleDrop(payable(_createNative()));
+        vm.warp(deadline + 1);
         vm.prank(operator);
-        g = gasleft();
-        MerkleDrop(payable(dNative)).sweep();
-        uint256 sweepNative = g - gasleft();
+        uint256 g = gasleft();
+        d.sweep();
+        emit log_named_uint("sweep NATIVE", g - gasleft());
+    }
 
-        emit log_string("--- gas snapshot (outer-call gas) ---");
-        emit log_named_uint("createDrop ERC20 ", createErc20);
-        emit log_named_uint("createDrop NATIVE", createNative);
-        emit log_named_uint("claim      ERC20 ", claimErc20);
-        emit log_named_uint("claim      NATIVE", claimNative);
-        emit log_named_uint("sweep      ERC20 ", sweepErc20);
-        emit log_named_uint("sweep      NATIVE", sweepNative);
-        emit log_named_uint("publishProofs    ", publish);
+    // --- publishProofs (event-only) ---
+
+    function test_gas_publishProofs() public {
+        address d = _createErc20();
+        vm.prank(operator);
+        uint256 g = gasleft();
+        factory.publishProofs(d, CID);
+        emit log_named_uint("publishProofs", g - gasleft());
     }
 }

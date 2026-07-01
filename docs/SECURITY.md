@@ -231,15 +231,17 @@ claimers can locate inclusion proofs without a trusted server.
 
 ### 7.3 Gas snapshot (regression baseline)
 
-Outer-call gas from `test/GasSnapshot.t.sol` (single-leaf tree, empty proof;
-`optimizer_runs = 200`). Indicative, not a guarantee.
+Outer-call gas from `contracts/test/GasSnapshot.t.sol`. Each op is measured in its
+own transaction (a fresh `setUp`) so cross-op EIP-2929 warm-access doesn't skew the
+ERC20-vs-native comparison. Single-leaf tree, empty proof; `optimizer_runs = 200`.
+Indicative, not a guarantee.
 
 | Operation | ERC20 | Native ETH | Note |
 | --------- | ----: | ---------: | ---- |
-| `createDrop` (deploys a `MerkleDrop`) | 848,308 | 771,447 | native is cheaper — no ERC20 `transferFrom` pulls |
-| `claim` | 51,886 | 58,606 | native +~6.7k: `safeTransferETH` low-level call |
-| `sweep` | 26,773 | 34,561 | native +~7.8k: ETH send vs ERC20 transfer |
-| `publishProofs` (event-only) | 5,579 | — | no value transfer, no storage write |
+| `createDrop` (deploys a `MerkleDrop`) | 848,353 | 806,013 | native is cheaper — no ERC20 `transferFrom` pulls |
+| `claim` | 51,916 | 58,633 | native +~6.7k: `safeTransferETH` low-level call |
+| `sweep` | 26,803 | 34,591 | native +~7.8k: ETH send vs ERC20 transfer |
+| `publishProofs` (event-only) | 5,606 | — | no value transfer, no storage write |
 
 ### 7.4 Re-review scope vs. W13
 
