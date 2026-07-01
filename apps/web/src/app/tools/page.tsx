@@ -107,6 +107,7 @@ export default function ToolsPage() {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("manual");
   const [snapKind, setSnapKind] = useState<"erc20" | "nft">("erc20");
+  const [nftStd, setNftStd] = useState<"erc721" | "erc1155">("erc721");
   const [rows, setRows] = useState<Row[]>([{ ...BLANK }]);
   const fileRef = useRef<HTMLInputElement>(null);
   const [copied, setCopied] = useState(false);
@@ -329,12 +330,27 @@ export default function ToolsPage() {
                 </SubTab>
               </div>
 
+              {snapKind === "nft" && (
+                <div className="flex flex-wrap gap-2">
+                  <SubTab active={nftStd === "erc721"} onClick={() => setNftStd("erc721")} icon={<ImageIcon className="w-3.5 h-3.5" />}>
+                    ERC-721
+                  </SubTab>
+                  <SubTab active={nftStd === "erc1155"} onClick={() => setNftStd("erc1155")} icon={<Layers className="w-3.5 h-3.5" />}>
+                    ERC-1155
+                  </SubTab>
+                </div>
+              )}
               <p className="text-[11px] text-slate-500">
                 {snapKind === "erc20"
                   ? "Enter an ERC-20 token. Holders with balance ≥ min at the block are captured, then allocated equally or pro-rata by balance."
-                  : "Enter an ERC-721 collection address. Owners holding ≥ min NFTs at the block are captured (balanceOf returns the count), then allocated equally or pro-rata by count. ERC-1155 support is coming."}
+                  : nftStd === "erc1155"
+                    ? "Enter an ERC-1155 collection and a token id. Owners holding ≥ min of that id at the block are captured, then allocated equally or pro-rata by count."
+                    : "Enter an ERC-721 collection. Owners holding ≥ min NFTs at the block are captured (balanceOf returns the count), then allocated equally or pro-rata by count."}
               </p>
-              <SnapshotBuilder onResult={setSnap} />
+              <SnapshotBuilder
+                onResult={setSnap}
+                standard={snapKind === "erc20" ? "erc20" : nftStd}
+              />
               {snap && (
                 <button
                   onClick={loadSnapshot}

@@ -20,6 +20,10 @@ export interface SnapshotJobInput {
     | { kind: "equal"; perWallet: string }
     | { kind: "proRata"; totalAmount: string };
   fromBlock?: string;
+  /** Asset standard. Omitted = erc20 (also serves erc721). */
+  kind?: "erc20" | "erc721" | "erc1155";
+  /** Required when kind = "erc1155". */
+  tokenId?: string;
 }
 
 type Phase = "idle" | "running" | "done" | "error";
