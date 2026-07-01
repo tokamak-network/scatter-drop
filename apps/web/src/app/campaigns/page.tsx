@@ -172,6 +172,11 @@ function CampaignCard({ c }: { c: Campaign }) {
         </div>
       </div>
 
+      {/* Tagline — what this drop is / why to click in */}
+      <p className="mt-3 text-xs text-slate-400 leading-relaxed line-clamp-2 min-h-[2rem]">
+        {c.description}
+      </p>
+
       {/* Hero stat: pool */}
       <div className="mt-4 rounded-lg bg-slate-950 border border-slate-800/80 px-3.5 py-3">
         <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">

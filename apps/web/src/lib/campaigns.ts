@@ -140,6 +140,26 @@ function formatAmount(raw: bigint, decimals: number): string {
     : formatUnits(raw, decimals);
 }
 
+/**
+ * A short, inviting one-liner derived from the on-chain type + token (no
+ * off-chain metadata yet). Access (open vs gated) is shown separately on the
+ * card, so the tagline focuses on what the drop is and why to click in.
+ */
+function taglineFor(type: AirdropType, symbol: string): string {
+  switch (type) {
+    case AirdropType.CSV:
+      return `Allow-list ${symbol} drop — see if your address qualifies.`;
+    case AirdropType.ONCHAIN_SNAPSHOT:
+      return `Snapshot reward for ${symbol} holders — claim your share.`;
+    case AirdropType.ONCHAIN_GATED:
+      return `Eligibility-gated ${symbol} drop — check if you can claim.`;
+    case AirdropType.SOCIAL:
+      return `Complete campaign tasks to earn ${symbol}.`;
+    default:
+      return `${symbol} airdrop — check your eligibility.`;
+  }
+}
+
 /** Map a DropCreated event into the UI Campaign shape (on-chain fields only). */
 function toCampaign(
   args: DropCreatedArgs,
@@ -150,10 +170,11 @@ function toCampaign(
   const deadlineMs = Number(args.deadline) * 1000;
   const symbol = meta?.symbol ?? "TOKEN";
   const decimals = meta?.decimals ?? 18;
+  const type = Number(args.airdropType) as AirdropType;
   return {
     id: args.drop,
     name: `${symbol} airdrop`,
-    description: `Created by ${args.operator.slice(0, 10)}…`,
+    description: taglineFor(type, symbol),
     type: Number(args.airdropType) as AirdropType,
     drop: args.drop,
     token: args.airdropToken,
