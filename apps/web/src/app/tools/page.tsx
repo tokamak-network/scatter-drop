@@ -310,21 +310,21 @@ export default function ToolsPage() {
                 </SubTab>
               </div>
 
-              {snapKind === "erc20" && (
-                <div className="space-y-3">
-                  <SnapshotBuilder onResult={setSnap} />
-                  {snap && (
-                    <button
-                      onClick={loadSnapshot}
-                      className="w-full inline-flex items-center justify-center gap-2 bg-slate-950 border border-emerald-500/40 hover:bg-emerald-500/10 text-emerald-600 font-semibold px-4 py-2 rounded-lg text-sm transition"
-                    >
-                      Load {snap.count.toLocaleString()} holders into the list ↓
-                    </button>
-                  )}
-                </div>
+              <p className="text-[11px] text-slate-500">
+                {snapKind === "erc20"
+                  ? "Enter an ERC-20 token. Holders with balance ≥ min at the block are captured, then allocated equally or pro-rata by balance."
+                  : "Enter an ERC-721 collection address. Owners holding ≥ min NFTs at the block are captured (balanceOf returns the count), then allocated equally or pro-rata by count. ERC-1155 support is coming."}
+              </p>
+              <SnapshotBuilder onResult={setSnap} />
+              {snap && (
+                <button
+                  onClick={loadSnapshot}
+                  className="w-full inline-flex items-center justify-center gap-2 bg-slate-950 border border-emerald-500/40 hover:bg-emerald-500/10 text-emerald-600 font-semibold px-4 py-2 rounded-lg text-sm transition"
+                >
+                  Load {snap.count.toLocaleString()}{" "}
+                  {snapKind === "nft" ? "NFT owners" : "holders"} into the list ↓
+                </button>
               )}
-
-              {snapKind === "nft" && <NftPanel />}
             </div>
           )}
 
@@ -452,32 +452,6 @@ export default function ToolsPage() {
             Rows in red have an invalid address, a non-positive amount, or a duplicate address.
           </p>
         )}
-      </div>
-    </div>
-  );
-}
-
-/** NFT holder snapshot — UI ready; the RPC-scan backend (ERC-721/1155) is in progress. */
-function NftPanel() {
-  return (
-    <div className="space-y-4">
-      <p className="text-xs text-slate-400">
-        Snapshot the owners of an NFT collection (ERC-721/1155) at a block, keep
-        those holding at least N, and allocate equally or by count.
-      </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 opacity-60 pointer-events-none">
-        <input className="input" placeholder="Collection address 0x…" />
-        <input className="input" placeholder="Standard: ERC-721 / ERC-1155" />
-        <input className="input" placeholder="Snapshot block #" />
-        <input className="input" placeholder="Token id (ERC-1155 only)" />
-        <input className="input" placeholder="Min held (count ≥)" />
-        <input className="input" placeholder="Allocation: equal / by-count" />
-      </div>
-      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700">
-        NFT holder scanning needs a new backend mode (ERC-721/1155 in
-        packages/snapshot). It&apos;s being built in the contracts stream — this
-        tab will light up once it lands. Meanwhile, paste or import an NFT-holder
-        CSV in the <span className="font-semibold">Manual / CSV</span> tab.
       </div>
     </div>
   );
