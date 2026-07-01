@@ -8,7 +8,7 @@ import {
   buildClaimRequest,
   isVerificationValid,
 } from "@tokamak-network/scatter-drop-sdk";
-import { CheckCircle2, Gift, Loader2, XCircle } from "lucide-react";
+import { Check, CheckCircle2, Gift, Loader2, Minus, XCircle } from "lucide-react";
 import { ConnectGate } from "@/components/ConnectGate";
 import { TxButton } from "@/components/TxButton";
 import { useIsClaimed, useVerifiedUntil } from "@/lib/contracts";
@@ -151,10 +151,13 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
               primary
               disabled={!canClaim}
             />
-            <p className="text-[11px] text-slate-500 font-mono mt-2">
-              {gateOff
-                ? "Open claim (no identity check) AND eligible AND window open. Self-claim only."
-                : "Requires (identity verified) AND (eligible) AND (window open). Self-claim only."}
+            <ul className="mt-3 space-y-1.5 text-[11px]">
+              {!gateOff && <ReqRow ok={verified} label="Identity verified" />}
+              <ReqRow ok={!!elig?.eligible} label="On the distribution list" />
+              <ReqRow ok={windowOpen} label="Claim window open" />
+            </ul>
+            <p className="text-[11px] text-slate-500 mt-2">
+              Self-claim only — one claim per eligible wallet.
             </p>
             {claimedOnChain && (
               <Link
@@ -168,5 +171,18 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
         </ConnectGate>
       </div>
     </div>
+  );
+}
+
+function ReqRow({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <li className="flex items-center gap-2">
+      {ok ? (
+        <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+      ) : (
+        <Minus className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+      )}
+      <span className={ok ? "text-slate-300" : "text-slate-400"}>{label}</span>
+    </li>
   );
 }

@@ -1,10 +1,21 @@
 "use client";
 
-import { use } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
 import { useAccount } from "wagmi";
+import { zeroAddress } from "viem";
 import { airdropTypeLabel, isVerificationValid } from "@tokamak-network/scatter-drop-sdk";
-import { AlertCircle, ArrowLeft, Loader2 } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowLeft,
+  Check,
+  Copy,
+  Link as LinkIcon,
+  Loader2,
+  Send,
+  Share2,
+  Twitter,
+} from "lucide-react";
 import { IdentityGate } from "@/components/IdentityGate";
 import { useVerifiedUntil } from "@/lib/contracts";
 import { useCampaign } from "@/lib/campaigns";
@@ -47,6 +58,7 @@ export default function CampaignDetailPage({
   }
 
   const now = BigInt(Math.floor(Date.now() / 1000));
+  const open = campaign.identityRegistry === zeroAddress;
   const gateState = !address
     ? "unverified"
     : verifiedUntil === undefined
@@ -70,30 +82,31 @@ export default function CampaignDetailPage({
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 md:p-8 space-y-6">
             <div className="flex flex-col md:flex-row gap-5 items-start">
-              <div className="w-16 h-16 rounded-xl bg-slate-800 flex items-center justify-center font-bold text-lg text-slate-500 shrink-0">
+              <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center font-bold text-base text-emerald-600 shrink-0">
                 {campaign.tokenSymbol.slice(0, 4)}
               </div>
-              <div className="space-y-2">
+              <div className="space-y-2 min-w-0">
                 <div className="flex flex-wrap gap-2 items-center">
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold border uppercase bg-indigo-950/40 text-indigo-400 border-indigo-900/40">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold border uppercase tracking-wide bg-slate-950 text-slate-400 border-slate-800">
                     {airdropTypeLabel(campaign.type)}
                   </span>
-                  <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border uppercase ${
-                      campaign.status === "active"
-                        ? "bg-emerald-950/40 text-emerald-600 border-emerald-900/40"
-                        : "bg-slate-800 text-slate-500 border-slate-700/50"
-                    }`}
-                  >
-                    {campaign.status}
-                  </span>
+                  {campaign.status === "active" ? (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      Active
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-slate-950 text-slate-400 border border-slate-800">
+                      Ended
+                    </span>
+                  )}
                 </div>
-                <h1 className="text-xl md:text-2xl font-bold text-slate-100">
+                <h1 className="text-xl md:text-2xl font-bold text-slate-50">
                   {campaign.name}
                 </h1>
-                <p className="text-xs text-slate-500 font-mono">
+                <p className="text-xs text-slate-400 font-mono">
                   Operator:{" "}
-                  <span className="text-slate-300">
+                  <span className="text-slate-200">
                     {campaign.operator.slice(0, 10)}…{campaign.operator.slice(-8)}
                   </span>
                 </p>
@@ -104,27 +117,172 @@ export default function CampaignDetailPage({
               {campaign.description}
             </p>
 
+            {/* Quick facts */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <StatItem label="Type" value={airdropTypeLabel(campaign.type)} />
+              <StatItem
+                label="Access"
+                value={open ? "Open claim" : "Identity-gated"}
+              />
+              <StatItem
+                label="Ends"
+                value={campaign.deadline === "No deadline" ? "—" : campaign.deadline}
+              />
+              <StatItem label="Claim" value="Self-serve" />
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-950 p-4 rounded-lg border border-slate-800/60 text-xs font-mono">
-              <div className="space-y-1 min-w-0">
-                <span className="text-slate-500">Airdrop Token</span>
-                <div className="text-slate-300 truncate font-semibold select-all">
-                  {campaign.token}
-                </div>
-              </div>
-              <div className="space-y-1 min-w-0">
-                <span className="text-slate-500">Drop Contract</span>
-                <div className="text-slate-300 truncate font-semibold select-all">
-                  {campaign.drop}
-                </div>
-              </div>
+              <AddressField label="Airdrop Token" value={campaign.token} />
+              <AddressField label="Drop Contract" value={campaign.drop} />
             </div>
           </div>
 
           <IdentityGate state={gateState} registryLabel={campaign.identityRegistryLabel} />
         </div>
 
-        {/* Right: claims portal */}
-        <ClaimPanel campaign={campaign} />
+        {/* Right: claims portal + share */}
+        <div className="space-y-6">
+          <ClaimPanel campaign={campaign} />
+          <ShareCard
+            name={campaign.name}
+            tagline={campaign.description}
+            amount={campaign.totalAmount}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-slate-950 border border-slate-800/60 px-3 py-2.5">
+      <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+        {label}
+      </div>
+      <div className="text-sm font-semibold text-slate-100 mt-0.5 truncate">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function AddressField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="space-y-1 min-w-0">
+      <span className="text-slate-500">{label}</span>
+      <div className="flex items-center gap-2">
+        <span className="text-slate-300 truncate font-semibold select-all">
+          {value}
+        </span>
+        <CopyButton value={value} label={`Copy ${label}`} />
+      </div>
+    </div>
+  );
+}
+
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={copied ? "Copied" : label}
+      onClick={() => {
+        navigator.clipboard?.writeText(value);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1200);
+      }}
+      className="shrink-0 text-slate-500 hover:text-emerald-600 transition"
+    >
+      {copied ? (
+        <Check className="w-3.5 h-3.5 text-emerald-600" />
+      ) : (
+        <Copy className="w-3.5 h-3.5" />
+      )}
+    </button>
+  );
+}
+
+/** Share / promote the campaign — copy link + one-tap social intents. */
+function ShareCard({
+  name,
+  tagline,
+  amount,
+}: {
+  name: string;
+  tagline: string;
+  amount: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const shareText = `${name} — ${amount} up for grabs on scatter.drop. ${tagline}`;
+
+  function href() {
+    return typeof window !== "undefined" ? window.location.href : "";
+  }
+  function open(url: string) {
+    if (typeof window !== "undefined") window.open(url, "_blank", "noopener");
+  }
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
+      <div>
+        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono flex items-center gap-1.5">
+          <Share2 className="w-4 h-4 text-emerald-600" />
+          Share this drop
+        </h3>
+        <p className="text-[11px] text-slate-400 mt-1.5 leading-snug">
+          Spread the word — let eligible wallets know they can claim.
+        </p>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => {
+          navigator.clipboard?.writeText(href());
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        }}
+        className="w-full flex items-center justify-center gap-2 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-100 text-sm font-semibold px-4 py-2.5 rounded-lg transition"
+      >
+        {copied ? (
+          <>
+            <Check className="w-4 h-4 text-emerald-600" /> Link copied
+          </>
+        ) : (
+          <>
+            <LinkIcon className="w-4 h-4 text-slate-400" /> Copy link
+          </>
+        )}
+      </button>
+
+      <div className="grid grid-cols-2 gap-3">
+        <button
+          type="button"
+          onClick={() =>
+            open(
+              `https://twitter.com/intent/tweet?text=${encodeURIComponent(
+                shareText,
+              )}&url=${encodeURIComponent(href())}`,
+            )
+          }
+          className="flex items-center justify-center gap-2 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-200 text-xs font-semibold px-3 py-2 rounded-lg transition"
+        >
+          <Twitter className="w-3.5 h-3.5" /> Post on X
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            open(
+              `https://t.me/share/url?url=${encodeURIComponent(
+                href(),
+              )}&text=${encodeURIComponent(shareText)}`,
+            )
+          }
+          className="flex items-center justify-center gap-2 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-200 text-xs font-semibold px-3 py-2 rounded-lg transition"
+        >
+          <Send className="w-3.5 h-3.5" /> Telegram
+        </button>
       </div>
     </div>
   );
