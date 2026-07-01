@@ -108,7 +108,8 @@ contract ProofsPublishedTest is MerkleTestBase {
     }
 
     function test_publishProofs_republishAllowed() public {
-        string memory cid2 = "bafybeih2xkp3q4r5s6t7u8v9w0x1y2z3a4b5c6d7e8f9g0h1i2j3k4l5m6";
+        // Distinct, valid CIDv1 base32 (charset a-z2-7 only).
+        string memory cid2 = "bafybeic5t7u3w4x6y7z2a3b4c5d6e7f2g3h4i5j6k7l2m3n4o5p6q7r2s3";
 
         vm.startPrank(operator);
         vm.expectEmit(true, false, false, true, address(factory));

@@ -373,16 +373,23 @@ contract DropFactory is Ownable {
     ///      for a `drop` as its current CID. Re-publishing is allowed (e.g. re-pin to a
     ///      new CID) — the guards are the only invariant. This is a pure addition; it does
     ///      not touch `createDrop` or any existing state.
+    ///
+    ///      Trust model: the guards check that `drop` *reports* this factory as its deployer
+    ///      and `msg.sender` as its operator. For a genuine factory-deployed MerkleDrop these
+    ///      are authoritative immutables. A contrived contract could return the same values,
+    ///      but only about *itself* — it cannot make a real drop's `operator()` return a
+    ///      non-operator, so no one can publish a CID under another party's real drop. Indexers
+    ///      key events by known drop addresses, so a spoofed self-address is inert noise. That
+    ///      is why an `isDrop` allow-list (an SSTORE in every `createDrop`) isn't warranted here.
     /// @param drop MerkleDrop deployed by this factory.
     /// @param cid  IPFS CID (CIDv1 base32) of the drop's `proofs.json`; must be non-empty.
     function publishProofs(address drop, string calldata cid) external {
         if (bytes(cid).length == 0) revert EmptyCid();
         if (drop.code.length == 0) revert UnknownDrop(); // EOA has no factory() to call
         MerkleDrop d = MerkleDrop(payable(drop));
-        // Provenance: a genuine drop reports this factory as its deployer (reconstructed from
-        // MerkleDrop's immutable `factory`, so no O(n) `_drops` scan / `isDrop` storage). try/catch
-        // so a contract that isn't one of our drops (missing/other `factory()`) yields a clean
-        // UnknownDrop rather than an opaque decode revert.
+        // The drop must report this factory as its deployer (MerkleDrop's immutable `factory`),
+        // caught so a contract without a matching `factory()` yields a clean UnknownDrop instead
+        // of an opaque decode revert — no O(n) `_drops` scan, no `isDrop` storage.
         try d.factory() returns (address deployer) {
             if (deployer != address(this)) revert UnknownDrop();
         } catch {
