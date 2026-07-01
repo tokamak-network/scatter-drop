@@ -30,7 +30,7 @@ import {
   useIsAdmin,
   useTokenTier,
 } from "@/lib/contracts";
-import { useCampaigns } from "@/lib/campaigns";
+import { useAllowedTokens, useCampaigns } from "@/lib/campaigns";
 import { isPositiveDecimal } from "@/lib/validation";
 
 const TABS = ["Overview", "Funds", "Tokens", "Campaigns", "Vault"] as const;
@@ -362,9 +362,14 @@ function Tokens({ factory }: { factory: Address }) {
   const t = valid ? (token as Address) : undefined;
   const { data: tier, refetch } = useTokenTier(factory, t);
   const { data: decimals } = useErc20Decimals(t);
+  const { data: allowedList, refetch: refetchList } = useAllowedTokens();
   const [note, setNote] = useCurationNote(valid ? token : "");
 
   const allowed = tier !== undefined && Number(tier) === TokenTier.ALLOWED;
+  const refreshAll = () => {
+    void refetch();
+    void refetchList();
+  };
 
   return (
     <Card title="Allowed token curation (admin)">
@@ -373,6 +378,43 @@ function Tokens({ factory }: { factory: Address }) {
         The platform is neutral infrastructure — this is a suitability decision,
         not a securities determination.
       </p>
+
+      {/* Currently allowed */}
+      <div className="rounded-lg bg-slate-950 border border-slate-800/60 p-3 space-y-2">
+        <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+          Currently allowed ({allowedList?.length ?? 0})
+        </div>
+        {allowedList && allowedList.length > 0 ? (
+          <div className="space-y-1.5">
+            {allowedList.map((a) => (
+              <div
+                key={a.token}
+                className="flex items-center justify-between gap-2 text-xs"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-mono font-bold text-emerald-600 shrink-0">
+                    {a.symbol}
+                  </span>
+                  <span className="font-mono text-slate-400 truncate">
+                    {a.token.slice(0, 8)}…{a.token.slice(-6)}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setToken(a.token)}
+                  className="shrink-0 text-emerald-600 hover:underline font-mono"
+                >
+                  Manage
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[11px] text-slate-500">
+            No tokens allow-listed yet. Add one below.
+          </p>
+        )}
+      </div>
+
       <input
         className="input"
         value={token}
@@ -414,13 +456,13 @@ function Tokens({ factory }: { factory: Address }) {
               label="Allow token"
               primary
               disabled={allowed}
-              onConfirmed={() => void refetch()}
+              onConfirmed={refreshAll}
             />
             <TxButton
               request={buildSetAllowedTokenRequest(factory, t, false)}
               label="Revoke"
               disabled={!allowed}
-              onConfirmed={() => void refetch()}
+              onConfirmed={refreshAll}
             />
           </div>
         </div>

@@ -348,3 +348,54 @@ export function useCampaign(id: string) {
     },
   });
 }
+
+const ALLOWED_TOKEN_SET = getAbiItem({
+  abi: dropFactoryAbi,
+  name: "AllowedTokenSet",
+});
+
+export type AllowedToken = { token: Address; symbol: string };
+
+/**
+ * Current allow-list, reconstructed from `AllowedTokenSet` logs (last event per
+ * token wins). Lets the admin see what's curated instead of probing addresses
+ * one at a time. Symbols are resolved for display.
+ */
+export function useAllowedTokens() {
+  const client = usePublicClient({ chainId: fork.id });
+  const { data: dep } = useDeployment();
+
+  return useQuery({
+    queryKey: ["allowedTokens", dep?.dropFactory],
+    enabled: !!client && !!dep?.dropFactory,
+    staleTime: 15_000,
+    queryFn: async (): Promise<AllowedToken[]> => {
+      if (!client || !dep?.dropFactory) return [];
+      const latest = await client.getBlockNumber();
+      const forkBlock = await getForkBlock(client);
+      let fromBlock = forkBlock ?? (latest > LOOKBACK ? latest - LOOKBACK : 0n);
+      if (fromBlock > latest) fromBlock = latest;
+
+      const logs = await client.getLogs({
+        address: dep.dropFactory,
+        event: ALLOWED_TOKEN_SET,
+        fromBlock,
+        toBlock: latest,
+      });
+      // Logs are block-ordered, so the last entry per token is its current state.
+      const state = new Map<string, boolean>();
+      for (const l of logs) {
+        const a = l.args as { token?: Address; allowed?: boolean };
+        if (a.token) state.set(a.token.toLowerCase(), !!a.allowed);
+      }
+      const allowed = [...state.entries()]
+        .filter(([, v]) => v)
+        .map(([t]) => t as Address);
+      const meta = await loadTokenMeta(client, allowed);
+      return allowed.map((token) => ({
+        token,
+        symbol: meta.get(token.toLowerCase())?.symbol ?? "TOKEN",
+      }));
+    },
+  });
+}
