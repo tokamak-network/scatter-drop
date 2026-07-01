@@ -1,6 +1,6 @@
 "use client";
 
-import { useReadContract } from "wagmi";
+import { useChainId, useReadContract } from "wagmi";
 import type { Address } from "viem";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -9,14 +9,12 @@ import {
   merkleDropAbi,
   type ScatterDropDeployment,
 } from "@tokamak-network/scatter-drop-sdk";
-import { fork } from "./wagmi";
-import { fetchDeployment } from "./deployment";
+import { resolveDeployment } from "./deployment";
 
 /**
  * Human-readable reason the deployment is not usable, or null when it is.
- * Surfaces the loading state, a missing deployment, and (critically) a
- * deployment whose chainId does not match the configured fork chain — which
- * would otherwise make every read silently return nothing.
+ * The deployment is now resolved for the active chain from the network registry,
+ * so a chainId mismatch can't happen here (reads target the same chain).
  */
 export function deploymentIssue(
   dep: ScatterDropDeployment | null | undefined,
@@ -24,9 +22,7 @@ export function deploymentIssue(
 ): string | null {
   if (loading) return "Loading deployment…";
   if (!dep)
-    return "No deployment configured. Start the dev fork and provide deployment.json (see apps/web/.env.local.example).";
-  if (dep.chainId !== fork.id)
-    return `Deployment chainId (${dep.chainId}) does not match the configured fork chain (${fork.id}). Set NEXT_PUBLIC_FORK_CHAIN_ID to match.`;
+    return "No deployment configured for this network. Ask the platform admin to register it (Admin → Networks), or start the dev fork.";
   return null;
 }
 
@@ -52,18 +48,19 @@ export function useIsAdmin(address: Address | undefined): boolean {
     address: dep?.dropFactory,
     abi: ownableAbi,
     functionName: "owner",
-    chainId: fork.id,
+    chainId: useChainId(),
     query: { enabled: !!dep?.dropFactory },
   });
   const admin = owner ?? dep?.deployer;
   return !!address && !!admin && admin.toLowerCase() === address.toLowerCase();
 }
 
-/** Active deployment (DropFactory + fee token + treasury), runtime-loaded. */
+/** Active deployment for the connected chain, resolved from the network registry. */
 export function useDeployment() {
+  const chainId = useChainId();
   return useQuery({
-    queryKey: ["deployment"],
-    queryFn: fetchDeployment,
+    queryKey: ["deployment", chainId],
+    queryFn: () => resolveDeployment(chainId),
     staleTime: 60_000,
   });
 }
@@ -98,7 +95,7 @@ export function useComputedFee(
     abi: dropFactoryAbi,
     functionName: "feeOf",
     args: token ? [token, totalAmount] : undefined,
-    chainId: fork.id,
+    chainId: useChainId(),
     query: { enabled: !!factory && !!token && totalAmount > 0n },
   });
 }
@@ -113,7 +110,7 @@ export function useFeeModeOf(
     abi: feeConfigAbi,
     functionName: "feeModeOf",
     args: token ? [token] : undefined,
-    chainId: fork.id,
+    chainId: useChainId(),
     query: { enabled: !!factory && !!token },
   });
 }
@@ -128,7 +125,7 @@ export function useFeeBpsOf(
     abi: feeConfigAbi,
     functionName: "feeBpsOf",
     args: token ? [token] : undefined,
-    chainId: fork.id,
+    chainId: useChainId(),
     query: { enabled: !!factory && !!token },
   });
 }
@@ -143,7 +140,7 @@ export function useFlatFee(
     abi: dropFactoryAbi,
     functionName: "flatFee",
     args: token ? [token] : undefined,
-    chainId: fork.id,
+    chainId: useChainId(),
     query: { enabled: !!factory && !!token },
   });
 }
@@ -154,7 +151,7 @@ export function useDefaultFeeMode(factory: Address | undefined) {
     address: factory,
     abi: dropFactoryAbi,
     functionName: "defaultFeeMode",
-    chainId: fork.id,
+    chainId: useChainId(),
     query: { enabled: !!factory },
   });
 }
@@ -165,7 +162,7 @@ export function useDefaultFeeBps(factory: Address | undefined) {
     address: factory,
     abi: dropFactoryAbi,
     functionName: "defaultFeeBps",
-    chainId: fork.id,
+    chainId: useChainId(),
     query: { enabled: !!factory },
   });
 }
@@ -186,7 +183,7 @@ export function useErc20Decimals(token: Address | undefined) {
     address: token,
     abi: erc20DecimalsAbi,
     functionName: "decimals",
-    chainId: fork.id,
+    chainId: useChainId(),
     query: { enabled: !!token },
   });
 }
@@ -201,7 +198,7 @@ export function useTokenTier(
     abi: dropFactoryAbi,
     functionName: "tokenTier",
     args: token ? [token] : undefined,
-    chainId: fork.id,
+    chainId: useChainId(),
     query: { enabled: !!factory && !!token },
   });
 }
@@ -216,7 +213,7 @@ export function useCollectedFees(
     abi: dropFactoryAbi,
     functionName: "collectedFees",
     args: token ? [token] : undefined,
-    chainId: fork.id,
+    chainId: useChainId(),
     query: { enabled: !!factory && !!token },
   });
 }
@@ -231,7 +228,7 @@ export function useVerifiedUntil(
     abi: identityRegistryAbi,
     functionName: "verifiedUntil",
     args: account ? [account] : undefined,
-    chainId: fork.id,
+    chainId: useChainId(),
     query: { enabled: !!registry && !!account },
   });
 }
@@ -243,7 +240,7 @@ export function useIsClaimed(drop: Address | undefined, index: number | undefine
     abi: merkleDropAbi,
     functionName: "isClaimed",
     args: index === undefined ? undefined : [BigInt(index)],
-    chainId: fork.id,
+    chainId: useChainId(),
     query: { enabled: !!drop && index !== undefined },
   });
 }

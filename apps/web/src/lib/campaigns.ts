@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { usePublicClient } from "wagmi";
+import { useChainId, usePublicClient } from "wagmi";
 import {
   erc20Abi,
   formatUnits,
@@ -16,7 +16,6 @@ import {
   getZkX509,
   NATIVE_ETH,
 } from "@tokamak-network/scatter-drop-sdk";
-import { fork } from "./wagmi";
 import { useDeployment } from "./contracts";
 import type { WebDeployment } from "./deployment";
 import {
@@ -243,10 +242,11 @@ export type CampaignStats = {
  * (Merkle leaf total) is off-chain, so only claims-so-far are shown.
  */
 export function useCampaignStats(campaign?: Campaign) {
-  const client = usePublicClient({ chainId: fork.id });
+  const chainId = useChainId();
+  const client = usePublicClient({ chainId });
 
   return useQuery({
-    queryKey: ["campaignStats", campaign?.drop],
+    queryKey: ["campaignStats", chainId, campaign?.drop],
     enabled: !!client && !!campaign?.drop && campaign.totalRaw !== undefined,
     staleTime: 15_000,
     queryFn: async (): Promise<CampaignStats | null> => {
@@ -294,11 +294,12 @@ export function useCampaignStats(campaign?: Campaign) {
  * renders without a running fork. `live` reports which source was used.
  */
 export function useCampaigns() {
-  const client = usePublicClient({ chainId: fork.id });
+  const chainId = useChainId();
+  const client = usePublicClient({ chainId });
   const { data: dep } = useDeployment();
 
   return useQuery({
-    queryKey: ["campaigns", dep?.dropFactory],
+    queryKey: ["campaigns", chainId, dep?.dropFactory],
     staleTime: 15_000,
     // Wait until the deployment resolves (null or object) to avoid a flash of
     // stub content before the live query key is known.
@@ -321,11 +322,12 @@ export function useCampaigns() {
 
 /** Campaigns created by `address` (DropCreated logs filtered by operator). */
 export function useManagedCampaigns(address: Address | undefined) {
-  const client = usePublicClient({ chainId: fork.id });
+  const chainId = useChainId();
+  const client = usePublicClient({ chainId });
   const { data: dep } = useDeployment();
 
   return useQuery({
-    queryKey: ["managedCampaigns", dep?.dropFactory, address],
+    queryKey: ["managedCampaigns", chainId, dep?.dropFactory, address],
     enabled: dep !== undefined && !!address && !!client,
     staleTime: 15_000,
     queryFn: async (): Promise<Campaign[]> => {
@@ -345,11 +347,12 @@ export function useManagedCampaigns(address: Address | undefined) {
  * fork).
  */
 export function useCampaign(id: string) {
-  const client = usePublicClient({ chainId: fork.id });
+  const chainId = useChainId();
+  const client = usePublicClient({ chainId });
   const { data: dep } = useDeployment();
 
   return useQuery({
-    queryKey: ["campaign", id, dep?.dropFactory],
+    queryKey: ["campaign", chainId, id, dep?.dropFactory],
     staleTime: 15_000,
     enabled: dep !== undefined && !!client,
     queryFn: async (): Promise<Campaign | undefined> => {
@@ -377,11 +380,12 @@ export type AllowedToken = { token: Address; symbol: string };
  * one at a time. Symbols are resolved for display.
  */
 export function useAllowedTokens() {
-  const client = usePublicClient({ chainId: fork.id });
+  const chainId = useChainId();
+  const client = usePublicClient({ chainId });
   const { data: dep } = useDeployment();
 
   return useQuery({
-    queryKey: ["allowedTokens", dep?.dropFactory],
+    queryKey: ["allowedTokens", chainId, dep?.dropFactory],
     enabled: !!client && !!dep?.dropFactory,
     staleTime: 15_000,
     queryFn: async (): Promise<AllowedToken[]> => {

@@ -3,6 +3,7 @@ import {
   parseDeployment,
   type ScatterDropDeployment,
 } from "@tokamak-network/scatter-drop-sdk";
+import type { PublicNetwork } from "./networkTypes";
 
 /**
  * Deployment plus the optional deploy block (for log scanning) and deployer
@@ -86,4 +87,55 @@ export async function fetchDeployment(): Promise<WebDeployment | null> {
   } catch {
     return null;
   }
+}
+
+/** Map a registered network to a WebDeployment (reuses parseDeployment validation). */
+function networkToDeployment(net: PublicNetwork): WebDeployment | null {
+  try {
+    const base = parseDeployment({
+      chainId: net.chainId,
+      dropFactory: net.dropFactory,
+      feeToken: net.feeToken ?? undefined,
+      treasury: net.treasury ?? undefined,
+    });
+    return {
+      ...base,
+      deployBlock: net.deployBlock != null ? BigInt(net.deployBlock) : undefined,
+      deployer: undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the active deployment for `chainId` from the network registry
+ * (`/api/networks`), falling back to the first registered network, then to the
+ * env / deployment.json when the registry is empty or unavailable.
+ */
+export async function resolveDeployment(chainId?: number): Promise<WebDeployment | null> {
+  try {
+    const res = await fetch("/api/networks", { cache: "no-store" });
+    if (res.ok) {
+      const { networks } = (await res.json()) as { networks: PublicNetwork[] };
+      if (networks.length) {
+        // With a connected chain, use ONLY its network — never a different chain's
+        // addresses (reads/writes run on the active chainId, so a mismatch would
+        // hit the wrong contracts). Unconnected → the first registered network.
+        const net = chainId ? networks.find((n) => n.chainId === chainId) : networks[0];
+        if (net) {
+          const dep = networkToDeployment(net);
+          if (dep) return dep;
+        }
+        // chainId given but not registered → null so the UI prompts to register it.
+        if (chainId !== undefined) return null;
+      }
+    }
+  } catch {
+    /* fall through to env */
+  }
+  // Env / deployment.json fallback — only if it matches the active chain.
+  const fallback = await fetchDeployment();
+  if (fallback && (chainId === undefined || fallback.chainId === chainId)) return fallback;
+  return null;
 }

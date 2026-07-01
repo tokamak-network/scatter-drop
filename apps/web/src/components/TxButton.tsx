@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useSendTransaction, useWaitForTransactionReceipt } from "wagmi";
+import {
+  useChainId,
+  useSendTransaction,
+  useWaitForTransactionReceipt,
+} from "wagmi";
 import type { Address, Hex } from "viem";
-import { fork } from "@/lib/wagmi";
 
 /**
  * Sends a prepared SDK calldata request ({to,data}) as a real transaction and
@@ -25,6 +28,7 @@ export function TxButton({
 }) {
   const { data: hash, sendTransaction, isPending, error } = useSendTransaction();
   const { isLoading: mining, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const chainId = useChainId();
 
   // Keep the latest callback in a ref so the success effect depends only on
   // `isSuccess` — an inline `onConfirmed` (new identity each render) would
@@ -53,15 +57,12 @@ export function TxButton({
         disabled={disabled || busy || !request}
         onClick={() =>
           request &&
-          // Target the configured fork chain (fork.id, default 31337) for the
-          // write, matching the pinned reads. The fork uses a chainId distinct
-          // from real Sepolia (M1), so a wallet on a public chain can't receive
-          // this tx.
+          // Write on the wallet's active chain (matching the chain-aware reads).
           sendTransaction({
             to: request.to,
             data: request.data,
             value: request.value,
-            chainId: fork.id,
+            chainId,
           })
         }
       >
