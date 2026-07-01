@@ -16,6 +16,11 @@ export const dynamic = "force-dynamic";
 const store = new Map<string, Record<string, unknown>>();
 
 const ROOT_RE = /^0x[0-9a-f]{64}$/;
+const ADDR_RE = /^0x[0-9a-f]{40}$/;
+// Bound memory: this is an untrusted, unauthenticated dev store (a stand-in for
+// IPFS). Cap claims per root and total roots to limit DoS surface.
+const MAX_CLAIMS = 50_000;
+const MAX_ROOTS = 100;
 
 export async function POST(req: NextRequest) {
   let body: unknown;
@@ -29,13 +34,27 @@ export async function POST(req: NextRequest) {
   if (!root || !ROOT_RE.test(root)) {
     return NextResponse.json({ error: "Invalid merkleRoot" }, { status: 400 });
   }
-  if (typeof b.claims !== "object" || b.claims === null) {
+  // Reject arrays (typeof [] === "object") and non-objects.
+  if (typeof b.claims !== "object" || b.claims === null || Array.isArray(b.claims)) {
     return NextResponse.json({ error: "Invalid claims" }, { status: 400 });
   }
-  // Normalize address keys to lowercase so lookups are case-insensitive.
-  const norm: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(b.claims as Record<string, unknown>)) {
-    norm[k.toLowerCase()] = v;
+  // Proofs are immutable (tied to the root) — don't let anyone overwrite them.
+  if (store.has(root)) {
+    return NextResponse.json({ error: "Proofs already published for this root" }, { status: 409 });
+  }
+  if (store.size >= MAX_ROOTS) {
+    return NextResponse.json({ error: "Proofs store is full" }, { status: 507 });
+  }
+  const entries = Object.entries(b.claims as Record<string, unknown>);
+  if (entries.length > MAX_CLAIMS) {
+    return NextResponse.json({ error: `Too many claims (max ${MAX_CLAIMS})` }, { status: 400 });
+  }
+  // Null-prototype object + address-only keys: blocks prototype pollution
+  // (__proto__/constructor aren't valid addresses) and junk keys.
+  const norm: Record<string, unknown> = Object.create(null);
+  for (const [k, v] of entries) {
+    const key = k.toLowerCase();
+    if (ADDR_RE.test(key)) norm[key] = v;
   }
   store.set(root, norm);
   return NextResponse.json({ ok: true, count: Object.keys(norm).length });
