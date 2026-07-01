@@ -119,13 +119,23 @@ export async function resolveDeployment(chainId?: number): Promise<WebDeployment
     if (res.ok) {
       const { networks } = (await res.json()) as { networks: PublicNetwork[] };
       if (networks.length) {
-        const net = networks.find((n) => n.chainId === chainId) ?? networks[0];
-        const dep = networkToDeployment(net);
-        if (dep) return dep;
+        // With a connected chain, use ONLY its network — never a different chain's
+        // addresses (reads/writes run on the active chainId, so a mismatch would
+        // hit the wrong contracts). Unconnected → the first registered network.
+        const net = chainId ? networks.find((n) => n.chainId === chainId) : networks[0];
+        if (net) {
+          const dep = networkToDeployment(net);
+          if (dep) return dep;
+        }
+        // chainId given but not registered → null so the UI prompts to register it.
+        if (chainId !== undefined) return null;
       }
     }
   } catch {
     /* fall through to env */
   }
-  return fetchDeployment();
+  // Env / deployment.json fallback — only if it matches the active chain.
+  const fallback = await fetchDeployment();
+  if (fallback && (chainId === undefined || fallback.chainId === chainId)) return fallback;
+  return null;
 }
