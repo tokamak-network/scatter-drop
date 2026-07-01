@@ -52,6 +52,7 @@ export {
   buildSetAllowedTokenRequest,
   FeeMode,
   NATIVE_FEE_TOKEN,
+  NATIVE_ETH,
   type TxRequest,
   type ClaimRequest,
   type CreateDropParams,

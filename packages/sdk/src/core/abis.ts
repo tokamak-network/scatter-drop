@@ -54,7 +54,7 @@ export const dropFactoryAbi = [
   {
     type: "function",
     name: "createDrop",
-    stateMutability: "nonpayable",
+    stateMutability: "payable",
     inputs: [
       { name: "airdropType", type: "uint8" },
       { name: "airdropToken", type: "address" },

@@ -20,6 +20,13 @@ export interface TxRequest {
 export const NATIVE_FEE_TOKEN: Address = "0x0000000000000000000000000000000000000000";
 
 /**
+ * Native-ETH sentinel for the airdrop token — pass as `airdropToken` to
+ * distribute ether. Matches `DropFactory.NATIVE` / `MerkleDrop.NATIVE` on-chain.
+ * Native drops are funded via `msg.value` (totalAmount + fee), not `approve`.
+ */
+export const NATIVE_ETH: Address = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
+
+/**
  * @deprecated use {@link TxRequest}. Kept as an interface (not a type alias)
  * for back-compat with consumers that extend/implement it.
  */
@@ -61,24 +68,32 @@ export interface CreateDropParams {
    * `address(0)` for an open campaign (no identity check at claim).
    */
   identityRegistry: Address;
+  /**
+   * Creation fee (in the airdrop token / wei). Required for native ETH drops
+   * (`airdropToken === NATIVE_ETH`), where the request sends
+   * `msg.value = totalAmount + fee`. Ignored for ERC-20 drops (fee is pulled via
+   * `approve`). Compute off-chain via `feeOf(token, totalAmount)` / {@link computeFee}.
+   */
+  fee?: bigint;
 }
 
 /**
- * Build a `DropFactory.createDrop(...)` request (non-payable, 7-arg).
+ * Build a `DropFactory.createDrop(...)` request (payable, 7-arg).
  *
- * The fee is charged in the airdrop token, on top of `totalAmount`: before this,
- * `approve` the factory for `totalAmount + fee` (see {@link buildApproveRequest};
- * compute `fee` off-chain via `feeOf(token, totalAmount)` / {@link computeFee}).
- * `identityRegistry` may be `address(0)` for an open (no-gate) campaign.
+ * ERC-20 drops: the fee is charged in the airdrop token on top of `totalAmount`;
+ * `approve` the factory for `totalAmount + fee` first (see {@link buildApproveRequest}).
+ * Native ETH drops (`airdropToken === NATIVE_ETH`): no approve — the request sends
+ * `msg.value = totalAmount + fee`, so pass `fee` in params. `identityRegistry` may be
+ * `address(0)` for an open (no-gate) campaign.
  */
 export function buildCreateDropRequest(factory: Address, params: CreateDropParams): TxRequest {
-  // The airdrop token is escrowed via ERC-20 transferFrom (approve-first), not
-  // msg.value — a native airdrop token would be silently underfunded.
   const airdropToken = getAddress(params.airdropToken);
-  if (airdropToken === NATIVE_FEE_TOKEN) {
-    throw new Error("airdropToken cannot be the native token (address(0)); use an ERC-20");
+  const isNative = airdropToken === NATIVE_ETH;
+  // address(0) is never a valid airdrop token; native ETH uses the NATIVE_ETH sentinel.
+  if (!isNative && airdropToken === NATIVE_FEE_TOKEN) {
+    throw new Error("airdropToken cannot be address(0); use an ERC-20 or NATIVE_ETH");
   }
-  return {
+  const req: TxRequest = {
     to: getAddress(factory),
     data: encodeFunctionData({
       abi: dropFactoryAbi,
@@ -94,6 +109,9 @@ export function buildCreateDropRequest(factory: Address, params: CreateDropParam
       ],
     }),
   };
+  // Native drops are funded by msg.value (totalAmount + fee), not approve/transferFrom.
+  if (isNative) req.value = params.totalAmount + (params.fee ?? 0n);
+  return req;
 }
 
 /** Build `DropFactory.setDefaultFeeMode(mode)` — admin sets the global default mode. */
