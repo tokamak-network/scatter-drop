@@ -2,11 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
+import {
+  useAccount,
+  useChains,
+  useConnect,
+  useDisconnect,
+  useSwitchChain,
+} from "wagmi";
 import { Shield, User } from "lucide-react";
 import { useIsAdmin } from "@/lib/contracts";
 import { useMounted } from "@/lib/useMounted";
-import { fork } from "@/lib/wagmi";
 
 const LINKS = [
   { href: "/campaigns", label: "Explore", match: ["/campaigns", "/c"] },
@@ -30,11 +35,17 @@ export function Nav() {
   const { connect, connectors, isPending } = useConnect();
   const { disconnect } = useDisconnect();
   const { switchChain } = useSwitchChain();
+  const chains = useChains();
   const isAdminWallet = useIsAdmin(address);
   const isAdmin = mounted && isAdminWallet;
 
   const connected = mounted && isConnected && address;
   const injector = connectors[0];
+
+  // A connected wallet is "on a supported network" when its chain is registered.
+  const activeChain = chains.find((c) => c.id === chainId);
+  const onSupported = !connected || activeChain !== undefined;
+  const chainLabel = activeChain?.name ?? chains[0]?.name ?? "network";
 
   return (
     <>
@@ -81,23 +92,25 @@ export function Nav() {
 
           <div className="flex items-center gap-3 font-mono text-xs">
             {/* Network chip — left of the wallet button, reflects the connected chain */}
-            {!connected || chainId === fork.id ? (
+            {onSupported ? (
               <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-400">
                 <span
                   className={`w-2 h-2 rounded-full ${connected ? "bg-emerald-400 animate-pulse" : "bg-slate-500"}`}
                 />
                 {connected ? "Connected: " : "Target chain: "}
-                <strong className="text-slate-200">{fork.name}</strong>
+                <strong className="text-slate-200">{chainLabel}</strong>
               </span>
             ) : (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500 px-2.5 py-1 text-[11px] text-amber-950">
-                Wrong network.
-                <button
-                  onClick={() => switchChain({ chainId: fork.id })}
-                  className="underline font-bold cursor-pointer"
-                >
-                  Switch
-                </button>
+                Unsupported network.
+                {chains[0] && (
+                  <button
+                    onClick={() => switchChain({ chainId: chains[0]!.id })}
+                    className="underline font-bold cursor-pointer"
+                  >
+                    Switch to {chains[0].name}
+                  </button>
+                )}
               </span>
             )}
             {connected ? (

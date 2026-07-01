@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { usePublicClient } from "wagmi";
+import { useChainId, usePublicClient } from "wagmi";
 import {
   erc20Abi,
   formatUnits,
@@ -16,7 +16,6 @@ import {
   getZkX509,
   NATIVE_ETH,
 } from "@tokamak-network/scatter-drop-sdk";
-import { fork } from "./wagmi";
 import { useDeployment } from "./contracts";
 import type { WebDeployment } from "./deployment";
 import {
@@ -243,7 +242,7 @@ export type CampaignStats = {
  * (Merkle leaf total) is off-chain, so only claims-so-far are shown.
  */
 export function useCampaignStats(campaign?: Campaign) {
-  const client = usePublicClient({ chainId: fork.id });
+  const client = usePublicClient({ chainId: useChainId() });
 
   return useQuery({
     queryKey: ["campaignStats", campaign?.drop],
@@ -294,7 +293,7 @@ export function useCampaignStats(campaign?: Campaign) {
  * renders without a running fork. `live` reports which source was used.
  */
 export function useCampaigns() {
-  const client = usePublicClient({ chainId: fork.id });
+  const client = usePublicClient({ chainId: useChainId() });
   const { data: dep } = useDeployment();
 
   return useQuery({
@@ -321,7 +320,7 @@ export function useCampaigns() {
 
 /** Campaigns created by `address` (DropCreated logs filtered by operator). */
 export function useManagedCampaigns(address: Address | undefined) {
-  const client = usePublicClient({ chainId: fork.id });
+  const client = usePublicClient({ chainId: useChainId() });
   const { data: dep } = useDeployment();
 
   return useQuery({
@@ -345,7 +344,7 @@ export function useManagedCampaigns(address: Address | undefined) {
  * fork).
  */
 export function useCampaign(id: string) {
-  const client = usePublicClient({ chainId: fork.id });
+  const client = usePublicClient({ chainId: useChainId() });
   const { data: dep } = useDeployment();
 
   return useQuery({
@@ -377,7 +376,7 @@ export type AllowedToken = { token: Address; symbol: string };
  * one at a time. Symbols are resolved for display.
  */
 export function useAllowedTokens() {
-  const client = usePublicClient({ chainId: fork.id });
+  const client = usePublicClient({ chainId: useChainId() });
   const { data: dep } = useDeployment();
 
   return useQuery({
