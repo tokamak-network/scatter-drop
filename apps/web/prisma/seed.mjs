@@ -1,20 +1,42 @@
 import { PrismaClient } from "@prisma/client";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
 const prisma = new PrismaClient();
-const OWNER = "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266"; // anvil #0 (dev DropFactory owner)
+const OWNER = "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266"; // anvil #0 (dev owner)
+
+// Read the current fork deployment (dev-fork.sh writes this) so re-seeding after
+// a redeploy refreshes the factory/token addresses in the registry.
+const here = dirname(fileURLToPath(import.meta.url));
+let dep = {};
+try {
+  dep = JSON.parse(readFileSync(join(here, "../../../contracts/deployments/31337.json"), "utf8"));
+} catch {
+  console.warn("no contracts/deployments/31337.json — run scripts/dev-fork.sh first");
+}
+
+const net = {
+  name: "Local Fork",
+  rpcUrl: "http://127.0.0.1:8545",
+  publicRpcUrl: "http://127.0.0.1:8545",
+  nativeSymbol: "ETH",
+  dropFactory: dep.dropFactory ?? "0x0000000000000000000000000000000000000000",
+  feeToken: dep.feeToken ?? null,
+  treasury: dep.treasury ?? null,
+  operatorRegistry: dep.operatorRegistry ?? null,
+  zkFactory: dep.zkFactory ?? null,
+  enabled: true,
+};
+
 await prisma.platformAdmin.upsert({
   where: { address: OWNER }, update: {},
   create: { address: OWNER, label: "anvil #0 (dev owner)" },
 });
 await prisma.network.upsert({
-  where: { chainId: 31337 }, update: {},
-  create: {
-    chainId: 31337, name: "Local Fork",
-    rpcUrl: "http://127.0.0.1:8545", publicRpcUrl: "http://127.0.0.1:8545",
-    nativeSymbol: "ETH",
-    dropFactory: "0x71E8CDe3479b19F772B9156528b1172559ff7D2B",
-    feeToken: "0x3AEcD130527D203F58C338B1b2dC89da2447bA9a",
-    enabled: true,
-  },
+  where: { chainId: 31337 },
+  update: net, // refresh addresses on redeploy
+  create: { chainId: 31337, ...net },
 });
-console.log("seeded: 1 admin + 1 network (31337)");
+console.log("seeded: admin + network 31337 → factory", net.dropFactory);
 await prisma.$disconnect();
