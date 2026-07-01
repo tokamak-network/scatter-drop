@@ -1,6 +1,7 @@
 import { createConfig, http } from "wagmi";
 import { injected } from "wagmi/connectors";
-import { defineChain } from "viem";
+import { defineChain, type Chain } from "viem";
+import type { PublicNetwork } from "@/lib/networkTypes";
 
 /**
  * Local dev fork chain. `dev-fork.sh` runs anvil forked from Sepolia with
@@ -52,6 +53,37 @@ export const config = createConfig({
   },
   ssr: true,
 });
+
+/** Turn a registered network into a viem chain. */
+function toChain(n: PublicNetwork): Chain {
+  return defineChain({
+    id: n.chainId,
+    name: n.name,
+    nativeCurrency: { name: n.nativeSymbol, symbol: n.nativeSymbol, decimals: 18 },
+    rpcUrls: { default: { http: [n.publicRpcUrl || FORK_RPC_URL] } },
+    testnet: true,
+  });
+}
+
+/**
+ * Build a wagmi config from the admin network registry. Falls back to the env
+ * `fork` chain when the registry is empty (DB unavailable / no networks yet), so
+ * the app keeps working single-chain.
+ */
+export function buildConfig(networks: PublicNetwork[]): typeof config {
+  const chains = (networks.length ? networks.map(toChain) : [fork]) as [Chain, ...Chain[]];
+  const transports = Object.fromEntries(
+    chains.map((c) => [c.id, http(c.rpcUrls.default.http[0])]),
+  );
+  // Structurally a Config; cast to the registered config type so WagmiProvider +
+  // the typed hooks accept it (the registry can hold any number of chains).
+  return createConfig({
+    chains,
+    connectors: [injected()],
+    transports,
+    ssr: true,
+  }) as unknown as typeof config;
+}
 
 declare module "wagmi" {
   interface Register {
