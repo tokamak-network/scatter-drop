@@ -41,10 +41,9 @@ const MAX_FEE_BPS = 1000; // 10% — mirrors the contract cap
 const isBps = (s: string) =>
   /^\d+$/.test(s) && Number(s) >= 0 && Number(s) <= MAX_FEE_BPS;
 
-// Common established assets. Native ETH uses the on-chain NATIVE sentinel; the
-// stablecoins are their canonical Sepolia deployments (verified on-chain).
+// Common established ERC-20s on the Sepolia fork (verified on-chain). Native ETH
+// has its own dedicated enable toggle (it isn't an ERC-20 address to paste).
 const TOKEN_PRESETS = [
-  { label: "Ξ ETH (native)", address: NATIVE_ETH },
   { label: "USDC", address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" },
   { label: "USDT", address: "0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0" },
   { label: "DAI", address: "0xFF34B3d4Aee8ddCd6F9AFFFB6Fe49bD371b8a357" },
@@ -366,6 +365,50 @@ function useCurationNote(token: string) {
   return [note, save] as const;
 }
 
+function NativeEthToggle({ factory }: { factory: Address }) {
+  const { data: tier, refetch } = useTokenTier(factory, NATIVE_ETH);
+  const { refetch: refetchList } = useAllowedTokens();
+  const enabled = tier !== undefined && Number(tier) === TokenTier.ALLOWED;
+  const refresh = () => {
+    void refetch();
+    void refetchList();
+  };
+
+  return (
+    <Card title="Native ETH">
+      <p className="text-[11px] text-slate-500">
+        Let operators airdrop native ETH (funded from their wallet, no wrapper).
+        When enabled, ETH becomes a selectable asset in the campaign wizard.
+      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-xs text-slate-400">Status:</span>
+        <span
+          className={`font-mono font-bold px-2 py-0.5 rounded border text-xs ${
+            enabled
+              ? "bg-emerald-950/40 text-emerald-600 border-emerald-900/40"
+              : "bg-slate-800 text-slate-400 border-slate-700/50"
+          }`}
+        >
+          {tier === undefined ? "…" : enabled ? "ENABLED" : "DISABLED"}
+        </span>
+        <TxButton
+          request={buildSetAllowedTokenRequest(factory, NATIVE_ETH, true)}
+          label="Enable ETH"
+          primary
+          disabled={enabled}
+          onConfirmed={refresh}
+        />
+        <TxButton
+          request={buildSetAllowedTokenRequest(factory, NATIVE_ETH, false)}
+          label="Disable"
+          disabled={!enabled}
+          onConfirmed={refresh}
+        />
+      </div>
+    </Card>
+  );
+}
+
 function Tokens({ factory }: { factory: Address }) {
   const [token, setToken] = useState("");
   const valid = isAddress(token);
@@ -382,7 +425,9 @@ function Tokens({ factory }: { factory: Address }) {
   };
 
   return (
-    <Card title="Allowed token curation (admin)">
+    <div className="space-y-4">
+      <NativeEthToggle factory={factory} />
+      <Card title="Allowed ERC-20 curation (admin)">
       <p className="text-[11px] text-slate-500">
         Curate which established assets (e.g. WETH, USDC, USDT) operators may use.
         The platform is neutral infrastructure — this is a suitability decision,
@@ -499,7 +544,8 @@ function Tokens({ factory }: { factory: Address }) {
           </div>
         </div>
       )}
-    </Card>
+      </Card>
+    </div>
   );
 }
 
