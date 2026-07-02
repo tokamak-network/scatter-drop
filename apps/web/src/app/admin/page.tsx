@@ -351,13 +351,13 @@ function TokenFeeConfig({ factory }: { factory: Address }) {
             <TxButton
               request={buildSetApproveAndCallSupportRequest(factory, t, true)}
               label="Enable one-tx"
-              disabled={supportsAac === true}
+              disabled={supportsAac === undefined || supportsAac === true}
               onConfirmed={() => void refAac()}
             />
             <TxButton
               request={buildSetApproveAndCallSupportRequest(factory, t, false)}
               label="Disable one-tx"
-              disabled={supportsAac === false}
+              disabled={supportsAac === undefined || supportsAac === false}
               onConfirmed={() => void refAac()}
             />
           </div>
