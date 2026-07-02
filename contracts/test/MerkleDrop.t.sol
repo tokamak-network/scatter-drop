@@ -65,7 +65,7 @@ contract MerkleDropTest is MerkleTestBase {
 
         token = new MockERC20("Drop", "DRP", 18);
         registry = new MockIdentityRegistry();
-        drop = new MerkleDrop(
+        drop = _newDrop(
             address(token), root, startTime, deadline, IIdentityRegistry(address(registry)), OPERATOR
         );
 
@@ -90,16 +90,13 @@ contract MerkleDropTest is MerkleTestBase {
         assertEq(drop.operator(), OPERATOR);
     }
 
-    function test_Constructor_RevertZeroToken() public {
-        vm.expectRevert(MerkleDrop.ZeroAddress.selector);
-        new MerkleDrop(
-            address(0), root, startTime, deadline, IIdentityRegistry(address(registry)), OPERATOR
-        );
-    }
+    // Config validation (zero token/operator, non-contract token, deadline,
+    // window) now lives in DropFactory.createDrop — the sole clone creator — so
+    // the drop-level construction-revert tests moved there (see DropFactory.t).
 
     function test_Constructor_ZeroRegistryAllowed() public {
         // W24: a zero identityRegistry is valid — it means "open claim" (no gate).
-        MerkleDrop open = new MerkleDrop(
+        MerkleDrop open = _newDrop(
             address(token), root, startTime, deadline, IIdentityRegistry(address(0)), OPERATOR
         );
         assertEq(address(open.identityRegistry()), address(0));
@@ -108,7 +105,7 @@ contract MerkleDropTest is MerkleTestBase {
     function test_Claim_OpenGate_NoIdentityRequired() public {
         // W24: with identityRegistry == 0, an unverified wallet can claim
         // (merkle proof + self-claim still enforced).
-        MerkleDrop open = new MerkleDrop(
+        MerkleDrop open = _newDrop(
             address(token), root, startTime, deadline, IIdentityRegistry(address(0)), OPERATOR
         );
         token.mint(address(open), TOTAL);
@@ -120,46 +117,6 @@ contract MerkleDropTest is MerkleTestBase {
         assertTrue(open.isClaimed(0));
     }
 
-    function test_Constructor_RevertZeroOperator() public {
-        vm.expectRevert(MerkleDrop.ZeroAddress.selector);
-        new MerkleDrop(
-            address(token), root, startTime, deadline, IIdentityRegistry(address(registry)), address(0)
-        );
-    }
-
-    function test_Constructor_RevertTokenNotContract() public {
-        // A non-zero address with no code is rejected (solmate would otherwise
-        // silently treat transfers to it as succeeding).
-        vm.expectRevert(MerkleDrop.NotAContract.selector);
-        new MerkleDrop(
-            address(0xDEAD), root, startTime, deadline, IIdentityRegistry(address(registry)), OPERATOR
-        );
-    }
-
-    function test_Constructor_RevertDeadlineInPast() public {
-        vm.expectRevert(MerkleDrop.DeadlineInPast.selector);
-        new MerkleDrop(
-            address(token),
-            root,
-            startTime,
-            uint64(block.timestamp), // deadline == now → not in the future
-            IIdentityRegistry(address(registry)),
-            OPERATOR
-        );
-    }
-
-    function test_Constructor_RevertInvalidWindow() public {
-        // deadline must be strictly after startTime (non-empty claim window).
-        vm.expectRevert(MerkleDrop.InvalidWindow.selector);
-        new MerkleDrop(
-            address(token),
-            root,
-            deadline, // startTime == deadline
-            deadline,
-            IIdentityRegistry(address(registry)),
-            OPERATOR
-        );
-    }
 
     /*//////////////////////////////////////////////////////////////
                                  CLAIM
@@ -203,7 +160,7 @@ contract MerkleDropTest is MerkleTestBase {
     function test_Claim_RevertNotStarted() public {
         // A drop whose window hasn't opened yet rejects claims.
         uint64 future = uint64(block.timestamp + 1 days);
-        MerkleDrop pending = new MerkleDrop(
+        MerkleDrop pending = _newDrop(
             address(token), root, future, deadline, IIdentityRegistry(address(registry)), OPERATOR
         );
         token.mint(address(pending), TOTAL);

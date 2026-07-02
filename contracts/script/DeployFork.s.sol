@@ -3,6 +3,8 @@ pragma solidity 0.8.28;
 
 import { Script, console2 } from "forge-std/Script.sol";
 
+import { LibClone } from "solady/utils/LibClone.sol";
+
 import { DropFactory } from "../src/DropFactory.sol";
 import { IRegistryFactoryLike } from "../src/interfaces/IRegistryFactoryLike.sol";
 
@@ -46,8 +48,10 @@ contract DeployFork is Script {
         MockERC20 feeToken = new MockERC20("Fee Token", "FEE", 18);
         MockERC20 airdropToken = new MockERC20("Airdrop Token", "DROP", 18);
 
-        DropFactory factory =
-            new DropFactory(deployer, operatorRegistry, IRegistryFactoryLike(zkFactory), treasury);
+        // UUPS: deploy the logic impl, put it behind an ERC1967 proxy, initialize.
+        address factoryImpl = address(new DropFactory());
+        DropFactory factory = DropFactory(LibClone.deployERC1967(factoryImpl));
+        factory.initialize(deployer, operatorRegistry, IRegistryFactoryLike(zkFactory), treasury);
         // Curate the demo airdrop token (allow-list) and price its creation fee as a flat amount
         // in the airdrop token, so seeded createDrop calls pass and the fee is deterministic.
         factory.setAllowedToken(address(airdropToken), true);

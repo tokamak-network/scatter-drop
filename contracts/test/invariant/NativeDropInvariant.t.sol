@@ -118,7 +118,7 @@ contract NativeDropHandler is MerkleTestBase {
 /// @notice Stateful invariants for the native-ETH drop: no sequence of claims can
 ///         break ETH conservation or let the fee vault drift from the factory's
 ///         ETH balance.
-contract NativeDropInvariantTest is Test {
+contract NativeDropInvariantTest is MerkleTestBase {
     address internal constant NATIVE = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     DropFactory internal factory;
@@ -135,7 +135,7 @@ contract NativeDropInvariantTest is Test {
     function setUp() public {
         opReg = new MockIdentityRegistry();
         zkFactory = new MockRegistryFactory();
-        factory = new DropFactory(admin, address(opReg), zkFactory, treasury);
+        factory = _deployFactory(admin, address(opReg), zkFactory, treasury);
 
         vm.prank(admin);
         factory.setAllowedToken(NATIVE, true);

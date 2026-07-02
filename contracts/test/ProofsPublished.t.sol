@@ -32,7 +32,7 @@ contract ProofsPublishedTest is MerkleTestBase {
     function setUp() public {
         opReg = new MockIdentityRegistry();
         zkFactory = new MockRegistryFactory();
-        factory = new DropFactory(admin, address(opReg), zkFactory, treasury);
+        factory = _deployFactory(admin, address(opReg), zkFactory, treasury);
         token = new MockERC20("Mock", "MOCK", 18);
 
         vm.prank(admin);
@@ -97,7 +97,7 @@ contract ProofsPublishedTest is MerkleTestBase {
 
     function test_publishProofs_revertsForForeignFactoryDrop() public {
         // A drop from a *different* factory reports a different `factory()`.
-        DropFactory other = new DropFactory(admin, address(opReg), zkFactory, treasury);
+        DropFactory other = _deployFactory(admin, address(opReg), zkFactory, treasury);
         vm.prank(admin);
         other.setAllowedToken(address(token), true);
         address foreignDrop = _createDrop(other);

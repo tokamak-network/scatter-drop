@@ -41,7 +41,7 @@ contract NativeHardeningTest is MerkleTestBase {
     function setUp() public {
         opReg = new MockIdentityRegistry();
         zkFactory = new MockRegistryFactory();
-        factory = new DropFactory(admin, address(opReg), zkFactory, treasury);
+        factory = _deployFactory(admin, address(opReg), zkFactory, treasury);
         erc20 = new MockERC20("Mock", "MOCK", 18);
 
         vm.startPrank(admin);

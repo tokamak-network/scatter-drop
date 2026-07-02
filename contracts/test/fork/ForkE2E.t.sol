@@ -74,7 +74,7 @@ contract ForkE2ETest is MerkleTestBase {
 
         vm.prank(admin);
         DropFactory factory =
-            new DropFactory(admin, USERS_REGISTRY, IRegistryFactoryLike(ZK_FACTORY), treasury);
+            _deployFactory(admin, USERS_REGISTRY, IRegistryFactoryLike(ZK_FACTORY), treasury);
         vm.startPrank(admin);
         factory.setAllowedToken(address(airdropToken), true); // curate the airdrop token
         factory.setFeeMode(address(airdropToken), DropFactory.FeeMode.FLAT);
