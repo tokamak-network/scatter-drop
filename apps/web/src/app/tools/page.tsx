@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { formatUnits, isAddress, parseUnits } from "viem";
 import { ArrowLeft, ArrowRight, Check, Copy, Download, Trash2, Upload } from "lucide-react";
 import { DuneImport, type Recipient } from "@/components/DuneImport";
+import { StakingImport } from "@/components/StakingImport";
 import { useErc20Decimals, useErc20Symbol } from "@/lib/contracts";
 import { useAllowedTokens } from "@/lib/campaigns";
 import { isPositiveDecimal } from "@/lib/validation";
@@ -90,6 +91,9 @@ function dedupSum(rows: Row[]): Row[] {
 export default function ToolsPage() {
   const router = useRouter();
   const [step, setStep] = useState<1 | 2>(1);
+  // Which aggregation source to show in step 1: token/NFT holders (Dune) or
+  // Tokamak staking balances (Dune candidates → stakeOf snapshot).
+  const [source, setSource] = useState<"dune" | "staking">("dune");
   // Step 1 works on CSV text (paste / upload / Dune fill it); step 2 on the rows.
   const [csvText, setCsvText] = useState("");
   const [view, setView] = useState<"csv" | "table">("csv");
@@ -324,9 +328,21 @@ export default function ToolsPage() {
 
       {step === 1 && (
         <div className="space-y-4">
-          {/* Source: Dune query → fills the CSV below */}
-          <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
-            <DuneImport onRows={loadRecipients} />
+          {/* Source picker → fills the CSV below */}
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4">
+            <div className="inline-flex rounded-lg border border-slate-800 bg-slate-950 p-0.5">
+              <ViewBtn active={source === "dune"} onClick={() => setSource("dune")}>
+                Token / NFT holders
+              </ViewBtn>
+              <ViewBtn active={source === "staking"} onClick={() => setSource("staking")}>
+                Staking (Tokamak)
+              </ViewBtn>
+            </div>
+            {source === "dune" ? (
+              <DuneImport onRows={loadRecipients} />
+            ) : (
+              <StakingImport onRows={loadRecipients} />
+            )}
           </div>
 
           {/* Source: upload / paste / hand-edit — the shared recipient CSV */}
