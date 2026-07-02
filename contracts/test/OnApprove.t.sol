@@ -162,4 +162,19 @@ contract OnApproveTest is MerkleTestBase {
             uint8(DropFactory.AirdropType.CSV), address(evil), ROOT, TOTAL, startTime, deadline, address(0)
         );
     }
+
+    function test_onApprove_reentrancyBlocked() public {
+        // Same guard on the one-tx path: onApprove's fund pull hits the armed
+        // transferFrom, which reenters createDrop and must abort the whole tx.
+        MockReentrantToken evil = new MockReentrantToken();
+        vm.prank(admin);
+        factory.setAllowedToken(address(evil), true);
+        uint256 fee = factory.feeOf(address(evil), TOTAL);
+        evil.mint(operator, TOTAL + fee);
+        evil.arm(factory); // reenter on the next transferFrom
+
+        vm.prank(operator);
+        vm.expectRevert(ReentrancyGuard.Reentrancy.selector);
+        evil.approveAndCall(address(factory), TOTAL + fee, _data());
+    }
 }

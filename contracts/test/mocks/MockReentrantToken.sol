@@ -27,4 +27,12 @@ contract MockReentrantToken is MockERC20 {
         }
         return super.transferFrom(from, to, amount);
     }
+
+    /// @dev SeigToken-style one-tx entry: approve then invoke the factory's onApprove.
+    ///      Lets tests drive the onApprove reentrancy path (its fund pull hits the
+    ///      armed transferFrom above, which reenters createDrop).
+    function approveAndCall(address spender, uint256 amount, bytes calldata data) external returns (bool) {
+        approve(spender, amount);
+        return factory.onApprove(msg.sender, spender, amount, data);
+    }
 }
