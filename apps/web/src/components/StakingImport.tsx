@@ -69,6 +69,9 @@ export function StakingImport({ onRows }: { onRows: (rows: Recipient[]) => void 
   const [snapping, setSnapping] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [result, setResult] = useState<Recipient[] | null>(null);
+  // stakeOf calls that reverted — a non-zero count means the snapshot is
+  // incomplete (surfaced as a warning rather than silently dropped).
+  const [failedCount, setFailedCount] = useState(0);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -76,7 +79,12 @@ export function StakingImport({ onRows }: { onRows: (rows: Recipient[]) => void 
   // Block only matters when pinning history; "latest" needs no block.
   const blockOk = when === "latest" || blockValid;
   const minStakeValid = minStake.trim() === "" || /^\d+(\.\d+)?$/.test(minStake.trim());
-  const rpcValid = /^https?:\/\/\S+$/.test(rpcUrl.trim());
+  // Require https (a browser on an https page can't call an http RPC — mixed
+  // content), with an http localhost exception for local dev.
+  const rpcTrimmed = rpcUrl.trim();
+  const rpcValid =
+    /^https:\/\/\S+$/.test(rpcTrimmed) ||
+    /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/\S*)?$/.test(rpcTrimmed);
   const batchNum = Number(batchSize.trim());
   const batchValid =
     Number.isInteger(batchNum) && batchNum >= MIN_BATCH && batchNum <= MAX_BATCH;
@@ -140,12 +148,13 @@ export function StakingImport({ onRows }: { onRows: (rows: Recipient[]) => void 
     setSnapping(true);
     setError(null);
     setResult(null);
+    setFailedCount(0);
     setProgress({ done: 0, total: candidates.length });
     try {
       // minStake is entered in whole WTON; convert to the 27-dec base unit.
       const minStakeBase =
         minStake.trim() === "" ? 0n : parseUnits(minStake.trim(), STAKE_DECIMALS);
-      const rows = await snapshotStakes({
+      const { rows, failed } = await snapshotStakes({
         rpcUrl: rpcUrl.trim(),
         addresses: candidates,
         block: when === "block" ? BigInt(block.trim()) : undefined,
@@ -157,6 +166,7 @@ export function StakingImport({ onRows }: { onRows: (rows: Recipient[]) => void 
         throw new Error("No staker met the threshold at that block.");
       }
       setResult(rows);
+      setFailedCount(failed);
     } catch (e) {
       setError(
         e instanceof Error
@@ -402,6 +412,13 @@ export function StakingImport({ onRows }: { onRows: (rows: Recipient[]) => void 
             {result.length.toLocaleString()} stakers{" "}
             {when === "block" ? `at block ${block.trim()}` : "at current state"}
           </p>
+          {failedCount > 0 && (
+            <p className="text-[11px] text-amber-600">
+              {failedCount.toLocaleString()} stakeOf call(s) failed and were skipped — the
+              snapshot is incomplete. Re-run (lower the batch size or try another RPC) before
+              using the list.
+            </p>
+          )}
           <p className="text-[11px] text-slate-500">
             Amount is each account&apos;s staked balance in 27-decimal (RAY) base units —
             usable directly as a pro-rata weight in the grid below.

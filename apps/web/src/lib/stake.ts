@@ -36,7 +36,9 @@ export type StakeRow = { address: string; amount: string };
  * omit it to read current state (`latest`), which a public RPC can serve.
  * Amounts are the raw 27-decimal staked-WTON values — usable directly as a
  * pro-rata weight. `onProgress` reports addresses processed so the UI can show a
- * bar; a rejected batch aborts the whole snapshot (surfaced to the caller).
+ * bar; a rejected batch (network error) aborts the whole snapshot. Individual
+ * `stakeOf` calls that revert are counted in `failed` so the caller can warn
+ * that the snapshot is incomplete rather than silently dropping stakers.
  */
 export async function snapshotStakes(opts: {
   rpcUrl: string;
@@ -47,7 +49,7 @@ export async function snapshotStakes(opts: {
   /** stakeOf calls per multicall request; clamped to [MIN_BATCH, MAX_BATCH]. */
   batchSize?: number;
   onProgress?: (done: number, total: number) => void;
-}): Promise<StakeRow[]> {
+}): Promise<{ rows: StakeRow[]; failed: number }> {
   const { rpcUrl, addresses, block, minStake, onProgress } = opts;
   const batch = Math.max(
     MIN_BATCH,
@@ -62,6 +64,7 @@ export async function snapshotStakes(opts: {
   // Keep amounts as bigint while collecting so the sort compares numerically
   // without re-parsing each string; stringify once at the end.
   const kept: { address: string; amount: bigint }[] = [];
+  let failed = 0;
   for (let i = 0; i < addresses.length; i += batch) {
     const chunk = addresses.slice(i, i + batch);
     const res = await client.multicall({
@@ -79,11 +82,14 @@ export async function snapshotStakes(opts: {
       if (r.status === "success") {
         const stake = r.result as bigint;
         if (stake > 0n && stake >= minStake) kept.push({ address: a, amount: stake });
+      } else {
+        // Count reverted calls instead of silently dropping — the caller warns.
+        failed += 1;
       }
     });
     onProgress?.(Math.min(i + batch, addresses.length), addresses.length);
   }
 
   kept.sort((x, y) => (y.amount > x.amount ? 1 : y.amount < x.amount ? -1 : 0));
-  return kept.map((r) => ({ address: r.address, amount: r.amount.toString() }));
+  return { rows: kept.map((r) => ({ address: r.address, amount: r.amount.toString() })), failed };
 }
