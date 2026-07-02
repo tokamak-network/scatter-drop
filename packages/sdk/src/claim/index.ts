@@ -1,4 +1,4 @@
-import { encodeFunctionData, getAddress, type Address, type Hex } from "viem";
+import { encodeAbiParameters, encodeFunctionData, getAddress, type Address, type Hex } from "viem";
 import type { ClaimProof } from "@tokamak-network/scatter-drop-merkle";
 import { dropFactoryAbi, erc20Abi, merkleDropAbi } from "../core/abis.js";
 import { FeeMode, type AirdropType } from "../types/index.js";
@@ -215,6 +215,95 @@ export function buildApproveRequest(token: Address, spender: Address, amount: bi
       args: [getAddress(spender), amount],
     }),
   };
+}
+
+// --- One-transaction create via approveAndCall / onApprove (Tokamak TON) ---
+
+/**
+ * The `DropParams` tuple `DropFactory.onApprove` decodes from its `data` argument
+ * (`abi.decode(data, (DropParams))`). Field order MUST match the Solidity
+ * `DropFactory.DropParams` struct — which is `createDrop`'s inputs minus
+ * `airdropToken` (the token is the caller in `onApprove`). `createDrop`'s ABI is
+ * drift-guarded (see packages/sdk/test/sdk.test.ts, which asserts this layout
+ * against `dropFactoryAbi`); a struct-only reorder would need a contract-side ABI
+ * surface to guard fully.
+ */
+const DROP_PARAMS = [
+  {
+    type: "tuple",
+    components: [
+      { name: "airdropType", type: "uint8" },
+      { name: "merkleRoot", type: "bytes32" },
+      { name: "totalAmount", type: "uint256" },
+      { name: "startTime", type: "uint64" },
+      { name: "deadline", type: "uint64" },
+      { name: "identityRegistry", type: "address" },
+    ],
+  },
+] as const;
+
+/**
+ * ABI-encode the `DropParams` blob for `DropFactory.onApprove` — the `data`
+ * argument to `token.approveAndCall`. Only the campaign params travel in `data`;
+ * the airdrop token is the caller and `operator` is the approver (`msg.sender`).
+ */
+export function encodeOnApproveData(
+  params: Pick<
+    CreateDropParams,
+    "airdropType" | "merkleRoot" | "totalAmount" | "startTime" | "deadline" | "identityRegistry"
+  >,
+): Hex {
+  return encodeAbiParameters(DROP_PARAMS, [
+    {
+      airdropType: params.airdropType,
+      merkleRoot: params.merkleRoot,
+      totalAmount: params.totalAmount,
+      startTime: params.startTime,
+      deadline: params.deadline,
+      identityRegistry: getAddress(params.identityRegistry),
+    },
+  ]);
+}
+
+/** Build a raw `token.approveAndCall(spender, amount, data)` request. */
+export function buildApproveAndCallRequest(
+  token: Address,
+  spender: Address,
+  amount: bigint,
+  data: Hex,
+): TxRequest {
+  return {
+    to: getAddress(token),
+    data: encodeFunctionData({
+      abi: erc20Abi,
+      functionName: "approveAndCall",
+      args: [getAddress(spender), amount, data],
+    }),
+  };
+}
+
+/**
+ * Build the one-transaction create for tokens that support `approveAndCall`
+ * (Tokamak TON / SeigToken): `token.approveAndCall(factory, totalAmount + fee,
+ * encodeOnApproveData(params))`. The token's callback (`DropFactory.onApprove`)
+ * creates and funds the campaign in the same tx — no separate `approve`.
+ *
+ * `fee` must be the current `feeOf(token, totalAmount)` (on-chain `onApprove`
+ * requires `amount == totalAmount + fee`). Not for native ETH (no approveAndCall).
+ */
+export function buildCreateDropOneTxRequest(
+  factory: Address,
+  params: CreateDropParams,
+  fee: bigint,
+): TxRequest {
+  const token = getAddress(params.airdropToken);
+  if (token === NATIVE_ETH) {
+    throw new Error("approveAndCall one-tx path is for ERC-20 tokens (e.g. TON), not native ETH");
+  }
+  if (token === NATIVE_FEE_TOKEN) {
+    throw new Error("airdropToken cannot be address(0); use an ERC-20 token (e.g. TON)");
+  }
+  return buildApproveAndCallRequest(token, factory, params.totalAmount + fee, encodeOnApproveData(params));
 }
 
 /**

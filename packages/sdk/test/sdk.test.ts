@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeFunctionData, getAddress, type Address } from "viem";
+import { decodeFunctionData, encodeAbiParameters, getAddress, type Address } from "viem";
 import {
   AirdropType,
   TokenTier,
@@ -8,8 +8,11 @@ import {
   NATIVE_ETH,
   airdropTypeLabel,
   buildApproveRequest,
+  buildApproveAndCallRequest,
   buildClaimRequest,
   buildCreateDropRequest,
+  buildCreateDropOneTxRequest,
+  encodeOnApproveData,
   buildSetAllowedTokenRequest,
   buildSetFeeBpsRequest,
   buildSetFlatFeeRequest,
@@ -265,5 +268,76 @@ describe("addresses", () => {
     const d = parseDeployment({ chainId: 31337, dropFactory: A(5).toLowerCase() });
     expect(d.dropFactory).toBe(A(5));
     expect(() => parseDeployment({ chainId: 1 })).toThrow(/dropFactory/);
+  });
+});
+
+describe("onApprove one-tx create (TON / approveAndCall)", () => {
+  const params = {
+    airdropType: AirdropType.CSV,
+    airdropToken: A(0x707), // a TON-like ERC-20
+    merkleRoot: `0x${"11".repeat(32)}` as const,
+    totalAmount: 1_000n * 10n ** 18n,
+    startTime: 1_000_000n,
+    deadline: 1_604_800n,
+    identityRegistry: NATIVE_FEE_TOKEN, // address(0) = open claim
+  };
+  const fee = 5n * 10n ** 18n;
+
+  it("buildCreateDropOneTxRequest targets the token's approveAndCall(factory, total+fee, data)", () => {
+    const req = buildCreateDropOneTxRequest(A(9), params, fee);
+    expect(req.to).toBe(A(0x707)); // the token, not the factory
+    const { functionName, args } = decodeFunctionData({
+      abi: [
+        {
+          type: "function",
+          name: "approveAndCall",
+          stateMutability: "nonpayable",
+          inputs: [
+            { name: "spender", type: "address" },
+            { name: "amount", type: "uint256" },
+            { name: "data", type: "bytes" },
+          ],
+          outputs: [{ type: "bool" }],
+        },
+      ] as const,
+      data: req.data,
+    });
+    expect(functionName).toBe("approveAndCall");
+    expect(args[0]).toBe(A(9)); // spender == factory
+    expect(args[1]).toBe(params.totalAmount + fee); // amount == total + fee (onApprove's check)
+    expect(args[2]).toBe(encodeOnApproveData(params)); // data == the DropParams blob
+  });
+
+  it("rejects native ETH (no approveAndCall)", () => {
+    expect(() =>
+      buildCreateDropOneTxRequest(A(9), { ...params, airdropToken: NATIVE_ETH }, fee),
+    ).toThrow(/ERC-20|native/);
+  });
+
+  it("buildApproveAndCallRequest checksums token + spender", () => {
+    const data = encodeOnApproveData(params);
+    const req = buildApproveAndCallRequest(A(0x707).toLowerCase() as Address, A(9), 42n, data);
+    expect(req.to).toBe(A(0x707));
+  });
+
+  it("encodeOnApproveData layout matches the createDrop ABI (minus airdropToken)", () => {
+    // DropParams == createDrop's inputs without `airdropToken`. Deriving the tuple
+    // from the (drift-guarded) dropFactoryAbi here means a createDrop arg drift makes
+    // this fail, transitively guarding the onApprove `data` layout.
+    const createDrop = dropFactoryAbi.find(
+      (e) => e.type === "function" && e.name === "createDrop",
+    ) as { inputs: readonly { name: string; type: string }[] };
+    const components = createDrop.inputs.filter((i) => i.name !== "airdropToken");
+    const viaAbi = encodeAbiParameters([{ type: "tuple", components }], [
+      {
+        airdropType: params.airdropType,
+        merkleRoot: params.merkleRoot,
+        totalAmount: params.totalAmount,
+        startTime: params.startTime,
+        deadline: params.deadline,
+        identityRegistry: params.identityRegistry,
+      },
+    ]);
+    expect(encodeOnApproveData(params)).toBe(viaAbi);
   });
 });

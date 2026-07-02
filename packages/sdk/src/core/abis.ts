@@ -257,4 +257,16 @@ export const erc20Abi = [
     inputs: [{ name: "account", type: "address" }],
     outputs: [{ name: "", type: "uint256" }],
   },
+  // ERC-1363 / Tokamak-TON style: approve + call the spender's onApprove in one tx.
+  {
+    type: "function",
+    name: "approveAndCall",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint256" },
+      { name: "data", type: "bytes" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
 ] as const;
