@@ -183,6 +183,13 @@ contract DropFactory is Initializable, UUPSUpgradeable, Ownable {
     /// @dev UUPS: only the owner may upgrade the factory implementation.
     function _authorizeUpgrade(address) internal override onlyOwner { }
 
+    /// @dev Defense-in-depth: make Solady's `_initializeOwner` revert on a second
+    ///      call. `initialize` is already `initializer`-guarded, so this only
+    ///      matters if a future upgrade adds another owner-init path.
+    function _guardInitializeOwner() internal pure override returns (bool) {
+        return true;
+    }
+
     // ---------------------------------------------------------------------
     // Admin — fees
     // ---------------------------------------------------------------------
