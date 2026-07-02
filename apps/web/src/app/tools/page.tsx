@@ -7,6 +7,7 @@ import { formatUnits, isAddress, parseUnits } from "viem";
 import { ArrowLeft, ArrowRight, Check, Copy, Download, Trash2, Upload } from "lucide-react";
 import { DuneImport, type Recipient } from "@/components/DuneImport";
 import { useErc20Decimals, useErc20Symbol } from "@/lib/contracts";
+import { useAllowedTokens } from "@/lib/campaigns";
 import { isPositiveDecimal } from "@/lib/validation";
 import { downloadCsv } from "@/lib/downloadCsv";
 import { DRAFT_CSV_KEY } from "@/lib/draftCsv";
@@ -141,9 +142,14 @@ export default function ToolsPage() {
   const tokenTrimmed = token.trim();
   const tokenOk = isAddress(tokenTrimmed, { strict: false });
   const tokenAddr = tokenOk ? (tokenTrimmed as `0x${string}`) : undefined;
+  const { data: allowedTokens } = useAllowedTokens();
   const { data: decData } = useErc20Decimals(tokenAddr);
   const { data: symData } = useErc20Symbol(tokenAddr);
-  const symbol = typeof symData === "string" && symData ? symData : undefined;
+  // Prefer the allow-list's symbol; fall back to the on-chain read.
+  const listedSymbol = allowedTokens?.find(
+    (t) => t.token.toLowerCase() === tokenTrimmed.toLowerCase(),
+  )?.symbol;
+  const symbol = listedSymbol ?? (typeof symData === "string" && symData ? symData : undefined);
   // Auto-fill decimals from the token when it can be read on the connected chain.
   useEffect(() => {
     if (typeof decData === "number") setDecimalsInput(String(decData));
@@ -386,17 +392,22 @@ export default function ToolsPage() {
           <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-2">
             <h2 className="text-sm font-bold text-slate-100">Airdrop token</h2>
             <p className="text-[11px] text-slate-500">
-              Amounts are entered in whole tokens and scaled by the decimals below. Paste the token
-              address to auto-fill its symbol and decimals, or set decimals manually.
+              Choose the token you will distribute — only admin allow-listed tokens can be airdropped
+              on-chain. Amounts are entered in whole tokens and scaled by the decimals.
             </p>
             <div className="flex flex-wrap items-center gap-2">
-              <input
+              <select
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
-                placeholder="0x… token contract (optional)"
-                spellCheck={false}
                 className="input font-mono text-xs flex-1 min-w-[16rem]"
-              />
+              >
+                <option value="">Select an allow-listed token…</option>
+                {(allowedTokens ?? []).map((t) => (
+                  <option key={t.token} value={t.token}>
+                    {t.symbol} — {t.token.slice(0, 8)}…{t.token.slice(-6)}
+                  </option>
+                ))}
+              </select>
               <label className="text-[11px] font-mono text-slate-400">decimals</label>
               <input
                 value={decimalsInput}
@@ -406,10 +417,13 @@ export default function ToolsPage() {
               />
             </div>
             <div className="flex flex-wrap items-center gap-2 text-xs">
-              {tokenTrimmed && !tokenOk && <span className="text-red-500">Invalid address</span>}
-              {tokenOk && symbol && <span className="font-mono text-emerald-600">{symbol} detected</span>}
-              {tokenOk && !symbol && <span className="text-slate-500">reading token…</span>}
-              <span className="text-slate-500">1 = {`1${"0".repeat(dec)}`} base units</span>
+              {allowedTokens && allowedTokens.length === 0 && (
+                <span className="text-amber-600">
+                  No tokens are on the platform allow-list yet — ask the admin to add one.
+                </span>
+              )}
+              {tokenOk && symbol && <span className="font-mono text-emerald-600">{symbol}</span>}
+              {tokenOk && <span className="text-slate-500">1 = {`1${"0".repeat(dec)}`} base units</span>}
             </div>
           </div>
 
