@@ -74,7 +74,10 @@ echo "[3/4] Addresses: contracts/deployments/$FORK_CHAIN_ID.json"
 # a genuine balance. Skip with FUND_TON=false.
 if [ "${FUND_TON:-true}" != "false" ]; then
   _DJSON="$ROOT/contracts/deployments/$FORK_CHAIN_ID.json"
-  TON_ADDR="$(grep -o '"tonToken"[^,}]*' "$_DJSON" | grep -oiE '0x[0-9a-f]{40}' | head -1 || true)"
+  TON_ADDR=""
+  if [ -f "$_DJSON" ]; then
+    TON_ADDR="$(grep -o '"tonToken"[^,}]*' "$_DJSON" | grep -oiE '0x[0-9a-f]{40}' | head -n 1 || true)"
+  fi
   # A large Sepolia TON holder to source funds from (override with TON_WHALE).
   TON_WHALE="${TON_WHALE:-0xB68AA9E398c054da7EBAaA446292f611CA0CD52B}"
   OPERATOR="0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" # anvil #0 (deployer/operator)
@@ -85,7 +88,8 @@ if [ "${FUND_TON:-true}" != "false" ]; then
     cast rpc anvil_impersonateAccount "$TON_WHALE" --rpc-url "$RPC_URL" >/dev/null
     if cast send "$TON_ADDR" 'transfer(address,uint256)' "$OPERATOR" "$TON_FUND_WEI" \
         --from "$TON_WHALE" --unlocked --rpc-url "$RPC_URL" >/dev/null 2>&1; then
-      echo "  operator funded ($(cast call "$TON_ADDR" 'balanceOf(address)(uint256)' "$OPERATOR" --rpc-url "$RPC_URL" | awk '{print $1}') TON wei)"
+      _BAL="$(cast call "$TON_ADDR" 'balanceOf(address)(uint256)' "$OPERATOR" --rpc-url "$RPC_URL" 2>/dev/null | awk '{print $1}' || echo unknown)"
+      echo "  operator funded ($_BAL TON wei)"
     else
       echo "  (TON funding failed — whale may lack balance; set TON_WHALE. Non-fatal.)"
     fi
