@@ -193,15 +193,28 @@ export function DuneImport({ onRows }: { onRows: (rows: Recipient[]) => void }) 
           How to run the query on Dune ▾
         </summary>
         <ol className="mt-1 space-y-1.5 px-4 text-[11px] text-slate-400 list-decimal list-inside">
-          <li>Create a free account at dune.com and open a new query.</li>
-          <li>Paste the SQL below and set the token, snapshot block, and min balance.</li>
           <li>
-            Click <span className="font-mono text-slate-200">Run</span>, then{" "}
-            <span className="font-mono text-slate-200">…&nbsp;→ Get API endpoint</span> and copy
-            the <span className="font-mono text-slate-200">results</span> URL (it includes your
-            api_key).
+            Log in at{" "}
+            <a href="https://dune.com/" target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline">
+              dune.com
+            </a>
+            .
           </li>
-          <li>Paste that URL below and fetch.</li>
+          <li>
+            Create a new query at{" "}
+            <span className="font-mono text-slate-200">
+              dune.com/workspace/u/&lt;your-id&gt;/queries
+            </span>
+            .
+          </li>
+          <li>Paste the SQL below into the query editor, then edit the token address, min balance, etc.</li>
+          <li>
+            Click <span className="font-mono text-slate-200">Run</span>. Below the results, click the{" "}
+            <span className="font-mono text-slate-200">API</span> icon →{" "}
+            <span className="font-mono text-slate-200">Preview API</span> — a new tab opens with the
+            results URL (it includes your api_key).
+          </li>
+          <li>Copy that URL, paste it below, and fetch.</li>
         </ol>
 
         <div className="mx-4 mt-2 relative">

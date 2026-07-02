@@ -98,6 +98,7 @@ export default function ToolsPage() {
   // Step 1 works on CSV text (paste / upload / Dune fill it); step 2 works on the
   // parsed rows. They sync at each transition so edits in either survive.
   const [csvText, setCsvText] = useState("");
+  const [view, setView] = useState<"csv" | "table">("csv");
   const [rows, setRows] = useState<Row[]>([{ ...BLANK }]);
   const [copied, setCopied] = useState(false);
   const [equalAmount, setEqualAmount] = useState("");
@@ -115,32 +116,26 @@ export default function ToolsPage() {
     setRows(next.length ? withTrailingBlank(next) : [{ ...BLANK }]);
   };
 
-  // Append CSV text (from a Dune fetch, a file, or a paste) to whatever is
-  // already in the step-1 CSV box, so multiple sources aggregate into one list.
-  const appendCsv = (text: string) => {
-    const add = text.trim();
-    if (!add) return;
-    setCsvText((prev) => (prev.trim() ? `${prev.trim()}\n${add}` : add));
-  };
-  const appendRecipients = (recipients: Recipient[]) =>
-    appendCsv(recipients.map((r) => `${r.address},${r.amount}`).join("\n"));
+  // A Dune fetch or a file upload replaces the CSV box (idempotent — re-loading
+  // the same source can't silently pile up duplicates). Hand-edit or paste in
+  // the box to combine sources.
+  const loadRecipients = (recipients: Recipient[]) =>
+    setCsvText(recipients.map((r) => `${r.address},${r.amount}`).join("\n"));
 
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => appendCsv(String(reader.result ?? ""));
+    reader.onload = () => setCsvText(String(reader.result ?? "").trim());
     reader.readAsText(file);
     e.target.value = "";
   };
 
-  // How many valid recipients the step-1 CSV currently parses to.
+  // Parse the step-1 CSV once; both the count and the table preview read it.
+  const parsedRows = useMemo(() => csvToRows(csvText), [csvText]);
   const parsedCount = useMemo(
-    () =>
-      csvToRows(csvText).filter(
-        (r) => isAddress(r.address.trim(), { strict: false }),
-      ).length,
-    [csvText],
+    () => parsedRows.filter((r) => isAddress(r.address.trim(), { strict: false })).length,
+    [parsedRows],
   );
 
   const goToAmounts = () => {
@@ -298,13 +293,18 @@ export default function ToolsPage() {
         <div className="space-y-4">
           {/* Source: Dune query → fills the CSV below */}
           <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
-            <DuneImport onRows={appendRecipients} />
+            <DuneImport onRows={loadRecipients} />
           </div>
 
           {/* Source: upload / paste / hand-edit — the shared recipient CSV */}
           <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-3">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-sm font-bold text-slate-100 mr-auto">Recipient CSV</h2>
+              {/* View toggle: raw CSV text ↔ spreadsheet-style table */}
+              <div className="inline-flex rounded-lg border border-slate-800 bg-slate-950 p-0.5">
+                <ViewBtn active={view === "csv"} onClick={() => setView("csv")}>CSV</ViewBtn>
+                <ViewBtn active={view === "table"} onClick={() => setView("table")}>Table</ViewBtn>
+              </div>
               <input ref={fileRef} type="file" accept=".csv,text/csv,text/plain" className="hidden" onChange={onFile} />
               <ToolbarBtn onClick={() => fileRef.current?.click()} icon={<Upload className="w-3.5 h-3.5" />}>
                 Upload CSV
@@ -315,16 +315,22 @@ export default function ToolsPage() {
             </div>
             <p className="text-[11px] text-slate-500">
               One <span className="font-mono">address,amount</span> per line. A Dune fetch above
-              appends its holders here; you can also paste or type directly.
+              fills this box; you can also upload, paste, or type directly.
             </p>
-            <textarea
-              value={csvText}
-              onChange={(e) => setCsvText(e.target.value)}
-              rows={10}
-              spellCheck={false}
-              placeholder={"0xabc…,1000000000000000000\n0xdef…,500000000000000000"}
-              className="input font-mono text-xs"
-            />
+
+            {view === "csv" ? (
+              <textarea
+                value={csvText}
+                onChange={(e) => setCsvText(e.target.value)}
+                rows={10}
+                spellCheck={false}
+                placeholder={"0xabc…,1000000000000000000\n0xdef…,500000000000000000"}
+                className="input font-mono text-xs"
+              />
+            ) : (
+              <CsvTable rows={parsedRows} />
+            )}
+
             <div className="flex items-center gap-3">
               <span className="text-xs text-slate-400 font-mono">
                 {parsedCount.toLocaleString()} recipient(s)
@@ -498,6 +504,78 @@ function StepPill({
         {n}
       </span>
       {label}
+    </button>
+  );
+}
+
+// Read-only spreadsheet-style preview of the step-1 recipient CSV. Renders at
+// most PREVIEW_CAP rows so a large Dune result (thousands of holders) stays
+// responsive; edit happens in the CSV textarea or the step-2 grid.
+const PREVIEW_CAP = 1000;
+function CsvTable({ rows }: { rows: Row[] }) {
+  const filled = rows.filter((r) => r.address.trim() !== "" || r.amount.trim() !== "");
+  if (filled.length === 0) {
+    return (
+      <div className="rounded-lg border border-slate-800 bg-slate-950 p-4 text-center text-xs text-slate-500">
+        No recipients yet — fetch from Dune, upload a CSV, or switch to the CSV view to paste.
+      </div>
+    );
+  }
+  const shown = filled.slice(0, PREVIEW_CAP);
+  return (
+    <div className="overflow-auto rounded-lg border border-slate-800 max-h-96">
+      <table className="w-full text-xs border-collapse">
+        <thead className="sticky top-0 bg-slate-950">
+          <tr className="text-left font-mono uppercase tracking-wider text-[10px] text-slate-400">
+            <th className="w-12 px-3 py-2 text-right border-b border-slate-800">#</th>
+            <th className="px-3 py-2 border-b border-slate-800">Address</th>
+            <th className="px-3 py-2 border-b border-slate-800">Amount (base units)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {shown.map((r, i) => {
+            const bad = !isAddress(r.address.trim(), { strict: false });
+            return (
+              <tr key={i} className="odd:bg-slate-900/40">
+                <td className="px-3 py-1 text-right font-mono text-slate-500 border-r border-slate-800/60">{i + 1}</td>
+                <td className={`px-3 py-1 font-mono border-r border-slate-800/60 ${bad ? "text-red-500" : "text-slate-200"}`}>
+                  {r.address || <span className="text-slate-600">—</span>}
+                </td>
+                <td className="px-3 py-1 font-mono text-slate-200">
+                  {r.amount || <span className="text-slate-600">—</span>}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {filled.length > PREVIEW_CAP && (
+        <p className="px-3 py-2 text-[11px] text-slate-500 border-t border-slate-800">
+          Showing first {PREVIEW_CAP.toLocaleString()} of {filled.length.toLocaleString()} — all are
+          kept for export.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ViewBtn({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-2.5 py-1 text-[11px] font-semibold rounded-md transition ${
+        active ? "bg-slate-800 text-slate-100" : "text-slate-400 hover:text-slate-200"
+      }`}
+    >
+      {children}
     </button>
   );
 }

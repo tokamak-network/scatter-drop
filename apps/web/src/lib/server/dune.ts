@@ -18,6 +18,13 @@ const DUNE_HOST = "api.dune.com";
 const MAX_ROWS = 100_000;
 /** Backstop on pagination hops in case `next_uri` ever loops. */
 const MAX_PAGES = 500;
+/**
+ * Page size we force onto the pasted URL. Operators often copy a URL with a
+ * small `limit` (e.g. the 1k default), which would otherwise truncate to that
+ * page unless the caller paginates. We raise it so the full result comes back
+ * (usually in one request); `next_uri` still covers anything beyond this.
+ */
+const PAGE_LIMIT = 50_000;
 
 export interface DuneRow {
   address: string;
@@ -60,6 +67,13 @@ export function parseDuneUrl(raw: unknown): URL | { error: string } {
   if (!url.searchParams.get("api_key")) {
     return { error: "URL is missing its api_key parameter." };
   }
+  // Raise a small/absent page limit so the pasted URL can't truncate the result;
+  // start from offset 0 regardless of what was copied.
+  const limit = Number(url.searchParams.get("limit"));
+  if (!Number.isFinite(limit) || limit < PAGE_LIMIT) {
+    url.searchParams.set("limit", String(PAGE_LIMIT));
+  }
+  url.searchParams.delete("offset");
   return url;
 }
 
