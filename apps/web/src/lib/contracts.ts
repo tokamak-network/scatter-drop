@@ -209,6 +209,28 @@ export function useErc20Symbol(token: Address | undefined) {
   });
 }
 
+const erc20BalanceAbi = [
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [{ type: "address" }],
+    outputs: [{ type: "uint256" }],
+  },
+] as const;
+
+/** ERC20.balanceOf(account) — for checking the operator can fund the drop. */
+export function useErc20Balance(token: Address | undefined, account: Address | undefined) {
+  return useReadContract({
+    address: token,
+    abi: erc20BalanceAbi,
+    functionName: "balanceOf",
+    args: account ? [account] : undefined,
+    chainId: useChainId(),
+    query: { enabled: !!token && !!account },
+  });
+}
+
 /** DropFactory.tokenTier(token) — 0 NONE / 1 ALLOWED (admin-curated). */
 export function useTokenTier(
   factory: Address | undefined,

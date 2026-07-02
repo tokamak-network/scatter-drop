@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useAccount, useBalance } from "wagmi";
 import {
   formatUnits,
   isAddress,
@@ -33,7 +34,11 @@ import {
   deploymentIssue,
   useComputedFee,
   useDeployment,
+  useErc20Balance,
   useErc20Decimals,
+  useErc20Symbol,
+  useFeeBpsOf,
+  useFeeModeOf,
   useTokenTier,
 } from "@/lib/contracts";
 
@@ -169,17 +174,46 @@ export default function NewCampaignPage() {
   const isNative =
     tokenValid && (token as string).toLowerCase() === NATIVE_ETH.toLowerCase();
 
+  // Fee mode/rate for an inline label next to the fee (0 PERCENT / 1 FLAT).
+  const { data: feeMode } = useFeeModeOf(factory, tokenValid ? (token as Address) : undefined);
+  const { data: feeBps } = useFeeBpsOf(factory, tokenValid ? (token as Address) : undefined);
+  const feeRateLabel =
+    feeMode === undefined
+      ? ""
+      : Number(feeMode) === 0
+        ? `${Number(feeBps ?? 0) / 100}% of total`
+        : "flat per drop";
+
+  // The connected wallet must hold total + fee (in the airdrop token, or ETH for
+  // native) or it can't fund the drop — block Approve/Create with a clear reason.
+  const { address: account } = useAccount();
+  const { data: erc20Bal } = useErc20Balance(
+    !isNative && tokenValid ? (token as Address) : undefined,
+    account,
+  );
+  const { data: nativeBal } = useBalance({
+    address: isNative ? account : undefined,
+    query: { enabled: isNative && !!account },
+  });
+  const walletBalance = isNative ? nativeBal?.value : (erc20Bal as bigint | undefined);
+  const insufficient =
+    !!account && walletBalance !== undefined && totalDeposit > 0n && walletBalance < totalDeposit;
+
   // Operators pick from the admin-curated allow-list rather than pasting an
   // arbitrary address (the on-chain createDrop rejects non-allow-listed tokens).
   const { data: allowedTokens } = useAllowedTokens();
 
-  // Token decimals for human-readable display (amounts in CSV are base units).
-  // Native ETH has no ERC-20 contract, so use 18 directly.
+  // Token decimals + symbol for human-readable display (amounts in CSV are base
+  // units). Native ETH has no ERC-20 contract, so use 18 / "ETH" directly.
   const { data: erc20Decimals } = useErc20Decimals(
     tokenValid && !isNative ? (token as Address) : undefined,
   );
+  const { data: erc20Symbol } = useErc20Symbol(
+    tokenValid && !isNative ? (token as Address) : undefined,
+  );
   const decimals = isNative ? 18 : erc20Decimals;
-  const unit = isNative ? "ETH" : "tokens";
+  // Show the real token symbol instead of a generic "tokens" once it's known.
+  const unit = isNative ? "ETH" : erc20Symbol ? String(erc20Symbol) : "tokens";
   const fmtAmount = (v: bigint) =>
     decimals !== undefined
       ? `${formatUnits(v, decimals)} ${unit}`
@@ -529,7 +563,12 @@ export default function NewCampaignPage() {
                   <dt className="muted">Distribution (pool)</dt>
                   <dd>{fmtAmount(totalAmount)}</dd>
                   <dt className="muted">Platform fee</dt>
-                  <dd>{fee !== undefined ? fmtAmount(fee) : "…"}</dd>
+                  <dd>
+                    {fee !== undefined ? fmtAmount(fee) : "…"}
+                    {feeRateLabel && (
+                      <span className="ml-1.5 text-xs text-slate-500">({feeRateLabel})</span>
+                    )}
+                  </dd>
                   <dt className="muted">Total deposit</dt>
                   <dd className="font-semibold text-slate-100">
                     {fee !== undefined ? fmtAmount(totalDeposit) : "…"}
@@ -541,19 +580,25 @@ export default function NewCampaignPage() {
                     ? "On-top fee: your wallet sends total + fee in ETH (msg.value). The pool gets the full distribution; the platform vault gets the fee. No approval needed."
                     : "On-top fee: you deposit total + fee in the airdrop token (one approval). The pool gets the full distribution; the platform vault gets the fee. Then createDrop deploys the campaign."}
                 </p>
+                {insufficient && (
+                  <p className="text-xs text-red-500">
+                    Insufficient balance: your wallet needs {fmtAmount(totalDeposit)} to fund this
+                    drop (total + fee), but holds {fmtAmount(walletBalance as bigint)}.
+                  </p>
+                )}
                 <div className="grid gap-2">
                   {!isNative && (
                     <TxButton
                       request={approveTokenReq}
                       label="1. Approve token (total + fee)"
-                      disabled={!approveTokenReq}
+                      disabled={!approveTokenReq || insufficient}
                     />
                   )}
                   <TxButton
                     request={createReq}
                     label={isNative ? "Create campaign (pay in ETH)" : "2. Create campaign"}
                     primary
-                    disabled={!createReq}
+                    disabled={!createReq || insufficient}
                     onConfirmed={() => {
                       // Publish the recipient proofs so claimers can look up their
                       // proof by the campaign's merkleRoot.
