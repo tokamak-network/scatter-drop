@@ -212,6 +212,7 @@ export default function NewCampaignPage() {
     factory,
   );
   const [justApproved, setJustApproved] = useState(false);
+  const [created, setCreated] = useState(false);
   // A new token/amount invalidates a prior approval flag.
   useEffect(() => setJustApproved(false), [token, totalDeposit]);
   const approved =
@@ -691,27 +692,42 @@ export default function NewCampaignPage() {
                         onConfirmed={() => setJustApproved(true)}
                       />
                     ))}
-                  <TxButton
-                    request={createReq}
-                    label={isNative ? "Create campaign (pay in ETH)" : "2. Create campaign"}
-                    primary={isNative || approved}
-                    disabled={!createReq || insufficient || (!isNative && !approved)}
-                    onConfirmed={() => {
-                      // Publish the recipient proofs so claimers can look up their
-                      // proof by the campaign's merkleRoot.
-                      if (activeManifest) {
-                        void publishProofs(merkleRoot, activeManifest.claims);
-                      }
-                    }}
-                  />
+                  {created ? (
+                    <div className="btn text-emerald-600 border-emerald-500/40 cursor-default">
+                      ✓ Campaign created
+                    </div>
+                  ) : (
+                    <TxButton
+                      request={createReq}
+                      label={isNative ? "Create campaign (pay in ETH)" : "2. Create campaign"}
+                      primary={isNative || approved}
+                      disabled={!createReq || insufficient || (!isNative && !approved)}
+                      onConfirmed={() => {
+                        // Publish the recipient proofs so claimers can look up their
+                        // proof by the campaign's merkleRoot, then lock the button.
+                        if (activeManifest) {
+                          void publishProofs(merkleRoot, activeManifest.claims);
+                        }
+                        setCreated(true);
+                      }}
+                    />
+                  )}
                 </div>
-                {ready && !isNative && !approved && !insufficient && (
+                {created && (
+                  <p className="text-xs text-emerald-600">
+                    Campaign created on-chain.{" "}
+                    <Link href="/manage" className="underline">
+                      Go to console →
+                    </Link>
+                  </p>
+                )}
+                {ready && !created && !isNative && !approved && !insufficient && (
                   <p className="text-xs text-slate-400">
                     Next: approve the token, then create. (Approve authorizes the factory to pull
                     total + fee.)
                   </p>
                 )}
-                {ready && (isNative || approved) && !insufficient && (
+                {ready && !created && (isNative || approved) && !insufficient && (
                   <p className="text-xs text-slate-400">
                     Next: create the campaign to deploy it on-chain.
                   </p>

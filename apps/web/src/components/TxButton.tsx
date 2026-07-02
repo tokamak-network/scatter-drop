@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import {
+  useAccount,
   useChainId,
   useSendTransaction,
   useWaitForTransactionReceipt,
@@ -29,6 +30,8 @@ export function TxButton({
   const { data: hash, sendTransaction, isPending, error } = useSendTransaction();
   const { isLoading: mining, isSuccess } = useWaitForTransactionReceipt({ hash });
   const chainId = useChainId();
+  const { chain } = useAccount();
+  const explorer = chain?.blockExplorers?.default?.url;
 
   // Keep the latest callback in a ref so the success effect depends only on
   // `isSuccess` — an inline `onConfirmed` (new identity each render) would
@@ -68,6 +71,25 @@ export function TxButton({
       >
         {text}
       </button>
+      {hash && (
+        <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+          {mining ? "tx pending" : isSuccess ? "tx confirmed" : "tx sent"}:{" "}
+          {explorer ? (
+            <a
+              href={`${explorer.replace(/\/$/, "")}/tx/${hash}`}
+              target="_blank"
+              rel="noreferrer"
+              style={{ textDecoration: "underline" }}
+            >
+              {hash.slice(0, 10)}…{hash.slice(-8)} ↗
+            </a>
+          ) : (
+            <span style={{ fontFamily: "monospace" }}>
+              {hash.slice(0, 10)}…{hash.slice(-8)}
+            </span>
+          )}
+        </div>
+      )}
       {error && (
         <div
           className="muted"
