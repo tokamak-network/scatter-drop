@@ -4,27 +4,20 @@ import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { isAddress } from "viem";
 import {
+  ArrowLeft,
   ArrowRight,
-  Camera,
   Check,
-  Coins,
   Copy,
-  Database,
   Download,
-  Image as ImageIcon,
-  Layers,
-  Pencil,
   Plus,
   Trash2,
   Upload,
 } from "lucide-react";
-import { SnapshotBuilder } from "@/components/SnapshotBuilder";
-import { DuneImport } from "@/components/DuneImport";
+import { DuneImport, type Recipient } from "@/components/DuneImport";
 import { downloadCsv } from "@/lib/downloadCsv";
-import type { SnapshotManifest } from "@/lib/useSnapshotJob";
 import { DRAFT_CSV_KEY } from "@/lib/draftCsv";
 
-type Row = { address: string; amount: string };
+type Row = Recipient;
 const BLANK: Row = { address: "", amount: "" };
 // Amounts must be non-negative base-10 integers — matches the SDK/merkle CSV
 // parser (packages/merkle/src/csv.ts), so /tools can't accept hex/signed values
@@ -39,14 +32,6 @@ function isPosAmount(s: string): boolean {
     return false;
   }
 }
-
-type Tab = "manual" | "snapshot" | "dune" | "combine";
-const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
-  { id: "manual", label: "Manual / CSV", icon: <Pencil className="w-3.5 h-3.5" /> },
-  { id: "snapshot", label: "Snapshot", icon: <Camera className="w-3.5 h-3.5" /> },
-  { id: "dune", label: "Dune", icon: <Database className="w-3.5 h-3.5" /> },
-  { id: "combine", label: "Combine & filter", icon: <Layers className="w-3.5 h-3.5" /> },
-];
 
 function nonEmpty(r: Row) {
   return r.address.trim() !== "" || r.amount.trim() !== "";
@@ -109,16 +94,16 @@ function dedupSum(rows: Row[]): Row[] {
 
 export default function ToolsPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("manual");
-  const [snapKind, setSnapKind] = useState<"erc20" | "nft">("erc20");
-  const [nftStd, setNftStd] = useState<"erc721" | "erc1155">("erc721");
+  const [step, setStep] = useState<1 | 2>(1);
+  // Step 1 works on CSV text (paste / upload / Dune fill it); step 2 works on the
+  // parsed rows. They sync at each transition so edits in either survive.
+  const [csvText, setCsvText] = useState("");
   const [rows, setRows] = useState<Row[]>([{ ...BLANK }]);
-  const fileRef = useRef<HTMLInputElement>(null);
   const [copied, setCopied] = useState(false);
   const [equalAmount, setEqualAmount] = useState("");
-  const [snap, setSnap] = useState<SnapshotManifest | null>(null);
-  const [operand, setOperand] = useState("");
+  const [proRataTotal, setProRataTotal] = useState("");
   const [capInput, setCapInput] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const setAndPad = (next: Row[]) => setRows(withTrailingBlank(next));
 
@@ -130,67 +115,86 @@ export default function ToolsPage() {
     setRows(next.length ? withTrailingBlank(next) : [{ ...BLANK }]);
   };
 
+  // Append CSV text (from a Dune fetch, a file, or a paste) to whatever is
+  // already in the step-1 CSV box, so multiple sources aggregate into one list.
+  const appendCsv = (text: string) => {
+    const add = text.trim();
+    if (!add) return;
+    setCsvText((prev) => (prev.trim() ? `${prev.trim()}\n${add}` : add));
+  };
+  const appendRecipients = (recipients: Recipient[]) =>
+    appendCsv(recipients.map((r) => `${r.address},${r.amount}`).join("\n"));
+
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => appendCsv(String(reader.result ?? ""));
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  // How many valid recipients the step-1 CSV currently parses to.
+  const parsedCount = useMemo(
+    () =>
+      csvToRows(csvText).filter(
+        (r) => isAddress(r.address.trim(), { strict: false }),
+      ).length,
+    [csvText],
+  );
+
+  const goToAmounts = () => {
+    if (parsedCount === 0) return;
+    setAndPad(csvToRows(csvText));
+    setStep(2);
+  };
+  const backToAggregate = () => {
+    setCsvText(rowsToCsv(rows));
+    setStep(1);
+  };
+
   const applyEqual = () => {
     const v = equalAmount.trim();
     if (!isPosAmount(v)) return; // positive base-10 integer only
     setAndPad(rows.map((r) => (r.address.trim() ? { ...r, amount: v } : r)));
   };
 
-  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setAndPad(csvToRows(String(reader.result ?? "")));
-    reader.readAsText(file);
-    e.target.value = "";
-  };
-
-  const onPaste = (e: React.ClipboardEvent, i: number) => {
-    const text = e.clipboardData.getData("text");
-    if (!/[\n,\t]/.test(text)) return;
-    e.preventDefault();
-    // Preserve rows both before and after the paste point (no data loss).
-    const before = rows.slice(0, i).filter(nonEmpty);
-    const after = rows.slice(i + 1).filter(nonEmpty);
-    setAndPad([...before, ...csvToRows(text), ...after]);
-  };
-
-  const loadSnapshot = () => {
-    if (!snap) return;
-    // The editable grid renders one input per row with live validation, so a
-    // very large list can lag. Warn before loading thousands of rows.
-    if (
-      snap.count > 1000 &&
-      !window.confirm(
-        `Loading ${snap.count.toLocaleString()} rows into the editable grid may be slow. Continue? (You can still export/use the full list.)`,
-      )
-    ) {
-      return;
-    }
-    setAndPad(
-      Object.values(snap.claims).map((c) => ({ address: c.account, amount: c.amount })),
+  // Split a fixed total across recipients weighted by their current amount
+  // (e.g. the Dune balance). Uses floor per recipient, then gives the rounding
+  // remainder to the largest-weight recipient so the sum equals the total exactly.
+  const applyProRata = () => {
+    const t = proRataTotal.trim();
+    if (!isPosAmount(t)) return;
+    const total = BigInt(t);
+    const weights = rows.map((r) =>
+      r.address.trim() && isPosAmount(r.amount) ? BigInt(r.amount.trim()) : 0n,
     );
-    setTab("manual");
+    const sum = weights.reduce((a, b) => a + b, 0n);
+    if (sum === 0n) return; // nothing to weight by
+    let assigned = 0n;
+    let maxIdx = -1;
+    let maxW = 0n;
+    const next = rows.map((r, i) => {
+      const w = weights[i];
+      if (w > maxW) {
+        maxW = w;
+        maxIdx = i;
+      }
+      if (w === 0n) return r.address.trim() ? { ...r, amount: "0" } : r;
+      const amt = (total * w) / sum;
+      assigned += amt;
+      return { ...r, amount: amt.toString() };
+    });
+    const remainder = total - assigned;
+    if (remainder > 0n && maxIdx >= 0) {
+      next[maxIdx] = {
+        ...next[maxIdx],
+        amount: (BigInt(next[maxIdx].amount || "0") + remainder).toString(),
+      };
+    }
+    setAndPad(next);
   };
 
-  // Combine & filter (pure client-side set/amount ops).
-  const operandKeys = useMemo(() => {
-    const s = new Set<string>();
-    for (const r of csvToRows(operand)) {
-      const a = r.address.trim();
-      if (isAddress(a, { strict: false })) s.add(a.toLowerCase());
-    }
-    return s;
-  }, [operand]);
-  const hasOperand = operandKeys.size > 0;
-  const keyOf = (r: Row) => r.address.trim().toLowerCase();
-
-  const doIntersect = () =>
-    setAndPad(rows.filter((r) => nonEmpty(r) && operandKeys.has(keyOf(r))));
-  const doExclude = () =>
-    setAndPad(rows.filter((r) => nonEmpty(r) && !operandKeys.has(keyOf(r))));
-  const doUnion = () =>
-    setAndPad(dedupSum([...rows.filter(nonEmpty), ...csvToRows(operand)]));
   const doDedup = () => setAndPad(dedupSum(rows.filter(nonEmpty)));
   const doCap = () => {
     if (!isPosAmount(capInput)) return; // positive base-10 integer only
@@ -202,6 +206,16 @@ export default function ToolsPage() {
           : r,
       ),
     );
+  };
+
+  const onPaste = (e: React.ClipboardEvent, i: number) => {
+    const text = e.clipboardData.getData("text");
+    if (!/[\n,\t]/.test(text)) return;
+    e.preventDefault();
+    // Preserve rows both before and after the paste point (no data loss).
+    const before = rows.slice(0, i).filter(nonEmpty);
+    const after = rows.slice(i + 1).filter(nonEmpty);
+    setAndPad([...before, ...csvToRows(text), ...after]);
   };
 
   const analysis = useMemo(() => {
@@ -256,267 +270,254 @@ export default function ToolsPage() {
           Recipient list builder
         </h1>
         <p className="mt-2 text-sm text-slate-400 max-w-2xl">
-          Build an airdrop recipient list from any source, edit it like a
-          spreadsheet, then export it or send it to a new campaign. Amounts are in
-          base units (wei-like, no 18-decimal scaling).
+          Two steps: aggregate the recipients from a Dune query, then decide how
+          much each one gets. Amounts are in base units (wei-like, no 18-decimal
+          scaling).
         </p>
       </div>
 
-      {/* Source tabs */}
-      <div>
-        <div className="flex flex-wrap gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800 w-fit">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-medium rounded transition ${
-                tab === t.id
-                  ? "bg-slate-800 text-slate-100"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              {t.icon}
-              {t.label}
-            </button>
-          ))}
-        </div>
+      {/* Wizard step indicator */}
+      <div className="flex items-center gap-2">
+        <StepPill
+          n={1}
+          label="Aggregate recipients"
+          active={step === 1}
+          onClick={() => step === 2 && backToAggregate()}
+        />
+        <span className="h-px w-6 bg-slate-800" />
+        <StepPill
+          n={2}
+          label="Decide amounts"
+          active={step === 2}
+          disabled={step === 1 && parsedCount === 0}
+          onClick={() => step === 1 && goToAmounts()}
+        />
+      </div>
 
-        <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900 p-5">
-          {tab === "manual" && (
-            <div className="space-y-3">
-              <p className="text-xs text-slate-400">
-                Type in the grid below, paste <span className="font-mono">address,amount</span> lines
-                into a cell, or import a CSV file.
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                <input ref={fileRef} type="file" accept=".csv,text/csv,text/plain" className="hidden" onChange={onFile} />
-                <ToolbarBtn onClick={() => fileRef.current?.click()} icon={<Upload className="w-3.5 h-3.5" />}>
-                  Import CSV
-                </ToolbarBtn>
-                <ToolbarBtn onClick={() => setAndPad([...rows.filter(nonEmpty), { ...BLANK }])} icon={<Plus className="w-3.5 h-3.5" />}>
-                  Add row
-                </ToolbarBtn>
-                <span className="mx-2 h-4 w-px bg-slate-800" />
-                <span className="text-slate-400 text-xs font-mono">Equal split:</span>
-                <input
-                  value={equalAmount}
-                  onChange={(e) => setEqualAmount(e.target.value)}
-                  placeholder="amount"
-                  className="bg-slate-950 border border-slate-800 focus:border-slate-700 text-slate-100 px-3 py-1.5 rounded-lg font-mono text-xs outline-none w-40"
-                />
-                <ToolbarBtn onClick={applyEqual} icon={<Check className="w-3.5 h-3.5" />} disabled={!equalAmount.trim()}>
-                  Set each
-                </ToolbarBtn>
-              </div>
+      {step === 1 && (
+        <div className="space-y-4">
+          {/* Source: Dune query → fills the CSV below */}
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+            <DuneImport onRows={appendRecipients} />
+          </div>
+
+          {/* Source: upload / paste / hand-edit — the shared recipient CSV */}
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-sm font-bold text-slate-100 mr-auto">Recipient CSV</h2>
+              <input ref={fileRef} type="file" accept=".csv,text/csv,text/plain" className="hidden" onChange={onFile} />
+              <ToolbarBtn onClick={() => fileRef.current?.click()} icon={<Upload className="w-3.5 h-3.5" />}>
+                Upload CSV
+              </ToolbarBtn>
+              <ToolbarBtn onClick={() => setCsvText("")} disabled={!csvText.trim()}>
+                Clear
+              </ToolbarBtn>
             </div>
-          )}
-
-          {tab === "snapshot" && (
-            <div className="space-y-4">
-              {/* Sub-menu: which kind of holder snapshot */}
-              <div className="flex flex-wrap gap-2">
-                <SubTab active={snapKind === "erc20"} onClick={() => setSnapKind("erc20")} icon={<Coins className="w-3.5 h-3.5" />}>
-                  Aggregate by ERC-20 holdings
-                </SubTab>
-                <SubTab active={snapKind === "nft"} onClick={() => setSnapKind("nft")} icon={<ImageIcon className="w-3.5 h-3.5" />}>
-                  Aggregate by NFT ownership
-                </SubTab>
-              </div>
-
-              {snapKind === "nft" && (
-                <div className="flex flex-wrap gap-2">
-                  <SubTab active={nftStd === "erc721"} onClick={() => setNftStd("erc721")} icon={<ImageIcon className="w-3.5 h-3.5" />}>
-                    ERC-721
-                  </SubTab>
-                  <SubTab active={nftStd === "erc1155"} onClick={() => setNftStd("erc1155")} icon={<Layers className="w-3.5 h-3.5" />}>
-                    ERC-1155
-                  </SubTab>
-                </div>
-              )}
-              <p className="text-[11px] text-slate-500">
-                {snapKind === "erc20"
-                  ? "Enter an ERC-20 token. Holders with balance ≥ min at the block are captured, then allocated equally or pro-rata by balance."
-                  : nftStd === "erc1155"
-                    ? "Enter an ERC-1155 collection and a token id. Owners holding ≥ min of that id at the block are captured, then allocated equally or pro-rata by count."
-                    : "Enter an ERC-721 collection. Owners holding ≥ min NFTs at the block are captured (balanceOf returns the count), then allocated equally or pro-rata by count."}
-              </p>
-              <SnapshotBuilder
-                onResult={setSnap}
-                standard={snapKind === "erc20" ? "erc20" : nftStd}
-              />
-              {snap && (
-                <button
-                  onClick={loadSnapshot}
-                  className="w-full inline-flex items-center justify-center gap-2 bg-slate-950 border border-emerald-500/40 hover:bg-emerald-500/10 text-emerald-600 font-semibold px-4 py-2 rounded-lg text-sm transition"
-                >
-                  Load {snap.count.toLocaleString()}{" "}
-                  {snapKind === "nft" ? "NFT owners" : "holders"} into the list ↓
-                </button>
-              )}
-            </div>
-          )}
-
-          {tab === "dune" && (
-            <DuneImport
-              onRows={(rows) => {
-                setAndPad(rows);
-                setTab("manual");
-              }}
+            <p className="text-[11px] text-slate-500">
+              One <span className="font-mono">address,amount</span> per line. A Dune fetch above
+              appends its holders here; you can also paste or type directly.
+            </p>
+            <textarea
+              value={csvText}
+              onChange={(e) => setCsvText(e.target.value)}
+              rows={10}
+              spellCheck={false}
+              placeholder={"0xabc…,1000000000000000000\n0xdef…,500000000000000000"}
+              className="input font-mono text-xs"
             />
-          )}
-
-          {tab === "combine" && (
-            <div className="space-y-4">
-              <div>
-                <label className="text-[11px] text-slate-400">
-                  Second list (address[,amount] per line) — set operations against your list
-                </label>
-                <textarea
-                  value={operand}
-                  onChange={(e) => setOperand(e.target.value)}
-                  rows={4}
-                  placeholder={"0xabc…\n0xdef…,50"}
-                  className="input font-mono text-xs mt-1"
-                />
-                <div className="flex flex-wrap gap-2 mt-2">
-                  <ToolbarBtn onClick={doUnion} disabled={!hasOperand}>Union (OR)</ToolbarBtn>
-                  <ToolbarBtn onClick={doIntersect} disabled={!hasOperand}>Intersect (AND)</ToolbarBtn>
-                  <ToolbarBtn onClick={doExclude} disabled={!hasOperand}>Exclude (remove these)</ToolbarBtn>
-                  <span className="text-[11px] text-slate-500 self-center">
-                    {hasOperand ? `${operandKeys.size} address(es)` : "paste a second list to enable"}
-                  </span>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 border-t border-slate-800/60 pt-3">
-                <ToolbarBtn onClick={doDedup}>Dedupe (sum amounts)</ToolbarBtn>
-                <span className="text-slate-400 text-xs font-mono ml-2">Cap per wallet:</span>
-                <input
-                  value={capInput}
-                  onChange={(e) => setCapInput(e.target.value)}
-                  placeholder="max"
-                  className="bg-slate-950 border border-slate-800 focus:border-slate-700 text-slate-100 px-3 py-1.5 rounded-lg font-mono text-xs outline-none w-40"
-                />
-                <ToolbarBtn onClick={doCap} disabled={!capInput.trim()}>Apply cap</ToolbarBtn>
-              </div>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-400 font-mono">
+                {parsedCount.toLocaleString()} recipient(s)
+              </span>
+              <button
+                onClick={goToAmounts}
+                disabled={parsedCount === 0}
+                className="ml-auto inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg text-sm transition"
+              >
+                Next: decide amounts <ArrowRight className="w-4 h-4" />
+              </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div className="space-y-3">
+          {/* Amount tools */}
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-3">
+            <p className="text-xs text-slate-400">
+              Set amounts across the list, or edit any cell directly below.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-slate-400 text-xs font-mono">Equal / wallet:</span>
+              <ValueInput value={equalAmount} onChange={setEqualAmount} placeholder="amount" />
+              <ToolbarBtn onClick={applyEqual} icon={<Check className="w-3.5 h-3.5" />} disabled={!equalAmount.trim()}>
+                Set each
+              </ToolbarBtn>
+              <span className="mx-1 h-4 w-px bg-slate-800" />
+              <span className="text-slate-400 text-xs font-mono">Pro-rata total:</span>
+              <ValueInput value={proRataTotal} onChange={setProRataTotal} placeholder="total" />
+              <ToolbarBtn onClick={applyProRata} disabled={!proRataTotal.trim()}>
+                Split by balance
+              </ToolbarBtn>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 border-t border-slate-800/60 pt-3">
+              <span className="text-slate-400 text-xs font-mono">Cap per wallet:</span>
+              <ValueInput value={capInput} onChange={setCapInput} placeholder="max" />
+              <ToolbarBtn onClick={doCap} disabled={!capInput.trim()}>Apply cap</ToolbarBtn>
+              <span className="mx-1 h-4 w-px bg-slate-800" />
+              <ToolbarBtn onClick={doDedup}>Dedupe (sum amounts)</ToolbarBtn>
+              <ToolbarBtn onClick={() => setAndPad([...rows.filter(nonEmpty), { ...BLANK }])} icon={<Plus className="w-3.5 h-3.5" />}>
+                Add row
+              </ToolbarBtn>
+            </div>
+          </div>
+
+          {/* The working list */}
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-sm font-bold text-slate-100 mr-auto">
+              Your list
+              <span className="ml-2 text-xs font-normal text-slate-400">
+                {analysis.valid.toLocaleString()} recipients · total {analysis.total.toLocaleString()}
+                {analysis.invalid > 0 && (
+                  <span className="text-amber-600"> · {analysis.invalid} error(s)</span>
+                )}
+              </span>
+            </h2>
+            <ToolbarBtn onClick={backToAggregate} icon={<ArrowLeft className="w-3.5 h-3.5" />}>
+              Re-aggregate
+            </ToolbarBtn>
+            <ToolbarBtn onClick={download} icon={<Download className="w-3.5 h-3.5" />} disabled={!canUse}>
+              Export CSV
+            </ToolbarBtn>
+            <ToolbarBtn onClick={copyCsv} icon={copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />} disabled={!canUse}>
+              {copied ? "Copied" : "Copy"}
+            </ToolbarBtn>
+            <button
+              onClick={useInCampaign}
+              disabled={!canUse}
+              className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg text-sm transition"
+            >
+              Use in a campaign <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[10px] font-mono uppercase tracking-wider text-slate-400 border-b border-slate-800">
+                  <th className="w-10 px-3 py-2 text-right">#</th>
+                  <th className="px-3 py-2">Address</th>
+                  <th className="px-3 py-2 w-64">Amount (base units)</th>
+                  <th className="w-10 px-2 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => {
+                  const s = analysis.status[i];
+                  const addrBad = s.state === "bad" && s.addrOk === false;
+                  const amtBad = s.state === "bad" && s.amtOk === false;
+                  const dup = s.state === "bad" && s.dup;
+                  return (
+                    <tr key={i} className="border-b border-slate-800/60 last:border-0">
+                      <td className="px-3 py-1 text-right font-mono text-[11px] text-slate-500">{i + 1}</td>
+                      <td className="px-1 py-1">
+                        <input
+                          value={r.address}
+                          onChange={(e) => update(i, "address", e.target.value)}
+                          onPaste={(e) => onPaste(e, i)}
+                          placeholder="0x…"
+                          className={`w-full bg-transparent px-2 py-1 rounded font-mono text-xs outline-none focus:bg-slate-950 ${
+                            addrBad || dup ? "text-red-500" : "text-slate-100"
+                          }`}
+                        />
+                      </td>
+                      <td className="px-1 py-1">
+                        <input
+                          value={r.amount}
+                          onChange={(e) => update(i, "amount", e.target.value)}
+                          onPaste={(e) => onPaste(e, i)}
+                          placeholder="100"
+                          className={`w-full bg-transparent px-2 py-1 rounded font-mono text-xs outline-none focus:bg-slate-950 ${
+                            amtBad ? "text-red-500" : "text-slate-100"
+                          }`}
+                        />
+                      </td>
+                      <td className="px-1 py-1 text-center">
+                        {nonEmpty(r) && (
+                          <button onClick={() => removeRow(i)} className="text-slate-500 hover:text-red-500 transition" title="Remove row">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {analysis.invalid > 0 && (
+            <p className="text-[11px] text-amber-600">
+              Rows in red have an invalid address, a non-positive amount, or a duplicate address.
+            </p>
           )}
         </div>
-      </div>
-
-      {/* The working list */}
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-sm font-bold text-slate-100 mr-auto">
-            Your list
-            <span className="ml-2 text-xs font-normal text-slate-400">
-              {analysis.valid.toLocaleString()} recipients · total {analysis.total.toLocaleString()}
-              {analysis.invalid > 0 && (
-                <span className="text-amber-600"> · {analysis.invalid} error(s)</span>
-              )}
-            </span>
-          </h2>
-          <ToolbarBtn onClick={download} icon={<Download className="w-3.5 h-3.5" />} disabled={!canUse}>
-            Export CSV
-          </ToolbarBtn>
-          <ToolbarBtn onClick={copyCsv} icon={copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />} disabled={!canUse}>
-            {copied ? "Copied" : "Copy"}
-          </ToolbarBtn>
-          <button
-            onClick={useInCampaign}
-            disabled={!canUse}
-            className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg text-sm transition"
-          >
-            Use in a campaign <ArrowRight className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-[10px] font-mono uppercase tracking-wider text-slate-400 border-b border-slate-800">
-                <th className="w-10 px-3 py-2 text-right">#</th>
-                <th className="px-3 py-2">Address</th>
-                <th className="px-3 py-2 w-64">Amount (base units)</th>
-                <th className="w-10 px-2 py-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => {
-                const s = analysis.status[i];
-                const addrBad = s.state === "bad" && s.addrOk === false;
-                const amtBad = s.state === "bad" && s.amtOk === false;
-                const dup = s.state === "bad" && s.dup;
-                return (
-                  <tr key={i} className="border-b border-slate-800/60 last:border-0">
-                    <td className="px-3 py-1 text-right font-mono text-[11px] text-slate-500">{i + 1}</td>
-                    <td className="px-1 py-1">
-                      <input
-                        value={r.address}
-                        onChange={(e) => update(i, "address", e.target.value)}
-                        onPaste={(e) => onPaste(e, i)}
-                        placeholder="0x…"
-                        className={`w-full bg-transparent px-2 py-1 rounded font-mono text-xs outline-none focus:bg-slate-950 ${
-                          addrBad || dup ? "text-red-500" : "text-slate-100"
-                        }`}
-                      />
-                    </td>
-                    <td className="px-1 py-1">
-                      <input
-                        value={r.amount}
-                        onChange={(e) => update(i, "amount", e.target.value)}
-                        onPaste={(e) => onPaste(e, i)}
-                        placeholder="100"
-                        className={`w-full bg-transparent px-2 py-1 rounded font-mono text-xs outline-none focus:bg-slate-950 ${
-                          amtBad ? "text-red-500" : "text-slate-100"
-                        }`}
-                      />
-                    </td>
-                    <td className="px-1 py-1 text-center">
-                      {nonEmpty(r) && (
-                        <button onClick={() => removeRow(i)} className="text-slate-500 hover:text-red-500 transition" title="Remove row">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        {analysis.invalid > 0 && (
-          <p className="text-[11px] text-amber-600">
-            Rows in red have an invalid address, a non-positive amount, or a duplicate address.
-          </p>
-        )}
-      </div>
+      )}
     </div>
   );
 }
 
-function SubTab({
+function StepPill({
+  n,
+  label,
   active,
+  disabled,
   onClick,
-  icon,
-  children,
 }: {
+  n: number;
+  label: string;
   active: boolean;
+  disabled?: boolean;
   onClick: () => void;
-  icon: React.ReactNode;
-  children: React.ReactNode;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition ${
+      disabled={disabled}
+      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed ${
         active
           ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600"
           : "border-slate-800 bg-slate-950 text-slate-300 hover:border-slate-700"
       }`}
     >
-      {icon}
-      {children}
+      <span
+        className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-mono ${
+          active ? "bg-emerald-500 text-white" : "bg-slate-800 text-slate-300"
+        }`}
+      >
+        {n}
+      </span>
+      {label}
     </button>
+  );
+}
+
+function ValueInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <input
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      className="bg-slate-950 border border-slate-800 focus:border-slate-700 text-slate-100 px-3 py-1.5 rounded-lg font-mono text-xs outline-none w-40"
+    />
   );
 }
 

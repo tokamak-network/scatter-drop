@@ -13,9 +13,18 @@ import { downloadCsv } from "@/lib/downloadCsv";
  * (free) plan — the app never needs a Dune key.
  */
 
-// Parameterized template query — operators fork this, set the params, and Run.
-// `SUM(delta) > 0` drops fully-exited holders even when min_balance is 0.
-const TEMPLATE_SQL = `WITH flows AS (
+// Parameterized template queries — operators fork one, set the params, and Run.
+// Each returns `address` + `balance` columns, which the server normalizes to
+// {address, amount}. Aggregation differs per standard:
+//  - ERC-20:   sum Transfer `value` deltas (received − sent).
+//  - ERC-721:  no value; the last Transfer `to` per tokenId is the owner, then
+//              count tokenIds per owner.
+//  - ERC-1155: sum TransferSingle + (unnested) TransferBatch deltas for one id.
+// `SUM(delta) > 0` / the count filter drop fully-exited holders even at min 0.
+type Standard = "erc20" | "erc721" | "erc1155";
+
+const TEMPLATES: Record<Standard, string> = {
+  erc20: `WITH flows AS (
     SELECT "to" AS holder, CAST(value AS int256) AS delta
     FROM erc20_ethereum.evt_Transfer
     WHERE contract_address = {{token}}
@@ -32,18 +41,81 @@ GROUP BY holder
 HAVING SUM(delta) > 0
    AND SUM(delta) >= {{min_balance}}
    AND holder != 0x0000000000000000000000000000000000000000
-ORDER BY balance DESC`;
+ORDER BY balance DESC`,
+
+  erc721: `WITH owner AS (
+    SELECT "tokenId",
+           "to" AS holder,
+           ROW_NUMBER() OVER (PARTITION BY "tokenId"
+                              ORDER BY evt_block_number DESC, evt_index DESC) AS rn
+    FROM erc721_ethereum.evt_Transfer
+    WHERE contract_address = {{collection}}
+      AND evt_block_number <= {{snapshot_block}}
+)
+SELECT holder AS address, COUNT(*) AS balance
+FROM owner
+WHERE rn = 1
+  AND holder != 0x0000000000000000000000000000000000000000
+GROUP BY holder
+HAVING COUNT(*) >= {{min_count}}
+ORDER BY balance DESC`,
+
+  erc1155: `WITH flows AS (
+    SELECT "to" AS holder, CAST(value AS int256) AS delta
+    FROM erc1155_ethereum.evt_TransferSingle
+    WHERE contract_address = {{collection}} AND id = {{token_id}}
+      AND evt_block_number <= {{snapshot_block}}
+    UNION ALL
+    SELECT "from" AS holder, -CAST(value AS int256) AS delta
+    FROM erc1155_ethereum.evt_TransferSingle
+    WHERE contract_address = {{collection}} AND id = {{token_id}}
+      AND evt_block_number <= {{snapshot_block}}
+    UNION ALL
+    SELECT "to" AS holder, CAST(v AS int256) AS delta
+    FROM erc1155_ethereum.evt_TransferBatch
+         CROSS JOIN UNNEST(ids, "values") AS t(tid, v)
+    WHERE contract_address = {{collection}} AND tid = {{token_id}}
+      AND evt_block_number <= {{snapshot_block}}
+    UNION ALL
+    SELECT "from" AS holder, -CAST(v AS int256) AS delta
+    FROM erc1155_ethereum.evt_TransferBatch
+         CROSS JOIN UNNEST(ids, "values") AS t(tid, v)
+    WHERE contract_address = {{collection}} AND tid = {{token_id}}
+      AND evt_block_number <= {{snapshot_block}}
+)
+SELECT holder AS address, SUM(delta) AS balance
+FROM flows
+GROUP BY holder
+HAVING SUM(delta) > 0
+   AND SUM(delta) >= {{min_balance}}
+   AND holder != 0x0000000000000000000000000000000000000000
+ORDER BY balance DESC`,
+};
+
+const STANDARDS: { id: Standard; hint: string; table: string }[] = [
+  { id: "erc20", hint: "Balance = summed token amount (base units).", table: "erc20_ethereum" },
+  { id: "erc721", hint: "Balance = number of NFTs owned at the block.", table: "erc721_ethereum" },
+  { id: "erc1155", hint: "Set the token id; balance = amount of that id held.", table: "erc1155_ethereum" },
+];
 
 export type Recipient = { address: string; amount: string };
 
 type FetchResult = { rows: Recipient[]; truncated: boolean };
 
 export function DuneImport({ onRows }: { onRows: (rows: Recipient[]) => void }) {
+  // Two-level source picker (mirrors the Snapshot tab): ERC-20 holders, or NFT
+  // holders → ERC-721 / ERC-1155.
+  const [category, setCategory] = useState<"erc20" | "nft">("erc20");
+  const [nftStd, setNftStd] = useState<"erc721" | "erc1155">("erc721");
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<FetchResult | null>(null);
   const [copied, setCopied] = useState(false);
+
+  const std: Standard = category === "erc20" ? "erc20" : nftStd;
+  const meta = STANDARDS.find((s) => s.id === std)!;
+  const sql = TEMPLATES[std];
 
   const csv = useMemo(
     () => (result ? toCsv(["address", "amount"], result.rows.map((r) => [r.address, r.amount])) : ""),
@@ -73,7 +145,7 @@ export function DuneImport({ onRows }: { onRows: (rows: Recipient[]) => void }) 
   }
 
   function copySql() {
-    navigator.clipboard?.writeText(TEMPLATE_SQL);
+    navigator.clipboard?.writeText(sql);
     setCopied(true);
     setTimeout(() => setCopied(false), 1200);
   }
@@ -94,6 +166,27 @@ export function DuneImport({ onRows }: { onRows: (rows: Recipient[]) => void }) 
         transfers in seconds, so this scales where an on-chain scan can&apos;t.
       </p>
 
+      {/* Which kind of holder to aggregate — ERC-20 vs NFT (→ 721 / 1155) */}
+      <div className="flex flex-wrap gap-2">
+        <PickBtn active={category === "erc20"} onClick={() => setCategory("erc20")}>
+          ERC-20 holders
+        </PickBtn>
+        <PickBtn active={category === "nft"} onClick={() => setCategory("nft")}>
+          NFT holders
+        </PickBtn>
+      </div>
+      {category === "nft" && (
+        <div className="flex flex-wrap gap-2">
+          <PickBtn active={nftStd === "erc721"} onClick={() => setNftStd("erc721")}>
+            ERC-721
+          </PickBtn>
+          <PickBtn active={nftStd === "erc1155"} onClick={() => setNftStd("erc1155")}>
+            ERC-1155
+          </PickBtn>
+        </div>
+      )}
+      <p className="text-[11px] text-slate-500">{meta.hint}</p>
+
       {/* Step-by-step guide */}
       <details className="rounded-lg border border-slate-800 bg-slate-950 open:pb-3">
         <summary className="cursor-pointer px-4 py-2.5 text-xs font-mono font-semibold text-slate-200 select-none">
@@ -113,7 +206,7 @@ export function DuneImport({ onRows }: { onRows: (rows: Recipient[]) => void }) 
 
         <div className="mx-4 mt-2 relative">
           <pre className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-900 p-3 text-[10.5px] leading-relaxed font-mono text-slate-300">
-            {TEMPLATE_SQL}
+            {sql}
           </pre>
           <button
             type="button"
@@ -125,8 +218,8 @@ export function DuneImport({ onRows }: { onRows: (rows: Recipient[]) => void }) 
           </button>
         </div>
         <p className="mt-2 px-4 text-[10.5px] text-slate-500">
-          Template targets Ethereum mainnet (<span className="font-mono">erc20_ethereum</span>). For
-          another chain, swap the table (e.g. <span className="font-mono">erc20_base</span>).
+          Template targets Ethereum mainnet (<span className="font-mono">{meta.table}</span>). For
+          another chain, swap the table suffix (e.g. <span className="font-mono">_base</span>).
         </p>
       </details>
 
@@ -185,5 +278,29 @@ export function DuneImport({ onRows }: { onRows: (rows: Recipient[]) => void }) 
         </div>
       )}
     </div>
+  );
+}
+
+function PickBtn({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition ${
+        active
+          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600"
+          : "border-slate-800 bg-slate-950 text-slate-300 hover:border-slate-700"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
