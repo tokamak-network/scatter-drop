@@ -20,7 +20,8 @@ import { downloadCsv } from "@/lib/downloadCsv";
 //  - ERC-721:  no value; the last Transfer `to` per tokenId is the owner, then
 //              count tokenIds per owner.
 //  - ERC-1155: sum TransferSingle + (unnested) TransferBatch deltas for one id.
-// `SUM(delta) > 0` / the count filter drop fully-exited holders even at min 0.
+// The HAVING uses `>= {{min_balance}}`; with min 0 the operator changes it to
+// `>` to drop fully-exited (zero-balance) holders (see the guide note).
 type Standard = "erc20" | "erc721" | "erc1155";
 
 const TEMPLATES: Record<Standard, string> = {
@@ -38,8 +39,7 @@ const TEMPLATES: Record<Standard, string> = {
 SELECT holder AS address, SUM(delta) AS balance
 FROM flows
 GROUP BY holder
-HAVING SUM(delta) > 0
-   AND SUM(delta) >= {{min_balance}}
+HAVING SUM(delta) >= {{min_balance}}
    AND holder != 0x0000000000000000000000000000000000000000
 ORDER BY balance DESC`,
 
@@ -86,16 +86,50 @@ ORDER BY balance DESC`,
 SELECT holder AS address, SUM(delta) AS balance
 FROM flows
 GROUP BY holder
-HAVING SUM(delta) > 0
-   AND SUM(delta) >= {{min_balance}}
+HAVING SUM(delta) >= {{min_balance}}
    AND holder != 0x0000000000000000000000000000000000000000
 ORDER BY balance DESC`,
 };
 
-const STANDARDS: { id: Standard; hint: string; table: string }[] = [
-  { id: "erc20", hint: "Balance = summed token amount (base units).", table: "erc20_ethereum" },
-  { id: "erc721", hint: "Balance = number of NFTs owned at the block.", table: "erc721_ethereum" },
-  { id: "erc1155", hint: "Set the token id; balance = amount of that id held.", table: "erc1155_ethereum" },
+// `params` lists the {{…}} placeholders in each template and what to replace
+// them with — addresses go in as bare 0x… (no quotes), numbers as-is.
+const STANDARDS: {
+  id: Standard;
+  hint: string;
+  table: string;
+  params: { ph: string; desc: string }[];
+}[] = [
+  {
+    id: "erc20",
+    hint: "Balance = summed token amount (base units).",
+    table: "erc20_ethereum",
+    params: [
+      { ph: "{{token}}", desc: "ERC-20 token contract address, e.g. 0xA0b8… (bare, no quotes)" },
+      { ph: "{{snapshot_block}}", desc: "block number to snapshot at (a recent block ≈ now)" },
+      { ph: "{{min_balance}}", desc: "minimum balance in base units — 0 = every holder" },
+    ],
+  },
+  {
+    id: "erc721",
+    hint: "Balance = number of NFTs owned at the block.",
+    table: "erc721_ethereum",
+    params: [
+      { ph: "{{collection}}", desc: "NFT collection contract address (0x…)" },
+      { ph: "{{snapshot_block}}", desc: "block number to snapshot at" },
+      { ph: "{{min_count}}", desc: "minimum NFTs owned — 1 = any holder" },
+    ],
+  },
+  {
+    id: "erc1155",
+    hint: "Set the token id; balance = amount of that id held.",
+    table: "erc1155_ethereum",
+    params: [
+      { ph: "{{collection}}", desc: "collection contract address (0x…)" },
+      { ph: "{{token_id}}", desc: "the token id to snapshot" },
+      { ph: "{{snapshot_block}}", desc: "block number to snapshot at" },
+      { ph: "{{min_balance}}", desc: "minimum amount of that id held — 0 = every holder" },
+    ],
+  },
 ];
 
 export type Recipient = { address: string; amount: string };
@@ -207,7 +241,7 @@ export function DuneImport({ onRows }: { onRows: (rows: Recipient[]) => void }) 
             </span>
             .
           </li>
-          <li>Paste the SQL below into the query editor, then edit the token address, min balance, etc.</li>
+          <li>Paste the SQL below into the query editor, then replace the placeholders (listed under it).</li>
           <li>
             Click <span className="font-mono text-slate-200">Run</span>. Below the results, click the{" "}
             <span className="font-mono text-slate-200">API</span> icon →{" "}
@@ -230,6 +264,25 @@ export function DuneImport({ onRows }: { onRows: (rows: Recipient[]) => void }) 
             {copied ? "Copied" : "Copy SQL"}
           </button>
         </div>
+        {/* Which placeholders to replace, for the selected standard */}
+        <div className="mx-4 mt-2">
+          <p className="text-[10.5px] font-semibold text-slate-300">Replace in the query:</p>
+          <ul className="mt-1 space-y-0.5 text-[10.5px] text-slate-400">
+            {meta.params.map((p) => (
+              <li key={p.ph}>
+                <span className="font-mono text-emerald-600">{p.ph}</span> — {p.desc}
+              </li>
+            ))}
+          </ul>
+        </div>
+        {meta.id !== "erc721" && (
+          <p className="mt-2 px-4 text-[10.5px] text-amber-600">
+            If min balance is <span className="font-mono">0</span> (everyone), change{" "}
+            <span className="font-mono">SUM(delta) &gt;=</span> to{" "}
+            <span className="font-mono">SUM(delta) &gt;</span> so zero-balance (fully-exited) holders
+            are dropped.
+          </p>
+        )}
         <p className="mt-2 px-4 text-[10.5px] text-slate-500">
           Template targets Ethereum mainnet (<span className="font-mono">{meta.table}</span>). For
           another chain, swap the table suffix (e.g. <span className="font-mono">_base</span>).
