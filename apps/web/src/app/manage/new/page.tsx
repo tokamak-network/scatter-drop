@@ -14,6 +14,7 @@ import {
   airdropTypeLabel,
   buildApproveRequest,
   buildCreateDropRequest,
+  buildCreateDropOneTxRequest,
   buildDrop,
   getZkX509,
   NATIVE_ETH,
@@ -219,6 +220,8 @@ export default function NewCampaignPage() {
   const [justApproved, setJustApproved] = useState(false);
   // A new token/amount invalidates a prior approval flag.
   useEffect(() => setJustApproved(false), [token, totalDeposit]);
+  // Opt-in one-tx create for approveAndCall tokens (e.g. TON) — ERC-20 only.
+  const [oneTx, setOneTx] = useState(false);
   const approved =
     isNative ||
     justApproved ||
@@ -311,20 +314,23 @@ export default function NewCampaignPage() {
     !isNative && factory && tokenValid && fee !== undefined && totalDeposit > 0n
       ? buildApproveRequest(token as Address, factory, totalDeposit)
       : null;
-  const createReq =
-    ready && factory
-      ? buildCreateDropRequest(factory, {
-          airdropType: type,
-          airdropToken: token as Address,
-          merkleRoot,
-          totalAmount,
-          startTime: BigInt(startUnix),
-          deadline: BigInt(deadlineUnix),
-          identityRegistry:
-            identityRequired && registryAddr ? registryAddr : zeroAddress,
-          // For native ETH, the builder sets msg.value = totalAmount + fee.
-          fee: fee ?? 0n,
-        })
+  const dropParams = {
+    airdropType: type,
+    airdropToken: token as Address,
+    merkleRoot,
+    totalAmount,
+    startTime: BigInt(startUnix),
+    deadline: BigInt(deadlineUnix),
+    identityRegistry: identityRequired && registryAddr ? registryAddr : zeroAddress,
+    // For native ETH, the builder sets msg.value = totalAmount + fee.
+    fee: fee ?? 0n,
+  };
+  const createReq = ready && factory ? buildCreateDropRequest(factory, dropParams) : null;
+  // One-tx path (approveAndCall → onApprove) for tokens that support it (e.g. TON).
+  // ERC-20 only; the token's callback creates + funds in a single operator tx.
+  const oneTxReq =
+    ready && factory && oneTx && !isNative && fee !== undefined
+      ? buildCreateDropOneTxRequest(factory, dropParams, fee)
       : null;
 
   const canNext =
@@ -686,42 +692,76 @@ export default function NewCampaignPage() {
                     drop (total + fee), but holds {fmtAmount(walletBalance as bigint)}.
                   </p>
                 )}
+                {!isNative && (
+                  <label className="flex items-center gap-2 text-[11px] text-slate-400">
+                    <input
+                      type="checkbox"
+                      checked={oneTx}
+                      onChange={(e) => setOneTx(e.target.checked)}
+                      className="accent-emerald-500"
+                    />
+                    Create in one transaction — for tokens that support{" "}
+                    <span className="font-mono">approveAndCall</span> (e.g. TON)
+                  </label>
+                )}
                 <div className="grid gap-2">
-                  {!isNative &&
-                    (approved ? (
-                      <div className="btn text-emerald-600 border-emerald-500/40 cursor-default">
-                        1. Token approved ✓
-                      </div>
-                    ) : (
+                  {oneTx && !isNative ? (
+                    // approveAndCall → onApprove: the token approves + the factory
+                    // creates and funds the campaign in a single operator tx.
+                    <TxButton
+                      request={oneTxReq}
+                      label="Create in one transaction (approveAndCall)"
+                      primary
+                      disabled={!oneTxReq || insufficient}
+                      onConfirmed={() => {
+                        if (activeManifest) void publishProofs(merkleRoot, activeManifest.claims);
+                      }}
+                    />
+                  ) : (
+                    <>
+                      {!isNative &&
+                        (approved ? (
+                          <div className="btn text-emerald-600 border-emerald-500/40 cursor-default">
+                            1. Token approved ✓
+                          </div>
+                        ) : (
+                          <TxButton
+                            request={approveTokenReq}
+                            label="1. Approve token (total + fee)"
+                            primary
+                            disabled={!approveTokenReq || insufficient}
+                            onConfirmed={() => setJustApproved(true)}
+                          />
+                        ))}
                       <TxButton
-                        request={approveTokenReq}
-                        label="1. Approve token (total + fee)"
-                        primary
-                        disabled={!approveTokenReq || insufficient}
-                        onConfirmed={() => setJustApproved(true)}
+                        request={createReq}
+                        label={isNative ? "Create campaign (pay in ETH)" : "2. Create campaign"}
+                        primary={isNative || approved}
+                        disabled={!createReq || insufficient || (!isNative && !approved)}
+                        onConfirmed={() => {
+                          // Publish the recipient proofs so claimers can look up their
+                          // proof by the campaign's merkleRoot.
+                          if (activeManifest) {
+                            void publishProofs(merkleRoot, activeManifest.claims);
+                          }
+                        }}
                       />
-                    ))}
-                  <TxButton
-                    request={createReq}
-                    label={isNative ? "Create campaign (pay in ETH)" : "2. Create campaign"}
-                    primary={isNative || approved}
-                    disabled={!createReq || insufficient || (!isNative && !approved)}
-                    onConfirmed={() => {
-                      // Publish the recipient proofs so claimers can look up their
-                      // proof by the campaign's merkleRoot.
-                      if (activeManifest) {
-                        void publishProofs(merkleRoot, activeManifest.claims);
-                      }
-                    }}
-                  />
+                    </>
+                  )}
                 </div>
-                {ready && !isNative && !approved && !insufficient && (
+                {ready && oneTx && !isNative && !insufficient && (
+                  <p className="text-xs text-slate-400">
+                    Next: one transaction — <span className="font-mono">approveAndCall</span> approves
+                    and creates the campaign together. (Only works if the token supports it.)
+                  </p>
+                )}
+                {ready && !oneTx && !isNative && !approved && !insufficient && (
                   <p className="text-xs text-slate-400">
                     Next: approve the token, then create. (Approve authorizes the factory to pull
                     total + fee.)
                   </p>
                 )}
-                {ready && (isNative || approved) && !insufficient && (
+                {ready && !oneTx && (isNative || approved) && !insufficient && (
                   <p className="text-xs text-slate-400">
                     Next: create the campaign to deploy it on-chain.
                   </p>
