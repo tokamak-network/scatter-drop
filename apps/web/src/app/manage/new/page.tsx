@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useAccount, useBalance } from "wagmi";
+import { useAccount, useBalance, useChainId, useChains } from "wagmi";
 import {
   formatUnits,
   isAddress,
@@ -189,8 +189,13 @@ export default function NewCampaignPage() {
 
   // The connected wallet must hold total + fee (in the airdrop token, or ETH for
   // native) or it can't fund the drop — block Approve/Create with a clear reason.
-  const { address: account, chain } = useAccount();
-  const explorerAddr = (a: string) => explorerUrl(chain, "address", a);
+  const { address: account } = useAccount();
+  const chainId = useChainId();
+  const chains = useChains();
+  // Resolve the chain from the active chainId (matching the chain-aware reads),
+  // not the wallet's connected chain — the two can diverge.
+  const currentChain = chains.find((c) => c.id === chainId);
+  const explorerAddr = (a: string) => explorerUrl(currentChain, "address", a);
   const { data: erc20Bal } = useErc20Balance(
     !isNative && tokenValid ? (token as Address) : undefined,
     account,

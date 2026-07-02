@@ -9,8 +9,11 @@ import type { Chain } from "viem";
 export function explorerUrl(
   chain: Chain | undefined,
   kind: "tx" | "address",
-  value: string,
+  value: string | undefined,
 ): string | undefined {
+  if (!value) return undefined;
   const base = chain?.blockExplorers?.default?.url;
-  return base ? `${base.replace(/\/+$/, "")}/${kind}/${value}` : undefined;
+  return base
+    ? `${base.replace(/\/+$/, "")}/${kind}/${encodeURIComponent(value)}`
+    : undefined;
 }

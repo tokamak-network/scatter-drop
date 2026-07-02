@@ -2,8 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import {
-  useAccount,
   useChainId,
+  useChains,
   useSendTransaction,
   useWaitForTransactionReceipt,
 } from "wagmi";
@@ -29,31 +29,41 @@ export function TxButton({
   onConfirmed?: () => void;
 }) {
   const { data: hash, sendTransaction, isPending, error } = useSendTransaction();
-  const { isLoading: mining, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { data: receipt, isLoading: mining, isSuccess } =
+    useWaitForTransactionReceipt({ hash });
   const chainId = useChainId();
-  const { chain } = useAccount();
+  const chains = useChains();
+  // Resolve the chain from the active chainId (the chain the tx is sent on),
+  // not the wallet's connected chain — the two can diverge.
+  const currentChain = chains.find((c) => c.id === chainId);
+
+  // A mined receipt with status "reverted" still resolves `isSuccess` (the
+  // receipt was fetched), so gate the confirmed/failed states — and the
+  // onConfirmed callback — on the receipt's actual execution status.
+  const confirmed = isSuccess && receipt?.status === "success";
+  const reverted = isSuccess && receipt?.status === "reverted";
 
   // Explorer link for the submitted tx so the user can track it and keep a
-  // record of the result — only once a hash exists (no work pre-send).
-  const txUrl = hash ? explorerUrl(chain, "tx", hash) : undefined;
+  // record of the result (the helper returns undefined until a hash exists).
+  const txUrl = explorerUrl(currentChain, "tx", hash);
 
   // Keep the latest callback in a ref so the success effect depends only on
-  // `isSuccess` — an inline `onConfirmed` (new identity each render) would
-  // otherwise re-fire the effect in a loop once `isSuccess` is true.
+  // `confirmed` — an inline `onConfirmed` (new identity each render) would
+  // otherwise re-fire the effect in a loop once `confirmed` is true.
   const onConfirmedRef = useRef(onConfirmed);
   useEffect(() => {
     onConfirmedRef.current = onConfirmed;
   }, [onConfirmed]);
   useEffect(() => {
-    if (isSuccess) onConfirmedRef.current?.();
-  }, [isSuccess]);
+    if (confirmed) onConfirmedRef.current?.();
+  }, [confirmed]);
 
   const busy = isPending || mining;
   const text = isPending
     ? "Confirm in wallet…"
     : mining
       ? "Pending…"
-      : isSuccess
+      : confirmed
         ? `${label} ✓`
         : label;
 
@@ -79,8 +89,22 @@ export function TxButton({
           user can track progress and keep the result's transaction link. */}
       {hash && (
         <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-          <span style={isSuccess ? { color: "var(--color-success)" } : undefined}>
-            {mining ? "Pending confirmation…" : isSuccess ? "Confirmed ✓" : "Submitted"}
+          <span
+            style={
+              confirmed
+                ? { color: "var(--color-success)" }
+                : reverted
+                  ? { color: "var(--color-danger)" }
+                  : undefined
+            }
+          >
+            {mining
+              ? "Pending confirmation…"
+              : confirmed
+                ? "Confirmed ✓"
+                : reverted
+                  ? "Reverted ✗"
+                  : "Submitted"}
           </span>
           {txUrl && (
             <>
