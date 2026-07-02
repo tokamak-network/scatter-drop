@@ -30,6 +30,7 @@ import type { SnapshotManifest } from "@/lib/useSnapshotJob";
 import { useAllowedTokens } from "@/lib/campaigns";
 import { DRAFT_CSV_KEY } from "@/lib/draftCsv";
 import { downloadCsv } from "@/lib/downloadCsv";
+import { explorerUrl } from "@/lib/explorer";
 import { publishProofs } from "@/lib/proofs";
 import {
   deploymentIssue,
@@ -189,9 +190,7 @@ export default function NewCampaignPage() {
   // The connected wallet must hold total + fee (in the airdrop token, or ETH for
   // native) or it can't fund the drop — block Approve/Create with a clear reason.
   const { address: account, chain } = useAccount();
-  const explorerBase = chain?.blockExplorers?.default?.url;
-  const explorerAddr = (a: string) =>
-    explorerBase ? `${explorerBase.replace(/\/$/, "")}/address/${a}` : undefined;
+  const explorerAddr = (a: string) => explorerUrl(chain, "address", a);
   const { data: erc20Bal } = useErc20Balance(
     !isNative && tokenValid ? (token as Address) : undefined,
     account,

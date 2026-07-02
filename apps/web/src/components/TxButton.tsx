@@ -2,11 +2,13 @@
 
 import { useEffect, useRef } from "react";
 import {
+  useAccount,
   useChainId,
   useSendTransaction,
   useWaitForTransactionReceipt,
 } from "wagmi";
 import type { Address, Hex } from "viem";
+import { explorerUrl } from "@/lib/explorer";
 
 /**
  * Sends a prepared SDK calldata request ({to,data}) as a real transaction and
@@ -29,6 +31,11 @@ export function TxButton({
   const { data: hash, sendTransaction, isPending, error } = useSendTransaction();
   const { isLoading: mining, isSuccess } = useWaitForTransactionReceipt({ hash });
   const chainId = useChainId();
+  const { chain } = useAccount();
+
+  // Explorer link for the submitted tx so the user can track it and keep a
+  // record of the result — only once a hash exists (no work pre-send).
+  const txUrl = hash ? explorerUrl(chain, "tx", hash) : undefined;
 
   // Keep the latest callback in a ref so the success effect depends only on
   // `isSuccess` — an inline `onConfirmed` (new identity each render) would
@@ -68,6 +75,28 @@ export function TxButton({
       >
         {text}
       </button>
+      {/* Live tx status + explorer link, shown as soon as a hash exists so the
+          user can track progress and keep the result's transaction link. */}
+      {hash && (
+        <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+          <span style={isSuccess ? { color: "var(--color-success)" } : undefined}>
+            {mining ? "Pending confirmation…" : isSuccess ? "Confirmed ✓" : "Submitted"}
+          </span>
+          {txUrl && (
+            <>
+              {" · "}
+              <a
+                href={txUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-emerald-600 hover:underline"
+              >
+                View transaction ↗
+              </a>
+            </>
+          )}
+        </div>
+      )}
       {error && (
         <div
           className="muted"
