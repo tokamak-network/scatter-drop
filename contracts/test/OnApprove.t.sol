@@ -44,8 +44,11 @@ contract OnApproveTest is MerkleTestBase {
     }
 
     function _data() internal view returns (bytes memory) {
-        // Open claim (identityRegistry = 0) keeps the fixture minimal.
-        return abi.encode(uint8(DropFactory.AirdropType.CSV), ROOT, TOTAL, startTime, deadline, address(0));
+        // Open claim (identityRegistry = 0) keeps the fixture minimal. Encoded as the
+        // DropParams struct — the exact layout onApprove decodes.
+        return abi.encode(
+            DropFactory.DropParams(uint8(DropFactory.AirdropType.CSV), ROOT, TOTAL, startTime, deadline, address(0))
+        );
     }
 
     // A restricted-transferFrom token can't be funded via the 2-step createDrop

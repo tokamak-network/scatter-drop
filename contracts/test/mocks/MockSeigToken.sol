@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import { ERC20 } from "solmate/tokens/ERC20.sol";
+import { MockERC20 } from "./MockERC20.sol";
 
 /// @dev Callback a spender implements to receive `approveAndCall` (Tokamak TON / SeigToken).
 interface IOnApprove {
@@ -14,17 +14,13 @@ interface IOnApprove {
 ///         `transferFrom` only succeeds when the caller is the `from` or the `to`
 ///         ("only sender or recipient can transfer"), plus `approveAndCall` which
 ///         approves and invokes the spender's `onApprove` in one call.
-contract MockSeigToken is ERC20 {
+contract MockSeigToken is MockERC20 {
     error OnlySenderOrRecipient();
     error OnApproveFailed();
 
     constructor(string memory name_, string memory symbol_, uint8 decimals_)
-        ERC20(name_, symbol_, decimals_)
+        MockERC20(name_, symbol_, decimals_)
     { }
-
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
-    }
 
     /// @dev SeigToken restriction: a third party can't move tokens via transferFrom.
     function transferFrom(address from, address to, uint256 amount) public override returns (bool) {

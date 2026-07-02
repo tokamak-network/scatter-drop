@@ -56,6 +56,18 @@ contract DropFactory is Initializable, UUPSUpgradeable, Ownable {
         FLAT
     }
 
+    /// @notice Campaign parameters shared by both create paths. `onApprove` decodes
+    ///         this from its `data` argument via `abi.decode(data, (DropParams))`, so
+    ///         any off-chain encoder (SDK) MUST encode these fields in this order.
+    struct DropParams {
+        uint8 airdropType;
+        bytes32 merkleRoot;
+        uint256 totalAmount;
+        uint64 startTime;
+        uint64 deadline;
+        address identityRegistry;
+    }
+
     /// @notice Basis-points denominator and the maximum allowed percentage fee (10%).
     uint16 public constant MAX_FEE_BPS = 1000;
 
@@ -337,18 +349,16 @@ contract DropFactory is Initializable, UUPSUpgradeable, Ownable {
         address identityRegistry
     ) external payable returns (address drop) {
         // 2-step path: operator pre-approved this factory for `totalAmount + fee`.
-        return _createDrop(
-            msg.sender, airdropType, airdropToken, merkleRoot, totalAmount, startTime, deadline, identityRegistry, msg.value
-        );
+        DropParams memory p =
+            DropParams(airdropType, merkleRoot, totalAmount, startTime, deadline, identityRegistry);
+        return _createDrop(msg.sender, airdropToken, _computeFee(airdropToken, totalAmount), p);
     }
 
     /// @notice One-transaction path for tokens with `approveAndCall` (Tokamak TON /
     ///         SeigToken). The operator calls `token.approveAndCall(factory,
-    ///         totalAmount + fee, data)`, which approves this factory and calls
-    ///         this callback in the same tx. The airdrop token is the caller
-    ///         (`msg.sender`); `data` is
-    ///         `abi.encode(uint8 airdropType, bytes32 merkleRoot, uint256 totalAmount,
-    ///         uint64 startTime, uint64 deadline, address identityRegistry)`.
+    ///         totalAmount + fee, data)`, which approves this factory and calls this
+    ///         in the same tx. The airdrop token is the caller (`msg.sender`);
+    ///         `data` is `abi.encode(DropParams)` (see the `DropParams` struct).
     /// @dev Returns true per the SeigToken `onApprove` ABI. The token is trusted
     ///      only insofar as it's allow-listed (re-checked in `_createDrop`).
     function onApprove(address owner, address spender, uint256 amount, bytes calldata data)
@@ -357,51 +367,39 @@ contract DropFactory is Initializable, UUPSUpgradeable, Ownable {
     {
         // The approval must name this factory as spender; the caller is the token.
         if (spender != address(this)) revert InvalidAddress();
-        (
-            uint8 airdropType,
-            bytes32 merkleRoot,
-            uint256 totalAmount,
-            uint64 startTime,
-            uint64 deadline,
-            address identityRegistry
-        ) = abi.decode(data, (uint8, bytes32, uint256, uint64, uint64, address));
-        // The approved amount must exactly cover distribution + fee (msg.sender = token).
-        if (amount != totalAmount + _computeFee(msg.sender, totalAmount)) revert IncorrectValue();
-        _createDrop(owner, airdropType, msg.sender, merkleRoot, totalAmount, startTime, deadline, identityRegistry, 0);
+        DropParams memory p = abi.decode(data, (DropParams));
+        // The approved amount must exactly cover distribution + fee (computed once
+        // here, then forwarded so `_createDrop` doesn't recompute it).
+        uint256 fee = _computeFee(msg.sender, p.totalAmount);
+        if (amount != p.totalAmount + fee) revert IncorrectValue();
+        _createDrop(owner, msg.sender, fee, p);
         return true;
     }
 
     /// @dev Shared create logic for `createDrop` (2-step) and `onApprove` (1-tx).
-    ///      `operator` is the campaign creator + funder; `msgValue` is ETH sent
-    ///      (native only). ERC20 funding is pull-to-factory then push-to-drop, so a
-    ///      token that only allows `transferFrom` where the caller is `from` or `to`
-    ///      (e.g. TON) works: the factory pulls as the *recipient*, then transfers
-    ///      to the drop as the *sender*. Both legs are exact-receipt guarded
-    ///      (fee-on-transfer / rebasing tokens revert).
-    function _createDrop(
-        address operator,
-        uint8 airdropType,
-        address airdropToken,
-        bytes32 merkleRoot,
-        uint256 totalAmount,
-        uint64 startTime,
-        uint64 deadline,
-        address identityRegistry,
-        uint256 msgValue
-    ) internal returns (address drop) {
+    ///      `operator` is the campaign creator + funder; `fee` is precomputed by the
+    ///      caller. ERC20 funding is pull-to-factory then push-to-drop, so a token
+    ///      that only allows `transferFrom` where the caller is `from` or `to` (e.g.
+    ///      TON) works: the factory pulls as the *recipient*, then transfers to the
+    ///      drop as the *sender*. Both legs are exact-receipt guarded (fee-on
+    ///      -transfer / rebasing tokens revert). Native ETH funding is `msg.value`.
+    function _createDrop(address operator, address airdropToken, uint256 fee, DropParams memory p)
+        internal
+        returns (address drop)
+    {
         // Emergency stop: block new campaigns while paused (existing drops keep working).
         if (paused) revert ServicePaused();
-        AirdropType t = _toType(airdropType);
+        AirdropType t = _toType(p.airdropType);
         // identityRegistry is OPTIONAL (W24): address(0) = no customer gate (open claim).
         if (airdropToken == address(0)) revert InvalidAddress();
-        if (merkleRoot == bytes32(0)) revert InvalidMerkleRoot();
-        if (totalAmount == 0) revert ZeroTotalAmount();
+        if (p.merkleRoot == bytes32(0)) revert InvalidMerkleRoot();
+        if (p.totalAmount == 0) revert ZeroTotalAmount();
         // Claim window: deadline in the future, opens before it closes, and at least MIN_DURATION
         // of *effective* (claimable-from-now) window — a past startTime cannot shrink it.
-        if (deadline <= block.timestamp) revert InvalidDeadline();
-        if (startTime >= deadline) revert InvalidWindow();
-        uint256 effectiveStart = startTime < block.timestamp ? block.timestamp : startTime;
-        if (deadline - effectiveStart < MIN_DURATION) revert InvalidWindow();
+        if (p.deadline <= block.timestamp) revert InvalidDeadline();
+        if (p.startTime >= p.deadline) revert InvalidWindow();
+        uint256 effectiveStart = p.startTime < block.timestamp ? block.timestamp : p.startTime;
+        if (p.deadline - effectiveStart < MIN_DURATION) revert InvalidWindow();
 
         // Allow-list check first: a local storage read is far cheaper than the
         // external calls below, so an unlisted token reverts early.
@@ -410,16 +408,15 @@ contract DropFactory is Initializable, UUPSUpgradeable, Ownable {
         _requireVerifiedOperator(operator);
         // Customer gate is optional (W24): when set, it must be a genuine zk-X509
         // IdentityRegistry; address(0) leaves the campaign open (no identity gate).
-        if (identityRegistry != address(0) && !zkFactory.isRegistry(identityRegistry)) {
+        if (p.identityRegistry != address(0) && !zkFactory.isRegistry(p.identityRegistry)) {
             revert NotAStandardRegistry();
         }
 
-        uint256 fee = _computeFee(airdropToken, totalAmount);
         bool native = airdropToken == NATIVE;
         // Native drops carry funding in msg.value; ERC20 drops must send none.
         if (native) {
-            if (msgValue != totalAmount + fee) revert IncorrectValue();
-        } else if (msgValue != 0) {
+            if (msg.value != p.totalAmount + fee) revert IncorrectValue();
+        } else if (msg.value != 0) {
             revert IncorrectValue();
         }
 
@@ -430,7 +427,7 @@ contract DropFactory is Initializable, UUPSUpgradeable, Ownable {
         drop = LibClone.clone(
             dropImplementation,
             abi.encode(
-                airdropToken, merkleRoot, startTime, deadline, identityRegistry, operator, address(this)
+                airdropToken, p.merkleRoot, p.startTime, p.deadline, p.identityRegistry, operator, address(this)
             )
         );
         _drops.push(drop);
@@ -439,18 +436,18 @@ contract DropFactory is Initializable, UUPSUpgradeable, Ownable {
             // Credit the fee (retained as this contract's ETH) before the external
             // value transfer, then fund the drop with the distribution.
             if (fee > 0) collectedFees[NATIVE] += fee;
-            SafeTransferLib.safeTransferETH(drop, totalAmount);
+            SafeTransferLib.safeTransferETH(drop, p.totalAmount);
         } else {
             // CEI: credit the fee before the external transfers. The factory holds
             // total+fee only transiently within this call; after the push it nets
             // exactly `fee`, preserving "factory ERC20 balance == collected fees".
             if (fee > 0) collectedFees[airdropToken] += fee;
-            _pullExact(IERC20(airdropToken), operator, address(this), totalAmount + fee);
-            _pushExact(IERC20(airdropToken), drop, totalAmount);
+            _pullExact(IERC20(airdropToken), operator, address(this), p.totalAmount + fee);
+            _pushExact(IERC20(airdropToken), drop, p.totalAmount);
         }
 
         emit DropCreated(
-            drop, operator, t, airdropToken, identityRegistry, merkleRoot, totalAmount, startTime, deadline, fee
+            drop, operator, t, airdropToken, p.identityRegistry, p.merkleRoot, p.totalAmount, p.startTime, p.deadline, fee
         );
     }
 
@@ -573,16 +570,20 @@ contract DropFactory is Initializable, UUPSUpgradeable, Ownable {
     function _pullExact(IERC20 token, address from, address to, uint256 amount) private {
         uint256 balBefore = token.balanceOf(to);
         token.safeTransferFrom(from, to, amount);
-        unchecked {
-            if (token.balanceOf(to) - balBefore != amount) revert IncorrectAmountReceived();
-        }
+        _requireExactReceipt(token, to, balBefore, amount);
     }
 
-    /// @dev `safeTransfer` (factory is the sender — TON-safe) that requires `to` to
-    ///      net exactly `amount`, reverting `IncorrectAmountReceived` otherwise.
+    /// @dev `safeTransfer` (factory is the sender — TON-safe) with the same exact
+    ///      -receipt guard as `_pullExact`.
     function _pushExact(IERC20 token, address to, uint256 amount) private {
         uint256 balBefore = token.balanceOf(to);
         token.safeTransfer(to, amount);
+        _requireExactReceipt(token, to, balBefore, amount);
+    }
+
+    /// @dev Reverts unless `to`'s balance rose by exactly `amount` — the single
+    ///      load-bearing guard rejecting fee-on-transfer / rebasing tokens.
+    function _requireExactReceipt(IERC20 token, address to, uint256 balBefore, uint256 amount) private view {
         unchecked {
             if (token.balanceOf(to) - balBefore != amount) revert IncorrectAmountReceived();
         }
