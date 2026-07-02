@@ -25,18 +25,10 @@ export function getServerRpcUrl(): string | null {
   return process.env.ALCHEMY_RPC_URL || process.env.SEPOLIA_RPC_URL || null;
 }
 
-/**
- * Optional shared-secret gate for the snapshot routes. When SNAPSHOT_API_SECRET
- * is set, callers must send `Authorization: Bearer <secret>`; when unset the
- * routes are open (dev default — abuse is bounded by the per-IP rate limit).
- * Returns an error string when the request should be rejected, else null.
- * (A full operator-session auth — SIWE, see M3 — is the production path.)
- */
-export function snapshotAuthError(authHeader: string | null): string | null {
-  const secret = process.env.SNAPSHOT_API_SECRET;
-  if (!secret) return null;
-  return authHeader === `Bearer ${secret}` ? null : "Unauthorized";
-}
+// Auth + rate-limit guards now live in a neutral module (shared with the Dune
+// import route); re-exported here so the snapshot routes' imports are unchanged.
+export { rateLimited } from "./apiAuth";
+export { apiAuthError as snapshotAuthError } from "./apiAuth";
 
 function createSnapshotClient(rpc: string): PublicClient {
   // The archive node serves real Sepolia state (chain id 11155111) — the dev
@@ -67,24 +59,6 @@ function sweepExpired(now: number) {
 
 export function getJob(id: string): Job | undefined {
   return jobs.get(id);
-}
-
-// --- naive per-IP rate limit (in-memory sliding window) ---
-const hits = new Map<string, number[]>();
-
-export function rateLimited(ip: string, limit = 5, windowMs = 60_000): boolean {
-  const now = Date.now();
-  // Prune stale buckets each call so the map can't grow unbounded.
-  for (const [key, ts] of hits) {
-    const live = ts.filter((t) => now - t < windowMs);
-    if (live.length === 0) hits.delete(key);
-    else hits.set(key, live);
-  }
-  const recent = hits.get(ip) ?? [];
-  if (recent.length >= limit) return true;
-  recent.push(now);
-  hits.set(ip, recent);
-  return false;
 }
 
 // --- request validation (no zod dependency; manual + strict) ---

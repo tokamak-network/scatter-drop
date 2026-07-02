@@ -83,19 +83,22 @@ pnpm --filter @scatter-drop/web dev
 - 터미널 A에서 **Ctrl-C** → anvil 종료. 터미널 B에서 **Ctrl-C** → dev 서버 종료.
 - (포크 상태는 휘발 — 다시 띄우면 새 배포/새 주소)
 
-### 떠 있는 걸 강제로 내리기 (포트로)
-터미널을 잃었거나 백그라운드로 띄웠을 때:
+### 떠 있는 걸 강제로 내리기 (스크립트 한 줄)
+터미널을 잃었거나 백그라운드로 띄웠을 때 — **`scripts/dev-down.sh`** 가 웹(:3000)과
+anvil(:8545)을 한 번에 내린다(TERM → 안 죽으면 KILL):
 ```bash
-lsof -ti tcp:8545 | xargs kill   # anvil 종료
-lsof -ti tcp:3000 | xargs kill   # 프론트 종료
+scripts/dev-down.sh            # 웹 + anvil 종료
+scripts/dev-down.sh --clean    # + .dev-logs 삭제
+# 포트가 다르면: WEB_PORT=3001 ANVIL_PORT=8545 scripts/dev-down.sh
 ```
+> 수동으로 하려면: `lsof -ti tcp:8545 | xargs kill` (anvil), `lsof -ti tcp:3000 | xargs kill` (프론트).
+> anvil은 인메모리라 내리면 배포 컨트랙트가 사라진다(재포크가 어차피 재배포하므로 정상).
 
 ### 코드가 바뀐 뒤 깨끗하게 재시작 (가장 흔한 경우)
 컨트랙트/SDK가 바뀌면 **반드시 anvil을 새로 띄워 재배포**해야 한다(옛 anvil엔 옛 컨트랙트).
 ```bash
 # 0) 기존 것 내리기
-lsof -ti tcp:8545 | xargs kill 2>/dev/null
-lsof -ti tcp:3000 | xargs kill 2>/dev/null
+scripts/dev-down.sh
 
 # 1) 최신 코드 + 의존성
 git pull

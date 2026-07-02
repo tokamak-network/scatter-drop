@@ -188,6 +188,75 @@ export function useErc20Decimals(token: Address | undefined) {
   });
 }
 
+const erc20SymbolAbi = [
+  {
+    type: "function",
+    name: "symbol",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "string" }],
+  },
+] as const;
+
+/** ERC20.symbol() for an address — for human-readable amount labels. */
+export function useErc20Symbol(token: Address | undefined) {
+  return useReadContract({
+    address: token,
+    abi: erc20SymbolAbi,
+    functionName: "symbol",
+    chainId: useChainId(),
+    query: { enabled: !!token },
+  });
+}
+
+const erc20BalanceAbi = [
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [{ type: "address" }],
+    outputs: [{ type: "uint256" }],
+  },
+] as const;
+
+/** ERC20.balanceOf(account) — for checking the operator can fund the drop. */
+export function useErc20Balance(token: Address | undefined, account: Address | undefined) {
+  return useReadContract({
+    address: token,
+    abi: erc20BalanceAbi,
+    functionName: "balanceOf",
+    args: account ? [account] : undefined,
+    chainId: useChainId(),
+    query: { enabled: !!token && !!account },
+  });
+}
+
+const erc20AllowanceAbi = [
+  {
+    type: "function",
+    name: "allowance",
+    stateMutability: "view",
+    inputs: [{ type: "address" }, { type: "address" }],
+    outputs: [{ type: "uint256" }],
+  },
+] as const;
+
+/** ERC20.allowance(owner, spender) — to tell if the drop is already approved. */
+export function useErc20Allowance(
+  token: Address | undefined,
+  owner: Address | undefined,
+  spender: Address | undefined,
+) {
+  return useReadContract({
+    address: token,
+    abi: erc20AllowanceAbi,
+    functionName: "allowance",
+    args: owner && spender ? [owner, spender] : undefined,
+    chainId: useChainId(),
+    query: { enabled: !!token && !!owner && !!spender },
+  });
+}
+
 /** DropFactory.tokenTier(token) — 0 NONE / 1 ALLOWED (admin-curated). */
 export function useTokenTier(
   factory: Address | undefined,

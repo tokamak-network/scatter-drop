@@ -1,51 +1,37 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { isAddress } from "viem";
-import {
-  ArrowRight,
-  Camera,
-  Check,
-  Coins,
-  Copy,
-  Download,
-  Image as ImageIcon,
-  Layers,
-  Pencil,
-  Plus,
-  Trash2,
-  Upload,
-} from "lucide-react";
-import { SnapshotBuilder } from "@/components/SnapshotBuilder";
-import type { SnapshotManifest } from "@/lib/useSnapshotJob";
+import { formatUnits, isAddress, parseUnits } from "viem";
+import { ArrowLeft, ArrowRight, Check, Copy, Download, Trash2, Upload } from "lucide-react";
+import { DuneImport, type Recipient } from "@/components/DuneImport";
+import { useErc20Decimals, useErc20Symbol } from "@/lib/contracts";
+import { useAllowedTokens } from "@/lib/campaigns";
+import { isPositiveDecimal } from "@/lib/validation";
+import { downloadCsv } from "@/lib/downloadCsv";
 import { DRAFT_CSV_KEY } from "@/lib/draftCsv";
 
-type Row = { address: string; amount: string };
+type Row = Recipient;
 const BLANK: Row = { address: "", amount: "" };
-// Amounts must be non-negative base-10 integers — matches the SDK/merkle CSV
-// parser (packages/merkle/src/csv.ts), so /tools can't accept hex/signed values
-// that the create wizard would later reject.
 const DEC = /^\d+$/;
-function isPosAmount(s: string): boolean {
-  const t = s.trim();
-  if (!DEC.test(t)) return false;
-  try {
-    return BigInt(t) > 0n;
-  } catch {
-    return false;
-  }
-}
-
-type Tab = "manual" | "snapshot" | "combine";
-const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
-  { id: "manual", label: "Manual / CSV", icon: <Pencil className="w-3.5 h-3.5" /> },
-  { id: "snapshot", label: "Snapshot", icon: <Camera className="w-3.5 h-3.5" /> },
-  { id: "combine", label: "Combine & filter", icon: <Layers className="w-3.5 h-3.5" /> },
-];
+// Cap how many rows the step-2 grid renders (totals/export still cover all).
+const RENDER_CAP = 500;
 
 function nonEmpty(r: Row) {
   return r.address.trim() !== "" || r.amount.trim() !== "";
+}
+
+/** Integer square root (Newton's method) — for √balance pro-rata weighting. */
+function isqrt(n: bigint): bigint {
+  if (n < 2n) return n < 0n ? 0n : n;
+  let x = n;
+  let y = (x + 1n) / 2n;
+  while (y < x) {
+    x = y;
+    y = (x + n / x) / 2n;
+  }
+  return x;
 }
 
 function rowsToCsv(rows: Row[]): string {
@@ -63,7 +49,6 @@ function csvToRows(text: string): Row[] {
     .filter(Boolean)
     .map((line) => {
       const [a, b] = line.split(/[,\t]/);
-      // Strip wrapping quotes (Excel/CSV exports) so validation/BigInt don't fail.
       const address = (a ?? "").trim().replace(/^["']|["']$/g, "");
       const amount = (b ?? "").trim().replace(/^["']|["']$/g, "");
       return { address, amount };
@@ -78,7 +63,7 @@ function withTrailingBlank(rows: Row[]): Row[] {
   return rows;
 }
 
-/** Merge duplicate addresses, summing amounts; preserves first-seen order and casing. */
+/** Merge duplicate addresses, summing balances; preserves first-seen order/casing. */
 function dedupSum(rows: Row[]): Row[] {
   const totals = new Map<string, bigint>();
   const display = new Map<string, string>();
@@ -87,7 +72,6 @@ function dedupSum(rows: Row[]): Row[] {
     const a = r.address.trim();
     if (!isAddress(a, { strict: false })) continue;
     const key = a.toLowerCase();
-    // Only base-10 amounts count toward the sum (hex/signed/garbage → 0).
     const t = r.amount.trim();
     const amt = DEC.test(t) ? BigInt(t) : 0n;
     if (!totals.has(key)) {
@@ -105,148 +89,200 @@ function dedupSum(rows: Row[]): Row[] {
 
 export default function ToolsPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("manual");
-  const [snapKind, setSnapKind] = useState<"erc20" | "nft">("erc20");
-  const [nftStd, setNftStd] = useState<"erc721" | "erc1155">("erc721");
+  const [step, setStep] = useState<1 | 2>(1);
+  // Step 1 works on CSV text (paste / upload / Dune fill it); step 2 on the rows.
+  const [csvText, setCsvText] = useState("");
+  const [view, setView] = useState<"csv" | "table">("csv");
   const [rows, setRows] = useState<Row[]>([{ ...BLANK }]);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Step 2 — airdrop token (for decimals/symbol) + distribution method.
+  const [token, setToken] = useState("");
+  const [distMode, setDistMode] = useState<"equal" | "prorata" | "sqrt">("equal");
+  const [perWallet, setPerWallet] = useState("");
+  const [totalDistribute, setTotalDistribute] = useState("");
+  const [capValue, setCapValue] = useState("");
+  const [includeBalance, setIncludeBalance] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [equalAmount, setEqualAmount] = useState("");
-  const [snap, setSnap] = useState<SnapshotManifest | null>(null);
-  const [operand, setOperand] = useState("");
-  const [capInput, setCapInput] = useState("");
 
   const setAndPad = (next: Row[]) => setRows(withTrailingBlank(next));
 
-  const update = (i: number, key: keyof Row, val: string) =>
-    setAndPad(rows.map((r, idx) => (idx === i ? { ...r, [key]: val } : r)));
-
-  const removeRow = (i: number) => {
-    const next = rows.filter((_, idx) => idx !== i);
-    setRows(next.length ? withTrailingBlank(next) : [{ ...BLANK }]);
-  };
-
-  const applyEqual = () => {
-    const v = equalAmount.trim();
-    if (!isPosAmount(v)) return; // positive base-10 integer only
-    setAndPad(rows.map((r) => (r.address.trim() ? { ...r, amount: v } : r)));
-  };
+  // --- step 1: aggregate ---
+  const loadRecipients = (recipients: Recipient[]) =>
+    setCsvText(recipients.map((r) => `${r.address},${r.amount}`).join("\n"));
 
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => setAndPad(csvToRows(String(reader.result ?? "")));
+    reader.onload = () => setCsvText(String(reader.result ?? "").trim());
     reader.readAsText(file);
     e.target.value = "";
   };
 
-  const onPaste = (e: React.ClipboardEvent, i: number) => {
-    const text = e.clipboardData.getData("text");
-    if (!/[\n,\t]/.test(text)) return;
-    e.preventDefault();
-    // Preserve rows both before and after the paste point (no data loss).
-    const before = rows.slice(0, i).filter(nonEmpty);
-    const after = rows.slice(i + 1).filter(nonEmpty);
-    setAndPad([...before, ...csvToRows(text), ...after]);
+  const parsedRows = useMemo(() => csvToRows(csvText), [csvText]);
+  const parsedCount = useMemo(
+    () => parsedRows.filter((r) => isAddress(r.address.trim(), { strict: false })).length,
+    [parsedRows],
+  );
+
+  const goToAmounts = () => {
+    if (parsedCount === 0) return;
+    setAndPad(csvToRows(csvText));
+    setStep(2);
+  };
+  const backToAggregate = () => {
+    setCsvText(rowsToCsv(rows));
+    setStep(1);
   };
 
-  const loadSnapshot = () => {
-    if (!snap) return;
-    // The editable grid renders one input per row with live validation, so a
-    // very large list can lag. Warn before loading thousands of rows.
-    if (
-      snap.count > 1000 &&
-      !window.confirm(
-        `Loading ${snap.count.toLocaleString()} rows into the editable grid may be slow. Continue? (You can still export/use the full list.)`,
-      )
-    ) {
-      return;
+  // --- step 2: token metadata (decimals/symbol from the connected chain) ---
+  const tokenTrimmed = token.trim();
+  const tokenOk = isAddress(tokenTrimmed, { strict: false });
+  const tokenAddr = tokenOk ? (tokenTrimmed as `0x${string}`) : undefined;
+  const { data: allowedTokens } = useAllowedTokens();
+  const { data: decData } = useErc20Decimals(tokenAddr);
+  const { data: symData } = useErc20Symbol(tokenAddr);
+  // Prefer the allow-list's symbol; fall back to the on-chain read.
+  const listedSymbol = allowedTokens?.find(
+    (t) => t.token.toLowerCase() === tokenTrimmed.toLowerCase(),
+  )?.symbol;
+  const symbol = listedSymbol ?? (typeof symData === "string" && symData ? symData : undefined);
+  // Decimals come from the selected (allow-listed) token on-chain; 18 while the
+  // read resolves. Amounts are entered in whole tokens and scaled by this to the
+  // base units (wei) the CSV/merkle carry.
+  const dec = tokenOk && decData != null ? Number(decData) : 18;
+  const unit = symbol ?? "tokens";
+
+  // Parse a whole-token input to base units. Returns null on empty/invalid.
+  const toBase = (v: string): bigint | null => {
+    const t = v.trim();
+    if (!t || !isPositiveDecimal(t, dec)) return null;
+    try {
+      const b = parseUnits(t, dec);
+      return b > 0n ? b : null;
+    } catch {
+      return null;
     }
-    setAndPad(
-      Object.values(snap.claims).map((c) => ({ address: c.account, amount: c.amount })),
-    );
-    setTab("manual");
   };
 
-  // Combine & filter (pure client-side set/amount ops).
-  const operandKeys = useMemo(() => {
-    const s = new Set<string>();
-    for (const r of csvToRows(operand)) {
-      const a = r.address.trim();
-      if (isAddress(a, { strict: false })) s.add(a.toLowerCase());
-    }
-    return s;
-  }, [operand]);
-  const hasOperand = operandKeys.size > 0;
-  const keyOf = (r: Row) => r.address.trim().toLowerCase();
+  const perWalletBase = distMode === "equal" ? toBase(perWallet) : null;
+  const totalBase = distMode !== "equal" ? toBase(totalDistribute) : null;
+  // Cap only applies to the pro-rata methods (meaningless when all wallets are equal).
+  const capActive = distMode !== "equal" && capValue.trim() !== "";
+  const capBase = capActive ? toBase(capValue) : null;
+  const capInvalid = capActive && capBase === null;
 
-  const doIntersect = () =>
-    setAndPad(rows.filter((r) => nonEmpty(r) && operandKeys.has(keyOf(r))));
-  const doExclude = () =>
-    setAndPad(rows.filter((r) => nonEmpty(r) && !operandKeys.has(keyOf(r))));
-  const doUnion = () =>
-    setAndPad(dedupSum([...rows.filter(nonEmpty), ...csvToRows(operand)]));
-  const doDedup = () => setAndPad(dedupSum(rows.filter(nonEmpty)));
-  const doCap = () => {
-    if (!isPosAmount(capInput)) return; // positive base-10 integer only
-    const cap = BigInt(capInput.trim());
-    setAndPad(
-      rows.map((r) =>
-        isPosAmount(r.amount) && BigInt(r.amount.trim()) > cap
-          ? { ...r, amount: cap.toString() }
-          : r,
-      ),
-    );
-  };
-
-  const analysis = useMemo(() => {
-    const seen = new Set<string>();
-    let total = 0n;
-    let valid = 0;
-    const status = rows.map((r) => {
-      if (!nonEmpty(r)) return { state: "blank" as const };
-      const addrOk = isAddress(r.address.trim(), { strict: false });
-      const amtOk = isPosAmount(r.amount);
-      const amt = amtOk ? BigInt(r.amount.trim()) : 0n;
-      const key = r.address.trim().toLowerCase();
-      const dup = addrOk && seen.has(key);
-      if (addrOk) seen.add(key);
-      const ok = addrOk && amtOk && !dup;
-      if (ok) {
-        valid += 1;
-        total += amt;
-      }
-      return { state: ok ? ("ok" as const) : ("bad" as const), addrOk, amtOk, dup };
+  // Compute the airdrop amount (base units) per row, aligned to `rows`.
+  const dist = useMemo(() => {
+    const airdrops: (bigint | null)[] = rows.map(() => null);
+    const valid: number[] = [];
+    rows.forEach((r, i) => {
+      if (isAddress(r.address.trim(), { strict: false })) valid.push(i);
     });
-    const filled = status.filter((s) => s.state !== "blank").length;
-    return { status, total, valid, invalid: filled - valid };
-  }, [rows]);
-  const hasValid = analysis.valid > 0;
-  // Export/Copy/Use serialize ALL rows, so block them while any row is invalid —
-  // a stray bad row would otherwise produce a CSV the wizard rejects.
-  const canUse = hasValid && analysis.invalid === 0;
 
-  const download = () => {
-    const blob = new Blob([`${rowsToCsv(rows)}\n`], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "scatter-drop-recipients.csv";
-    // Append to the DOM and defer revoke so the download isn't canceled (iOS Safari).
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    if (distMode === "equal" && perWalletBase !== null) {
+      for (const i of valid) {
+        airdrops[i] = capBase !== null && perWalletBase > capBase ? capBase : perWalletBase;
+      }
+    } else if (totalBase !== null) {
+      // prorata: weight by balance; sqrt: weight by √balance (dampens whales).
+      const weights = valid.map((i) => {
+        const b = DEC.test(rows[i].amount.trim()) ? BigInt(rows[i].amount.trim()) : 0n;
+        return distMode === "sqrt" ? isqrt(b) : b;
+      });
+      const sumW = weights.reduce((a, b) => a + b, 0n);
+      if (sumW > 0n) {
+        let assigned = 0n;
+        let maxAt = -1;
+        let maxW = 0n;
+        valid.forEach((i, k) => {
+          const w = weights[k];
+          if (w > maxW) {
+            maxW = w;
+            maxAt = i;
+          }
+          const a = w === 0n ? 0n : (totalBase * w) / sumW;
+          airdrops[i] = a;
+          assigned += a;
+        });
+        // Give the rounding remainder to the largest holder so the sum is exact.
+        const rem = totalBase - assigned;
+        if (rem > 0n && maxAt >= 0) airdrops[maxAt] = (airdrops[maxAt] as bigint) + rem;
+        if (capBase !== null) {
+          for (const i of valid) {
+            const a = airdrops[i];
+            if (a !== null && a > capBase) airdrops[i] = capBase;
+          }
+        }
+      }
+    }
+
+    let total = 0n;
+    let count = 0;
+    for (const a of airdrops) if (a !== null && a > 0n) {
+      total += a;
+      count++;
+    }
+    return { airdrops, total, count };
+  }, [rows, distMode, perWalletBase, totalBase, capBase]);
+
+  const badAddr = rows.some((r) => nonEmpty(r) && !isAddress(r.address.trim(), { strict: false }));
+  // Duplicate addresses break the merkle tree — detect and block until merged.
+  const dupCount = useMemo(() => {
+    const seen = new Set<string>();
+    let d = 0;
+    for (const r of rows) {
+      const a = r.address.trim().toLowerCase();
+      if (!a || !isAddress(a, { strict: false })) continue;
+      if (seen.has(a)) d++;
+      else seen.add(a);
+    }
+    return d;
+  }, [rows]);
+  const canUse = dist.count > 0 && !badAddr && !capInvalid && dupCount === 0;
+
+  const human = (bi: bigint) => formatUnits(bi, dec);
+  const totalLabel = `${human(dist.total)} ${unit}`;
+
+  const update = (i: number, key: keyof Row, val: string) =>
+    setAndPad(rows.map((r, idx) => (idx === i ? { ...r, [key]: val } : r)));
+  const removeRow = (i: number) => {
+    const next = rows.filter((_, idx) => idx !== i);
+    setRows(next.length ? withTrailingBlank(next) : [{ ...BLANK }]);
+  };
+  const doDedup = () => setAndPad(dedupSum(rows.filter(nonEmpty)));
+
+  // Serialize the computed airdrop list. `address,amount` (base units) always;
+  // an optional third `balance` column for the download when requested.
+  const buildCsv = (withBalance: boolean) => {
+    const lines = rows
+      .map((r, i) => {
+        const a = dist.airdrops[i];
+        if (a === null || a <= 0n) return null;
+        const addr = r.address.trim();
+        return withBalance ? `${addr},${a.toString()},${r.amount.trim()}` : `${addr},${a.toString()}`;
+      })
+      .filter(Boolean) as string[];
+    const header = withBalance ? "address,amount,balance" : "address,amount";
+    return [header, ...lines].join("\n");
+  };
+
+  const confirmExport = () => {
+    downloadCsv("scatter-drop-airdrop.csv", `${buildCsv(includeBalance)}\n`);
+    setExportOpen(false);
   };
   const copyCsv = () => {
-    navigator.clipboard?.writeText(rowsToCsv(rows));
+    // Copy is address,amount only — the balance column is a download-time choice.
+    navigator.clipboard?.writeText(buildCsv(false));
     setCopied(true);
     setTimeout(() => setCopied(false), 1200);
   };
   const useInCampaign = () => {
     try {
-      localStorage.setItem(DRAFT_CSV_KEY, rowsToCsv(rows));
+      // The campaign draft is always address,amount (base units) — no balance col.
+      localStorage.setItem(DRAFT_CSV_KEY, buildCsv(false));
     } catch {
       /* ignore */
     }
@@ -263,256 +299,547 @@ export default function ToolsPage() {
           Recipient list builder
         </h1>
         <p className="mt-2 text-sm text-slate-400 max-w-2xl">
-          Build an airdrop recipient list from any source, edit it like a
-          spreadsheet, then export it or send it to a new campaign. Amounts are in
-          base units (wei-like, no 18-decimal scaling).
+          Two steps: aggregate the recipients (from a Dune query or a CSV), then
+          decide how much each one gets.
         </p>
       </div>
 
-      {/* Source tabs */}
-      <div>
-        <div className="flex flex-wrap gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800 w-fit">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-medium rounded transition ${
-                tab === t.id
-                  ? "bg-slate-800 text-slate-100"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              {t.icon}
-              {t.label}
-            </button>
-          ))}
-        </div>
+      {/* Wizard step indicator */}
+      <div className="flex items-center gap-2">
+        <StepPill
+          n={1}
+          label="Aggregate recipients"
+          active={step === 1}
+          onClick={() => step === 2 && backToAggregate()}
+        />
+        <span className="h-px w-6 bg-slate-800" />
+        <StepPill
+          n={2}
+          label="Decide amounts"
+          active={step === 2}
+          disabled={step === 1 && parsedCount === 0}
+          onClick={() => step === 1 && goToAmounts()}
+        />
+      </div>
 
-        <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900 p-5">
-          {tab === "manual" && (
-            <div className="space-y-3">
-              <p className="text-xs text-slate-400">
-                Type in the grid below, paste <span className="font-mono">address,amount</span> lines
-                into a cell, or import a CSV file.
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                <input ref={fileRef} type="file" accept=".csv,text/csv,text/plain" className="hidden" onChange={onFile} />
-                <ToolbarBtn onClick={() => fileRef.current?.click()} icon={<Upload className="w-3.5 h-3.5" />}>
-                  Import CSV
-                </ToolbarBtn>
-                <ToolbarBtn onClick={() => setAndPad([...rows.filter(nonEmpty), { ...BLANK }])} icon={<Plus className="w-3.5 h-3.5" />}>
-                  Add row
-                </ToolbarBtn>
-                <span className="mx-2 h-4 w-px bg-slate-800" />
-                <span className="text-slate-400 text-xs font-mono">Equal split:</span>
-                <input
-                  value={equalAmount}
-                  onChange={(e) => setEqualAmount(e.target.value)}
-                  placeholder="amount"
-                  className="bg-slate-950 border border-slate-800 focus:border-slate-700 text-slate-100 px-3 py-1.5 rounded-lg font-mono text-xs outline-none w-40"
-                />
-                <ToolbarBtn onClick={applyEqual} icon={<Check className="w-3.5 h-3.5" />} disabled={!equalAmount.trim()}>
-                  Set each
-                </ToolbarBtn>
+      {step === 1 && (
+        <div className="space-y-4">
+          {/* Source: Dune query → fills the CSV below */}
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+            <DuneImport onRows={loadRecipients} />
+          </div>
+
+          {/* Source: upload / paste / hand-edit — the shared recipient CSV */}
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-sm font-bold text-slate-100 mr-auto">Recipient CSV</h2>
+              <div className="inline-flex rounded-lg border border-slate-800 bg-slate-950 p-0.5">
+                <ViewBtn active={view === "csv"} onClick={() => setView("csv")}>CSV</ViewBtn>
+                <ViewBtn active={view === "table"} onClick={() => setView("table")}>Table</ViewBtn>
               </div>
+              <input ref={fileRef} type="file" accept=".csv,text/csv,text/plain" className="hidden" onChange={onFile} />
+              <ToolbarBtn onClick={() => fileRef.current?.click()} icon={<Upload className="w-3.5 h-3.5" />}>
+                Upload CSV
+              </ToolbarBtn>
+              <ToolbarBtn onClick={() => setCsvText("")} disabled={!csvText.trim()}>
+                Clear
+              </ToolbarBtn>
             </div>
-          )}
+            <p className="text-[11px] text-slate-500">
+              One <span className="font-mono">address,balance</span> per line. A Dune fetch above
+              fills this box; you can also upload, paste, or type directly.
+            </p>
 
-          {tab === "snapshot" && (
-            <div className="space-y-4">
-              {/* Sub-menu: which kind of holder snapshot */}
-              <div className="flex flex-wrap gap-2">
-                <SubTab active={snapKind === "erc20"} onClick={() => setSnapKind("erc20")} icon={<Coins className="w-3.5 h-3.5" />}>
-                  Aggregate by ERC-20 holdings
-                </SubTab>
-                <SubTab active={snapKind === "nft"} onClick={() => setSnapKind("nft")} icon={<ImageIcon className="w-3.5 h-3.5" />}>
-                  Aggregate by NFT ownership
-                </SubTab>
-              </div>
-
-              {snapKind === "nft" && (
-                <div className="flex flex-wrap gap-2">
-                  <SubTab active={nftStd === "erc721"} onClick={() => setNftStd("erc721")} icon={<ImageIcon className="w-3.5 h-3.5" />}>
-                    ERC-721
-                  </SubTab>
-                  <SubTab active={nftStd === "erc1155"} onClick={() => setNftStd("erc1155")} icon={<Layers className="w-3.5 h-3.5" />}>
-                    ERC-1155
-                  </SubTab>
-                </div>
-              )}
-              <p className="text-[11px] text-slate-500">
-                {snapKind === "erc20"
-                  ? "Enter an ERC-20 token. Holders with balance ≥ min at the block are captured, then allocated equally or pro-rata by balance."
-                  : nftStd === "erc1155"
-                    ? "Enter an ERC-1155 collection and a token id. Owners holding ≥ min of that id at the block are captured, then allocated equally or pro-rata by count."
-                    : "Enter an ERC-721 collection. Owners holding ≥ min NFTs at the block are captured (balanceOf returns the count), then allocated equally or pro-rata by count."}
-              </p>
-              <SnapshotBuilder
-                onResult={setSnap}
-                standard={snapKind === "erc20" ? "erc20" : nftStd}
+            {view === "csv" ? (
+              <textarea
+                value={csvText}
+                onChange={(e) => setCsvText(e.target.value)}
+                rows={10}
+                spellCheck={false}
+                placeholder={"0xabc…,1000000000000000000\n0xdef…,500000000000000000"}
+                className="input font-mono text-xs"
               />
-              {snap && (
-                <button
-                  onClick={loadSnapshot}
-                  className="w-full inline-flex items-center justify-center gap-2 bg-slate-950 border border-emerald-500/40 hover:bg-emerald-500/10 text-emerald-600 font-semibold px-4 py-2 rounded-lg text-sm transition"
+            ) : (
+              <CsvTable rows={parsedRows} />
+            )}
+
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-400 font-mono">
+                {parsedCount.toLocaleString()} recipient(s)
+              </span>
+              <button
+                onClick={goToAmounts}
+                disabled={parsedCount === 0}
+                className="ml-auto inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg text-sm transition"
+              >
+                Next: decide amounts <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div className="space-y-4">
+          {/* Airdrop token */}
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-2">
+            <h2 className="text-sm font-bold text-slate-100">Airdrop token</h2>
+            <p className="text-[11px] text-slate-500">
+              Choose the token you will distribute — only admin allow-listed tokens can be airdropped
+              on-chain. Amounts are entered in whole tokens and scaled by the decimals.
+            </p>
+            <select
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              className="input font-mono text-xs"
+            >
+              <option value="">Select an allow-listed token…</option>
+              {(allowedTokens ?? []).map((t) => (
+                <option key={t.token} value={t.token}>
+                  {t.symbol} — {t.token.slice(0, 8)}…{t.token.slice(-6)}
+                </option>
+              ))}
+            </select>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              {allowedTokens && allowedTokens.length === 0 && (
+                <span className="text-amber-600">
+                  No tokens are on the platform allow-list yet — ask the admin to add one.
+                </span>
+              )}
+              {tokenOk && (
+                <span className="text-slate-500">
+                  {symbol && <span className="font-mono text-emerald-600">{symbol} </span>}·{" "}
+                  {decData != null ? `${dec} decimals` : "reading decimals…"} · 1 ={" "}
+                  {`1${"0".repeat(dec)}`} base units
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Distribution method */}
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4">
+            <div>
+              <h2 className="text-sm font-bold text-slate-100">How to distribute</h2>
+              <p className="text-[11px] text-slate-500">
+                Pick a method, then set its value — the amount each wallet receives updates live in
+                the list below.
+              </p>
+            </div>
+            <div className="grid sm:grid-cols-3 gap-2">
+              <MethodCard
+                active={distMode === "equal"}
+                onClick={() => setDistMode("equal")}
+                title="Same for everyone"
+                desc="Every wallet gets an equal amount, regardless of balance."
+              />
+              <MethodCard
+                active={distMode === "prorata"}
+                onClick={() => setDistMode("prorata")}
+                title="Proportional to balance"
+                desc="A fixed total, split across wallets by their snapshot balance."
+              />
+              <MethodCard
+                active={distMode === "sqrt"}
+                onClick={() => setDistMode("sqrt")}
+                title="Proportional to √balance"
+                desc="Split by the square root of each balance — dampens whales, flatter distribution."
+              />
+            </div>
+
+            {distMode === "equal" ? (
+              <div className="space-y-1.5">
+                <Field
+                  label="Amount per wallet"
+                  hint={`Each wallet receives this much (${unit}).`}
+                  invalid={perWallet.trim() !== "" && perWalletBase === null}
                 >
-                  Load {snap.count.toLocaleString()}{" "}
-                  {snapKind === "nft" ? "NFT owners" : "holders"} into the list ↓
-                </button>
-              )}
-            </div>
-          )}
-
-          {tab === "combine" && (
-            <div className="space-y-4">
-              <div>
-                <label className="text-[11px] text-slate-400">
-                  Second list (address[,amount] per line) — set operations against your list
-                </label>
-                <textarea
-                  value={operand}
-                  onChange={(e) => setOperand(e.target.value)}
-                  rows={4}
-                  placeholder={"0xabc…\n0xdef…,50"}
-                  className="input font-mono text-xs mt-1"
-                />
-                <div className="flex flex-wrap gap-2 mt-2">
-                  <ToolbarBtn onClick={doUnion} disabled={!hasOperand}>Union (OR)</ToolbarBtn>
-                  <ToolbarBtn onClick={doIntersect} disabled={!hasOperand}>Intersect (AND)</ToolbarBtn>
-                  <ToolbarBtn onClick={doExclude} disabled={!hasOperand}>Exclude (remove these)</ToolbarBtn>
-                  <span className="text-[11px] text-slate-500 self-center">
-                    {hasOperand ? `${operandKeys.size} address(es)` : "paste a second list to enable"}
-                  </span>
-                </div>
+                  <input
+                    value={perWallet}
+                    onChange={(e) => setPerWallet(e.target.value)}
+                    placeholder="e.g. 1"
+                    className="input font-mono text-xs w-56"
+                  />
+                  <UnitTag unit={unit} />
+                </Field>
+                {perWalletBase !== null && dist.count > 0 && (
+                  <p className="text-[11px] text-slate-400">
+                    Total airdrop ={" "}
+                    <span className="font-mono text-emerald-500">
+                      {human(dist.total)} {unit}
+                    </span>{" "}
+                    across {dist.count.toLocaleString()} wallets.
+                  </p>
+                )}
               </div>
-              <div className="flex flex-wrap items-center gap-2 border-t border-slate-800/60 pt-3">
-                <ToolbarBtn onClick={doDedup}>Dedupe (sum amounts)</ToolbarBtn>
-                <span className="text-slate-400 text-xs font-mono ml-2">Cap per wallet:</span>
+            ) : (
+              <Field
+                label="Total to distribute"
+                hint={`This total is split across all wallets by ${
+                  distMode === "sqrt" ? "√balance" : "balance"
+                } (${unit}).`}
+                invalid={totalDistribute.trim() !== "" && totalBase === null}
+              >
                 <input
-                  value={capInput}
-                  onChange={(e) => setCapInput(e.target.value)}
-                  placeholder="max"
-                  className="bg-slate-950 border border-slate-800 focus:border-slate-700 text-slate-100 px-3 py-1.5 rounded-lg font-mono text-xs outline-none w-40"
+                  value={totalDistribute}
+                  onChange={(e) => setTotalDistribute(e.target.value)}
+                  placeholder="e.g. 1000"
+                  className="input font-mono text-xs w-56"
                 />
-                <ToolbarBtn onClick={doCap} disabled={!capInput.trim()}>Apply cap</ToolbarBtn>
-              </div>
-            </div>
+                <UnitTag unit={unit} />
+              </Field>
+            )}
+
+            {distMode !== "equal" && (
+              <Field
+                label="Cap per wallet (optional)"
+                hint="Limit any single wallet to at most this — useful when one holder is huge."
+                invalid={capInvalid}
+              >
+                <input
+                  value={capValue}
+                  onChange={(e) => setCapValue(e.target.value)}
+                  placeholder="no cap"
+                  className="input font-mono text-xs w-56"
+                />
+                <UnitTag unit={unit} />
+              </Field>
+            )}
+
+          </div>
+
+          {/* Airdrop preview */}
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-sm font-bold text-slate-100 mr-auto">
+              Airdrop
+              <span className="ml-2 text-xs font-normal text-slate-400">
+                {dist.count.toLocaleString()} recipients · total {totalLabel}
+                {badAddr && <span className="text-amber-600"> · fix invalid address(es)</span>}
+                {dupCount > 0 && (
+                  <span className="text-amber-600"> · {dupCount} duplicate address(es)</span>
+                )}
+              </span>
+            </h2>
+            {dupCount > 0 && (
+              <ToolbarBtn onClick={doDedup}>Merge duplicates</ToolbarBtn>
+            )}
+            <ToolbarBtn onClick={backToAggregate} icon={<ArrowLeft className="w-3.5 h-3.5" />}>
+              Re-aggregate
+            </ToolbarBtn>
+            <ToolbarBtn onClick={() => setExportOpen(true)} icon={<Download className="w-3.5 h-3.5" />} disabled={!canUse}>
+              Export CSV
+            </ToolbarBtn>
+            <ToolbarBtn onClick={copyCsv} icon={copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />} disabled={!canUse}>
+              {copied ? "Copied" : "Copy"}
+            </ToolbarBtn>
+            <button
+              onClick={useInCampaign}
+              disabled={!canUse}
+              className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg text-sm transition"
+            >
+              Use in a campaign <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[10px] font-mono uppercase tracking-wider text-slate-400 border-b border-slate-800">
+                  <th className="w-10 px-3 py-2 text-right">#</th>
+                  <th className="px-3 py-2">Address</th>
+                  <th className="px-3 py-2 w-56">Balance (base units)</th>
+                  <th className="px-3 py-2 w-56 text-right">Airdrop amount</th>
+                  <th className="w-10 px-2 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.slice(0, RENDER_CAP).map((r, i) => {
+                  const addrBad = nonEmpty(r) && !isAddress(r.address.trim(), { strict: false });
+                  const a = dist.airdrops[i];
+                  return (
+                    <tr key={i} className="border-b border-slate-800/60 last:border-0">
+                      <td className="px-3 py-1 text-right font-mono text-[11px] text-slate-500">{i + 1}</td>
+                      <td className="px-1 py-1">
+                        <input
+                          value={r.address}
+                          onChange={(e) => update(i, "address", e.target.value)}
+                          placeholder="0x…"
+                          className={`w-full bg-transparent px-2 py-1 rounded font-mono text-xs outline-none focus:bg-slate-950 ${
+                            addrBad ? "text-red-500" : "text-slate-100"
+                          }`}
+                        />
+                      </td>
+                      <td className="px-1 py-1">
+                        <input
+                          value={r.amount}
+                          onChange={(e) => update(i, "amount", e.target.value)}
+                          placeholder="0"
+                          className="w-full bg-transparent px-2 py-1 rounded font-mono text-xs text-slate-300 outline-none focus:bg-slate-950"
+                        />
+                      </td>
+                      <td className="px-3 py-1 text-right font-mono text-xs">
+                        {a !== null && a > 0n ? (
+                          <span className="text-emerald-500">
+                            {human(a)}
+                            {symbol && <span className="text-slate-500"> {symbol}</span>}
+                          </span>
+                        ) : (
+                          <span className="text-slate-600">—</span>
+                        )}
+                      </td>
+                      <td className="px-1 py-1 text-center">
+                        {nonEmpty(r) && (
+                          <button onClick={() => removeRow(i)} className="text-slate-500 hover:text-red-500 transition" title="Remove row">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {rows.filter(nonEmpty).length > RENDER_CAP && (
+              <p className="px-3 py-2 text-[11px] text-slate-500 border-t border-slate-800">
+                Showing first {RENDER_CAP.toLocaleString()} rows — totals and export cover all{" "}
+                {rows.filter(nonEmpty).length.toLocaleString()}.
+              </p>
+            )}
+          </div>
+
+          {exportOpen && (
+            <ExportModal
+              count={dist.count}
+              includeBalance={includeBalance}
+              setIncludeBalance={setIncludeBalance}
+              onCancel={() => setExportOpen(false)}
+              onConfirm={confirmExport}
+            />
           )}
         </div>
-      </div>
-
-      {/* The working list */}
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-sm font-bold text-slate-100 mr-auto">
-            Your list
-            <span className="ml-2 text-xs font-normal text-slate-400">
-              {analysis.valid.toLocaleString()} recipients · total {analysis.total.toLocaleString()}
-              {analysis.invalid > 0 && (
-                <span className="text-amber-600"> · {analysis.invalid} error(s)</span>
-              )}
-            </span>
-          </h2>
-          <ToolbarBtn onClick={download} icon={<Download className="w-3.5 h-3.5" />} disabled={!canUse}>
-            Export CSV
-          </ToolbarBtn>
-          <ToolbarBtn onClick={copyCsv} icon={copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />} disabled={!canUse}>
-            {copied ? "Copied" : "Copy"}
-          </ToolbarBtn>
-          <button
-            onClick={useInCampaign}
-            disabled={!canUse}
-            className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg text-sm transition"
-          >
-            Use in a campaign <ArrowRight className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-[10px] font-mono uppercase tracking-wider text-slate-400 border-b border-slate-800">
-                <th className="w-10 px-3 py-2 text-right">#</th>
-                <th className="px-3 py-2">Address</th>
-                <th className="px-3 py-2 w-64">Amount (base units)</th>
-                <th className="w-10 px-2 py-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => {
-                const s = analysis.status[i];
-                const addrBad = s.state === "bad" && s.addrOk === false;
-                const amtBad = s.state === "bad" && s.amtOk === false;
-                const dup = s.state === "bad" && s.dup;
-                return (
-                  <tr key={i} className="border-b border-slate-800/60 last:border-0">
-                    <td className="px-3 py-1 text-right font-mono text-[11px] text-slate-500">{i + 1}</td>
-                    <td className="px-1 py-1">
-                      <input
-                        value={r.address}
-                        onChange={(e) => update(i, "address", e.target.value)}
-                        onPaste={(e) => onPaste(e, i)}
-                        placeholder="0x…"
-                        className={`w-full bg-transparent px-2 py-1 rounded font-mono text-xs outline-none focus:bg-slate-950 ${
-                          addrBad || dup ? "text-red-500" : "text-slate-100"
-                        }`}
-                      />
-                    </td>
-                    <td className="px-1 py-1">
-                      <input
-                        value={r.amount}
-                        onChange={(e) => update(i, "amount", e.target.value)}
-                        onPaste={(e) => onPaste(e, i)}
-                        placeholder="100"
-                        className={`w-full bg-transparent px-2 py-1 rounded font-mono text-xs outline-none focus:bg-slate-950 ${
-                          amtBad ? "text-red-500" : "text-slate-100"
-                        }`}
-                      />
-                    </td>
-                    <td className="px-1 py-1 text-center">
-                      {nonEmpty(r) && (
-                        <button onClick={() => removeRow(i)} className="text-slate-500 hover:text-red-500 transition" title="Remove row">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        {analysis.invalid > 0 && (
-          <p className="text-[11px] text-amber-600">
-            Rows in red have an invalid address, a non-positive amount, or a duplicate address.
-          </p>
-        )}
-      </div>
+      )}
     </div>
   );
 }
 
-function SubTab({
-  active,
-  onClick,
-  icon,
-  children,
+function ExportModal({
+  count,
+  includeBalance,
+  setIncludeBalance,
+  onCancel,
+  onConfirm,
 }: {
+  count: number;
+  includeBalance: boolean;
+  setIncludeBalance: (v: boolean) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  // Portal to <body> so the overlay escapes any transformed ancestor (the page
+  // root's animate-fade-in), otherwise `fixed` centers within the tall page box
+  // and the modal lands off-screen.
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-sm font-bold text-slate-100">Export CSV</h3>
+        <p className="text-[11px] text-slate-400">
+          {count.toLocaleString()} recipients · columns{" "}
+          <span className="font-mono text-slate-300">
+            address,amount{includeBalance ? ",balance" : ""}
+          </span>
+          .
+        </p>
+        <label className="flex items-center gap-2 text-xs text-slate-300">
+          <input
+            type="checkbox"
+            checked={includeBalance}
+            onChange={(e) => setIncludeBalance(e.target.checked)}
+            className="accent-emerald-500"
+          />
+          Include the snapshot balance as an extra column
+        </label>
+        <div className="flex justify-end gap-2">
+          <button onClick={onCancel} className="btn text-xs">
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="inline-flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-400 text-white font-bold px-4 py-2 rounded-lg text-sm transition"
+          >
+            <Download className="w-3.5 h-3.5" /> Download
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function StepPill({
+  n,
+  label,
+  active,
+  disabled,
+  onClick,
+}: {
+  n: number;
+  label: string;
   active: boolean;
+  disabled?: boolean;
   onClick: () => void;
-  icon: React.ReactNode;
-  children: React.ReactNode;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition ${
+      disabled={disabled}
+      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed ${
         active
           ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600"
           : "border-slate-800 bg-slate-950 text-slate-300 hover:border-slate-700"
       }`}
     >
-      {icon}
+      <span
+        className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-mono ${
+          active ? "bg-emerald-500 text-white" : "bg-slate-800 text-slate-300"
+        }`}
+      >
+        {n}
+      </span>
+      {label}
+    </button>
+  );
+}
+
+function MethodCard({
+  active,
+  onClick,
+  title,
+  desc,
+}: {
+  active: boolean;
+  onClick: () => void;
+  title: string;
+  desc: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`text-left rounded-lg border p-3 transition ${
+        active
+          ? "border-emerald-500/50 bg-emerald-500/10"
+          : "border-slate-800 bg-slate-950 hover:border-slate-700"
+      }`}
+    >
+      <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+        <span
+          className={`h-3.5 w-3.5 rounded-full border-2 ${
+            active ? "border-emerald-500 bg-emerald-500" : "border-slate-600"
+          }`}
+        />
+        {title}
+      </div>
+      <p className="mt-1 text-[11px] text-slate-400">{desc}</p>
+    </button>
+  );
+}
+
+function Field({
+  label,
+  hint,
+  invalid,
+  children,
+}: {
+  label: string;
+  hint: string;
+  invalid?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="text-xs font-mono text-slate-300">{label}</label>
+      <div className="flex items-center gap-2">{children}</div>
+      <p className={`text-[11px] ${invalid ? "text-red-500" : "text-slate-500"}`}>
+        {invalid ? "Enter a positive number." : hint}
+      </p>
+    </div>
+  );
+}
+
+function UnitTag({ unit }: { unit: string }) {
+  return <span className="text-[11px] font-mono text-slate-400">{unit}</span>;
+}
+
+const CSV_PREVIEW_CAP = 1000;
+function CsvTable({ rows }: { rows: Row[] }) {
+  const filled = rows.filter((r) => r.address.trim() !== "" || r.amount.trim() !== "");
+  if (filled.length === 0) {
+    return (
+      <div className="rounded-lg border border-slate-800 bg-slate-950 p-4 text-center text-xs text-slate-500">
+        No recipients yet — fetch from Dune, upload a CSV, or switch to the CSV view to paste.
+      </div>
+    );
+  }
+  const shown = filled.slice(0, CSV_PREVIEW_CAP);
+  return (
+    <div className="overflow-auto rounded-lg border border-slate-800 max-h-96">
+      <table className="w-full text-xs border-collapse">
+        <thead className="sticky top-0 bg-slate-950">
+          <tr className="text-left font-mono uppercase tracking-wider text-[10px] text-slate-400">
+            <th className="w-12 px-3 py-2 text-right border-b border-slate-800">#</th>
+            <th className="px-3 py-2 border-b border-slate-800">Address</th>
+            <th className="px-3 py-2 border-b border-slate-800">Balance (base units)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {shown.map((r, i) => {
+            const bad = !isAddress(r.address.trim(), { strict: false });
+            return (
+              <tr key={i} className="odd:bg-slate-900/40">
+                <td className="px-3 py-1 text-right font-mono text-slate-500 border-r border-slate-800/60">{i + 1}</td>
+                <td className={`px-3 py-1 font-mono border-r border-slate-800/60 ${bad ? "text-red-500" : "text-slate-200"}`}>
+                  {r.address || <span className="text-slate-600">—</span>}
+                </td>
+                <td className="px-3 py-1 font-mono text-slate-200">
+                  {r.amount || <span className="text-slate-600">—</span>}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {filled.length > CSV_PREVIEW_CAP && (
+        <p className="px-3 py-2 text-[11px] text-slate-500 border-t border-slate-800">
+          Showing first {CSV_PREVIEW_CAP.toLocaleString()} of {filled.length.toLocaleString()} — all
+          are kept.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ViewBtn({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-2.5 py-1 text-[11px] font-semibold rounded-md transition ${
+        active ? "bg-slate-800 text-slate-100" : "text-slate-400 hover:text-slate-200"
+      }`}
+    >
       {children}
     </button>
   );
