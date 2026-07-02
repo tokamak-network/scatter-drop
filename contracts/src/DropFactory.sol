@@ -86,6 +86,11 @@ contract DropFactory is Initializable, UUPSUpgradeable, Ownable {
     /// @notice MerkleDrop logic contract; every campaign is a minimal-proxy clone of it.
     address public dropImplementation;
 
+    /// @notice Emergency service pause. When true, `createDrop` is blocked (new
+    ///         campaigns can't be created); existing drops' claims/sweeps are
+    ///         unaffected (they live on independent clone contracts).
+    bool public paused;
+
     /// @notice Total fees accrued and not yet withdrawn, per airdrop token.
     mapping(address => uint256) public collectedFees;
 
@@ -113,6 +118,7 @@ contract DropFactory is Initializable, UUPSUpgradeable, Ownable {
     event FeeBpsUpdated(address indexed token, uint16 bps);
     event FlatFeeUpdated(address indexed token, uint256 amount);
     event AllowedTokenSet(address indexed token, bool allowed, address indexed caller);
+    event PausedSet(bool paused);
     event FeesWithdrawn(address indexed token, address indexed to, uint256 amount);
     event DropCreated(
         address indexed drop,
@@ -148,6 +154,7 @@ contract DropFactory is Initializable, UUPSUpgradeable, Ownable {
     error UnknownDrop();
     error NotDropOperator();
     error EmptyCid();
+    error ServicePaused();
 
     /// @dev Lock the implementation; the proxy is configured via `initialize`.
     constructor() {
@@ -178,6 +185,13 @@ contract DropFactory is Initializable, UUPSUpgradeable, Ownable {
         defaultFeeBps = 50; // 0.5% (inline initializers don't run behind a proxy)
         // Deploy the MerkleDrop logic once; every campaign is a cheap clone of it.
         dropImplementation = address(new MerkleDrop());
+    }
+
+    /// @notice Pause/unpause the service. While paused, `createDrop` reverts;
+    ///         existing campaigns keep working (claim/sweep are on the clones).
+    function setPaused(bool paused_) external onlyOwner {
+        paused = paused_;
+        emit PausedSet(paused_);
     }
 
     /// @dev UUPS: only the owner may upgrade the factory implementation.
@@ -319,6 +333,8 @@ contract DropFactory is Initializable, UUPSUpgradeable, Ownable {
         uint64 deadline,
         address identityRegistry
     ) external payable returns (address drop) {
+        // Emergency stop: block new campaigns while paused (existing drops keep working).
+        if (paused) revert ServicePaused();
         AirdropType t = _toType(airdropType);
         // identityRegistry is OPTIONAL (W24): address(0) = no customer gate (open claim).
         if (airdropToken == address(0)) revert InvalidAddress();

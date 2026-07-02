@@ -540,6 +540,35 @@ contract DropFactoryTest is MerkleTestBase {
         assertEq(address(factory.zkFactory()), address(newZk));
     }
 
+    // -- pause -----------------------------------------------------------
+
+    function test_setPaused_onlyOwner() public {
+        vm.prank(operator);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.Unauthorized.selector));
+        factory.setPaused(true);
+    }
+
+    function test_createDrop_revertsWhenPaused() public {
+        vm.prank(admin);
+        factory.setPaused(true);
+        assertTrue(factory.paused());
+
+        _verifyOperator(operator);
+        _fund(operator, TOTAL);
+        vm.prank(operator);
+        vm.expectRevert(DropFactory.ServicePaused.selector);
+        factory.createDrop(
+            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, startTime, deadline, custReg
+        );
+
+        // Unpausing restores creation.
+        vm.prank(admin);
+        factory.setPaused(false);
+        address drop = _createCsv(operator);
+        assertTrue(drop != address(0));
+        assertEq(factory.dropsLength(), 1);
+    }
+
     // -- initialize ------------------------------------------------------
     // Validation moved from the constructor to initialize() (UUPS proxy). Each
     // deploys an uninitialized proxy, then asserts initialize reverts on bad args.
