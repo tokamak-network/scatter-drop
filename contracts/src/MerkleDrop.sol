@@ -6,6 +6,7 @@ import { SafeTransferLib } from "solmate/utils/SafeTransferLib.sol";
 import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import { BitMaps } from "@openzeppelin/contracts/utils/structs/BitMaps.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import { LibClone } from "solady/utils/LibClone.sol";
 
 import { IIdentityRegistry } from "./interfaces/IIdentityRegistry.sol";
 
@@ -23,6 +24,13 @@ import { IIdentityRegistry } from "./interfaces/IIdentityRegistry.sol";
 ///      proofs carry no sibling-position metadata. Claims are `nonReentrant`
 ///      (the native path makes an external ETH call), with CEI ordering as the
 ///      primary guard.
+///
+///      DEPLOYMENT: deployed once as an implementation; every campaign is an
+///      EIP-1167 clone-with-immutable-args (Solady `LibClone.clone(impl, args)`).
+///      The campaign config is `abi.encode`d into the clone's bytecode and read
+///      back with Solady's audited `argsOnClone` + `abi.decode` — no per-drop
+///      storage for config (claims stay cheap) and no constructor/initializer.
+///      The factory validates the config before cloning (it is the sole creator).
 contract MerkleDrop is ReentrancyGuard {
     using SafeTransferLib for ERC20;
     using BitMaps for BitMaps.BitMap;
@@ -33,34 +41,6 @@ contract MerkleDrop is ReentrancyGuard {
 
     /// @notice Sentinel `token` value meaning "distribute native ETH".
     address public constant NATIVE = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
-
-    /*//////////////////////////////////////////////////////////////
-                                IMMUTABLES
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Factory that deployed this drop (the deployer).
-    address public immutable factory;
-
-    /// @notice Asset being distributed: an ERC20 address, or `NATIVE` for ETH.
-    address public immutable token;
-
-    /// @notice True when the drop distributes native ETH (`token == NATIVE`).
-    bool public immutable isNative;
-
-    /// @notice Merkle root committing to all `(index, account, amount)` allocations.
-    bytes32 public immutable merkleRoot;
-
-    /// @notice Unix timestamp at/after which claims open.
-    uint64 public immutable startTime;
-
-    /// @notice Unix timestamp after which claims are closed and sweep is allowed.
-    uint64 public immutable deadline;
-
-    /// @notice zk-X509 registry gating customer (claimer) identity.
-    IIdentityRegistry public immutable identityRegistry;
-
-    /// @notice Campaign operator; the only address allowed to sweep leftovers.
-    address public immutable operator;
 
     /*//////////////////////////////////////////////////////////////
                                  STORAGE
@@ -83,10 +63,6 @@ contract MerkleDrop is ReentrancyGuard {
                                  ERRORS
     //////////////////////////////////////////////////////////////*/
 
-    error ZeroAddress();
-    error NotAContract();
-    error DeadlineInPast();
-    error InvalidWindow();
     error ClaimNotStarted();
     error ClaimClosed();
     error NotSelfClaim();
@@ -98,52 +74,80 @@ contract MerkleDrop is ReentrancyGuard {
     error EthNotAccepted();
 
     /*//////////////////////////////////////////////////////////////
-                               CONSTRUCTOR
+                          IMMUTABLE-ARGS CONFIG
     //////////////////////////////////////////////////////////////*/
 
-    /// @param token_ ERC20 token to distribute, or `NATIVE` for native ETH.
-    /// @param merkleRoot_ Root committing to all allocations.
-    /// @param startTime_ Unix timestamp at/after which claims open.
-    /// @param deadline_ Unix timestamp after which claims close.
-    /// @param identityRegistry_ zk-X509 registry gating claimers.
-    /// @param operator_ Campaign operator (sweep authority).
-    constructor(
-        address token_,
-        bytes32 merkleRoot_,
-        uint64 startTime_,
-        uint64 deadline_,
-        IIdentityRegistry identityRegistry_,
-        address operator_
-    ) {
-        // identityRegistry_ is OPTIONAL (W24): address(0) = no customer gate (open claim).
-        if (token_ == address(0) || operator_ == address(0)) {
-            revert ZeroAddress();
-        }
-        bool native = token_ == NATIVE;
-        // Guard standalone deployments: solmate's SafeTransferLib treats a call
-        // to a codeless address as success, so a non-contract ERC20 would let
-        // claims "succeed" while moving nothing. Native ETH has no token
-        // contract, so the check only applies to the ERC20 path.
-        if (!native && token_.code.length == 0) revert NotAContract();
-        if (deadline_ <= block.timestamp) revert DeadlineInPast();
-        // Claim window must be non-empty (open strictly before it closes).
-        if (deadline_ <= startTime_) revert InvalidWindow();
+    /// @dev Decode this clone's immutable args (baked into its bytecode by the
+    ///      factory via `LibClone.clone(impl, abi.encode(...))`). Order MUST match
+    ///      the factory's `abi.encode`. Cheap: an EXTCODECOPY of the clone's own
+    ///      code tail + a standard `abi.decode` (no per-drop storage reads).
+    function _config()
+        internal
+        view
+        returns (
+            address token_,
+            bytes32 merkleRoot_,
+            uint64 startTime_,
+            uint64 deadline_,
+            address identityRegistry_,
+            address operator_,
+            address factory_
+        )
+    {
+        return abi.decode(
+            LibClone.argsOnClone(address(this)),
+            (address, bytes32, uint64, uint64, address, address, address)
+        );
+    }
 
-        factory = msg.sender;
-        token = token_;
-        isNative = native;
-        merkleRoot = merkleRoot_;
-        startTime = startTime_;
-        deadline = deadline_;
-        identityRegistry = identityRegistry_;
-        operator = operator_;
+    /// @notice Asset being distributed: an ERC20 address, or `NATIVE` for ETH.
+    function token() external view returns (address t) {
+        (t,,,,,,) = _config();
+    }
+
+    /// @notice True when the drop distributes native ETH (`token == NATIVE`).
+    function isNative() external view returns (bool) {
+        (address t,,,,,,) = _config();
+        return t == NATIVE;
+    }
+
+    /// @notice Merkle root committing to all `(index, account, amount)` allocations.
+    function merkleRoot() external view returns (bytes32 r) {
+        (, r,,,,,) = _config();
+    }
+
+    /// @notice Unix timestamp at/after which claims open.
+    function startTime() external view returns (uint64 s) {
+        (,, s,,,,) = _config();
+    }
+
+    /// @notice Unix timestamp after which claims are closed and sweep is allowed.
+    function deadline() external view returns (uint64 d) {
+        (,,, d,,,) = _config();
+    }
+
+    /// @notice zk-X509 registry gating customer (claimer) identity (0 = open claim).
+    function identityRegistry() external view returns (IIdentityRegistry) {
+        (,,,, address r,,) = _config();
+        return IIdentityRegistry(r);
+    }
+
+    /// @notice Campaign operator; the only address allowed to sweep leftovers.
+    function operator() external view returns (address o) {
+        (,,,,, o,) = _config();
+    }
+
+    /// @notice Factory that deployed this drop.
+    function factory() external view returns (address f) {
+        (,,,,,, f) = _config();
     }
 
     /// @notice Accept ETH funding for native drops (funded by the factory after
-    ///         deployment). ERC20 drops reject ETH so funds can't get stuck —
-    ///         their sweep only moves the token balance.
+    ///         cloning). ERC20 drops reject ETH so funds can't get stuck — their
+    ///         sweep only moves the token balance.
     receive() external payable {
-        if (!isNative) revert EthNotAccepted();
+        (address token_,,,,,,) = _config();
+        if (token_ != NATIVE) revert EthNotAccepted();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -160,16 +164,25 @@ contract MerkleDrop is ReentrancyGuard {
         external
         nonReentrant
     {
+        (
+            address token_,
+            bytes32 merkleRoot_,
+            uint64 startTime_,
+            uint64 deadline_,
+            address identityRegistry_,
+            ,
+        ) = _config();
+
         // Guards run cheapest-first; the external identity call is the single
         // most expensive op, so it runs last — an ineligible/tampered claim
         // reverts on the in-memory proof check before paying for it.
-        if (block.timestamp < startTime) revert ClaimNotStarted();
-        if (block.timestamp > deadline) revert ClaimClosed();
+        if (block.timestamp < startTime_) revert ClaimNotStarted();
+        if (block.timestamp > deadline_) revert ClaimClosed();
         if (account != msg.sender) revert NotSelfClaim();
         if (_claimed.get(index)) revert AlreadyClaimed();
 
         bytes32 leaf = keccak256(abi.encodePacked(index, account, amount));
-        if (!MerkleProof.verify(proof, merkleRoot, leaf)) revert InvalidProof();
+        if (!MerkleProof.verify(proof, merkleRoot_, leaf)) revert InvalidProof();
 
         // Optional customer gate (W24): only when an identityRegistry is set.
         // address(0) = open claim (merkle proof + self-claim still enforced).
@@ -177,8 +190,8 @@ contract MerkleDrop is ReentrancyGuard {
         // cannot reenter, and ordering it after the in-memory checks avoids
         // paying for it (and the SSTORE below) on a cheaper revert.
         if (
-            address(identityRegistry) != address(0)
-                && identityRegistry.verifiedUntil(msg.sender) < block.timestamp
+            identityRegistry_ != address(0)
+                && IIdentityRegistry(identityRegistry_).verifiedUntil(msg.sender) < block.timestamp
         ) revert NotVerified();
 
         // Effects before the value-moving interaction (CEI): mark the index
@@ -186,10 +199,10 @@ contract MerkleDrop is ReentrancyGuard {
         // reenter `claim` with the same index. `nonReentrant` backs this up on
         // the native path, which makes an external ETH call.
         _claimed.set(index);
-        if (isNative) {
+        if (token_ == NATIVE) {
             SafeTransferLib.safeTransferETH(msg.sender, amount);
         } else {
-            ERC20(token).safeTransfer(msg.sender, amount);
+            ERC20(token_).safeTransfer(msg.sender, amount);
         }
 
         emit Claimed(index, account, amount);
@@ -202,19 +215,21 @@ contract MerkleDrop is ReentrancyGuard {
     /// @notice After the deadline, the operator reclaims any unclaimed funds
     ///         (tokens or ETH) to its own address.
     function sweep() external nonReentrant {
-        if (msg.sender != operator) revert NotOperator();
-        if (block.timestamp <= deadline) revert SweepTooEarly();
+        (address token_,,, uint64 deadline_,, address operator_,) = _config();
+        if (msg.sender != operator_) revert NotOperator();
+        if (block.timestamp <= deadline_) revert SweepTooEarly();
 
-        uint256 balance = isNative ? address(this).balance : ERC20(token).balanceOf(address(this));
+        bool native = token_ == NATIVE;
+        uint256 balance = native ? address(this).balance : ERC20(token_).balanceOf(address(this));
         // Skip the transfer when nothing is left: some ERC20s revert on a
         // zero-value transfer, and emitting Swept(0) would be noise.
         if (balance > 0) {
-            if (isNative) {
-                SafeTransferLib.safeTransferETH(operator, balance);
+            if (native) {
+                SafeTransferLib.safeTransferETH(operator_, balance);
             } else {
-                ERC20(token).safeTransfer(operator, balance);
+                ERC20(token_).safeTransfer(operator_, balance);
             }
-            emit Swept(operator, balance);
+            emit Swept(operator_, balance);
         }
     }
 

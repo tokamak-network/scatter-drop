@@ -41,6 +41,7 @@ import {
   useErc20Symbol,
   useFeeBpsOf,
   useFeeModeOf,
+  usePaused,
   useTokenTier,
 } from "@/lib/contracts";
 
@@ -284,6 +285,10 @@ export default function NewCampaignPage() {
   // Identity gate satisfied: either off (open claim) or a registry is chosen.
   const identityOk = !identityRequired || !!registryAddr;
   const feeValid = fee !== undefined;
+  // Service pause: while the platform is paused, createDrop reverts on-chain, so
+  // block creation in the UI too (with a clear reason).
+  const { data: paused } = usePaused(factory);
+  const isPaused = paused === true;
   const ready =
     !!factory &&
     tokenValid &&
@@ -291,7 +296,8 @@ export default function NewCampaignPage() {
     recipientsValid &&
     windowValid &&
     identityOk &&
-    feeValid;
+    feeValid &&
+    !isPaused;
 
   // On-top: a single approval of the airdrop token for total + fee. Gate on the
   // fee being resolved so we never approve total-only (which would under-fund).
@@ -716,11 +722,18 @@ export default function NewCampaignPage() {
                     Next: create the campaign to deploy it on-chain.
                   </p>
                 )}
-                {!ready && (
-                  <p className="text-xs text-amber-600">
-                    Complete all steps (allowed token, identity gate, recipients,
-                    deadline) to enable creation.
+                {isPaused ? (
+                  <p className="text-xs text-red-500">
+                    The platform is paused — new campaigns can&apos;t be created right now. Try again
+                    later or contact the admin.
                   </p>
+                ) : (
+                  !ready && (
+                    <p className="text-xs text-amber-600">
+                      Complete all steps (allowed token, identity gate, recipients,
+                      deadline) to enable creation.
+                    </p>
+                  )
                 )}
               </div>
             )}

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import { Test } from "forge-std/Test.sol";
+import { MerkleTestBase } from "./util/MerkleTestBase.sol";
 
 import { DropFactory } from "../src/DropFactory.sol";
 import { MerkleDrop } from "../src/MerkleDrop.sol";
@@ -10,7 +10,7 @@ import { MockRegistryFactory } from "./mocks/MockRegistryFactory.sol";
 
 /// @notice Native-ETH airdrop path: creation funds the drop with ETH, the fee is
 ///         retained as ETH in the vault, and claims/sweep/withdraw move ETH.
-contract NativeDropTest is Test {
+contract NativeDropTest is MerkleTestBase {
     DropFactory internal factory;
     MockIdentityRegistry internal opReg;
     MockRegistryFactory internal zkFactory;
@@ -33,7 +33,7 @@ contract NativeDropTest is Test {
     function setUp() public {
         opReg = new MockIdentityRegistry();
         zkFactory = new MockRegistryFactory();
-        factory = new DropFactory(admin, address(opReg), zkFactory, treasury);
+        factory = _deployFactory(admin, address(opReg), zkFactory, treasury);
 
         vm.prank(admin);
         factory.setAllowedToken(NATIVE, true); // curate native ETH (no contract check)

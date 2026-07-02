@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { SafeTransferLib } from "solmate/utils/SafeTransferLib.sol";
+import { LibClone } from "solady/utils/LibClone.sol";
+import { Ownable } from "solady/auth/Ownable.sol";
+import { UUPSUpgradeable } from "solady/utils/UUPSUpgradeable.sol";
+import { Initializable } from "solady/utils/Initializable.sol";
 
 import { IIdentityRegistry } from "./interfaces/IIdentityRegistry.sol";
 import { IRegistryFactoryLike } from "./interfaces/IRegistryFactoryLike.sol";
@@ -29,7 +32,7 @@ import { MerkleDrop } from "./MerkleDrop.sol";
 ///         Fees accrue in `collectedFees[airdropToken]` and are withdrawable only to the fixed
 ///         `treasury`. Trust model and audit summary live in `docs/SECURITY.md`; supported
 ///         tokens are standard, non-rebasing, non-fee-on-transfer ERC20 (exact-receipt guard).
-contract DropFactory is Ownable {
+contract DropFactory is Initializable, UUPSUpgradeable, Ownable {
     using SafeERC20 for IERC20;
 
     /// @notice Airdrop distribution mechanisms. v1 ships CSV (Merkle) only; the rest
@@ -77,7 +80,16 @@ contract DropFactory is Ownable {
     FeeMode public defaultFeeMode;
 
     /// @notice Default percentage fee (basis points) applied to `PERCENT` tokens without an override.
-    uint16 public defaultFeeBps = 50; // 0.5%
+    /// @dev Set to 50 (0.5%) in `initialize` — an inline initializer would not run behind the proxy.
+    uint16 public defaultFeeBps;
+
+    /// @notice MerkleDrop logic contract; every campaign is a minimal-proxy clone of it.
+    address public dropImplementation;
+
+    /// @notice Emergency service pause. When true, `createDrop` is blocked (new
+    ///         campaigns can't be created); existing drops' claims/sweeps are
+    ///         unaffected (they live on independent clone contracts).
+    bool public paused;
 
     /// @notice Total fees accrued and not yet withdrawn, per airdrop token.
     mapping(address => uint256) public collectedFees;
@@ -106,6 +118,7 @@ contract DropFactory is Ownable {
     event FeeBpsUpdated(address indexed token, uint16 bps);
     event FlatFeeUpdated(address indexed token, uint256 amount);
     event AllowedTokenSet(address indexed token, bool allowed, address indexed caller);
+    event PausedSet(bool paused);
     event FeesWithdrawn(address indexed token, address indexed to, uint256 amount);
     event DropCreated(
         address indexed drop,
@@ -141,25 +154,57 @@ contract DropFactory is Ownable {
     error UnknownDrop();
     error NotDropOperator();
     error EmptyCid();
+    error ServicePaused();
 
+    /// @dev Lock the implementation; the proxy is configured via `initialize`.
+    constructor() {
+        _disableInitializers();
+    }
+
+    /// @notice One-time proxy setup. Deploys the MerkleDrop logic once (campaigns
+    ///         clone it) and sets the registries, treasury, owner, and default fee.
     /// @param initialOwner       Admin (sets fees/registries/treasury, curates tokens, withdraws).
     /// @param operatorRegistry_  zk-X509 IdentityRegistry gating campaign creators (gate 1).
     /// @param zkFactory_         zk-X509 RegistryFactory validating customer registries.
     /// @param treasury_          Fixed fee-withdrawal destination.
-    constructor(
+    function initialize(
         address initialOwner,
         address operatorRegistry_,
         IRegistryFactoryLike zkFactory_,
         address treasury_
-    ) Ownable(initialOwner) {
-        if (operatorRegistry_ == address(0) || address(zkFactory_) == address(0) || treasury_ == address(0)) {
+    ) external initializer {
+        if (
+            initialOwner == address(0) || operatorRegistry_ == address(0)
+                || address(zkFactory_) == address(0) || treasury_ == address(0)
+        ) {
             revert InvalidAddress();
         }
         _requireContract(operatorRegistry_);
         _requireContract(address(zkFactory_));
+        _initializeOwner(initialOwner);
         operatorRegistry = operatorRegistry_;
         zkFactory = zkFactory_;
         treasury = treasury_;
+        defaultFeeBps = 50; // 0.5% (inline initializers don't run behind a proxy)
+        // Deploy the MerkleDrop logic once; every campaign is a cheap clone of it.
+        dropImplementation = address(new MerkleDrop());
+    }
+
+    /// @notice Pause/unpause the service. While paused, `createDrop` reverts;
+    ///         existing campaigns keep working (claim/sweep are on the clones).
+    function setPaused(bool paused_) external onlyOwner {
+        paused = paused_;
+        emit PausedSet(paused_);
+    }
+
+    /// @dev UUPS: only the owner may upgrade the factory implementation.
+    function _authorizeUpgrade(address) internal override onlyOwner { }
+
+    /// @dev Defense-in-depth: make Solady's `_initializeOwner` revert on a second
+    ///      call. `initialize` is already `initializer`-guarded, so this only
+    ///      matters if a future upgrade adds another owner-init path.
+    function _guardInitializeOwner() internal pure override returns (bool) {
+        return true;
     }
 
     // ---------------------------------------------------------------------
@@ -291,6 +336,8 @@ contract DropFactory is Ownable {
         uint64 deadline,
         address identityRegistry
     ) external payable returns (address drop) {
+        // Emergency stop: block new campaigns while paused (existing drops keep working).
+        if (paused) revert ServicePaused();
         AirdropType t = _toType(airdropType);
         // identityRegistry is OPTIONAL (W24): address(0) = no customer gate (open claim).
         if (airdropToken == address(0)) revert InvalidAddress();
@@ -325,10 +372,16 @@ contract DropFactory is Ownable {
             revert IncorrectValue();
         }
 
-        // Deploy the drop (operator = msg.sender, factory = this via MerkleDrop's msg.sender).
-        drop = address(
-            new MerkleDrop(
-                airdropToken, merkleRoot, startTime, deadline, IIdentityRegistry(identityRegistry), msg.sender
+        // Clone the drop logic with its config baked into the clone's bytecode
+        // (EIP-1167 clone-with-immutable-args). ~10x cheaper than a full deploy,
+        // claims stay cheap (no per-drop config storage), and each clone still
+        // holds only its own funds (isolation). Arg order MUST match
+        // MerkleDrop._config()'s abi.decode. Validation above is authoritative:
+        // the factory is the sole creator, so the clone itself does not re-check.
+        drop = LibClone.clone(
+            dropImplementation,
+            abi.encode(
+                airdropToken, merkleRoot, startTime, deadline, identityRegistry, msg.sender, address(this)
             )
         );
         _drops.push(drop);

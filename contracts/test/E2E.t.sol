@@ -52,7 +52,7 @@ contract E2ETest is MerkleTestBase {
         zkFactory.setRegistry(address(customerRegistry), true);
 
         vm.prank(admin);
-        factory = new DropFactory(
+        factory = _deployFactory(
             admin, address(operatorRegistry), IRegistryFactoryLike(address(zkFactory)), treasury
         );
         vm.startPrank(admin);

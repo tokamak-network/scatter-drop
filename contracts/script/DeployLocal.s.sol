@@ -3,6 +3,8 @@ pragma solidity 0.8.28;
 
 import { Script, console2 } from "forge-std/Script.sol";
 
+import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+
 import { DropFactory } from "../src/DropFactory.sol";
 import { IRegistryFactoryLike } from "../src/interfaces/IRegistryFactoryLike.sol";
 
@@ -68,10 +70,14 @@ contract DeployLocal is Script {
         MockRegistryFactory zkFactory = new MockRegistryFactory();
         zkFactory.setRegistry(address(customerRegistry), true);
 
-        // The factory itself, then its CSV fee tier (in the fee token) and the registered token.
-        DropFactory factory = new DropFactory(
-            deployer, address(operatorRegistry), IRegistryFactoryLike(address(zkFactory)), treasury
+        // The factory (UUPS: impl + ERC1967 proxy + initialize), then its CSV fee
+        // tier (in the fee token) and the registered token.
+        address factoryImpl = address(new DropFactory());
+        bytes memory initData = abi.encodeCall(
+            DropFactory.initialize,
+            (deployer, address(operatorRegistry), IRegistryFactoryLike(address(zkFactory)), treasury)
         );
+        DropFactory factory = DropFactory(payable(address(new ERC1967Proxy(factoryImpl, initData))));
         // Curate the demo airdrop token and price its creation fee as a flat amount in that token.
         factory.setAllowedToken(address(airdropToken), true);
         factory.setFeeMode(address(airdropToken), DropFactory.FeeMode.FLAT);

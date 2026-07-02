@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import { Test } from "forge-std/Test.sol";
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import { MerkleTestBase } from "./util/MerkleTestBase.sol";
+import { Ownable } from "solady/auth/Ownable.sol";
+import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { DropFactory } from "../src/DropFactory.sol";
 import { MerkleDrop } from "../src/MerkleDrop.sol";
@@ -12,7 +13,7 @@ import { MockIdentityRegistry } from "./mocks/MockIdentityRegistry.sol";
 import { MockRegistryFactory } from "./mocks/MockRegistryFactory.sol";
 import { MockFeeOnTransferERC20 } from "./mocks/MockFeeOnTransferERC20.sol";
 
-contract DropFactoryTest is Test {
+contract DropFactoryTest is MerkleTestBase {
     DropFactory internal factory;
     MockERC20 internal airdropToken;
     MockIdentityRegistry internal opReg;
@@ -38,7 +39,7 @@ contract DropFactoryTest is Test {
         zkFactory = new MockRegistryFactory();
         zkFactory.setRegistry(custReg, true);
 
-        factory = new DropFactory(admin, address(opReg), zkFactory, treasury);
+        factory = _deployFactory(admin, address(opReg), zkFactory, treasury);
 
         vm.prank(admin);
         factory.setAllowedToken(address(airdropToken), true); // curate the airdrop token
@@ -444,7 +445,7 @@ contract DropFactoryTest is Test {
     }
 
     function test_feeSetters_onlyOwner() public {
-        bytes memory denied = abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, operator);
+        bytes memory denied = abi.encodeWithSelector(Ownable.Unauthorized.selector);
         vm.startPrank(operator);
         vm.expectRevert(denied);
         factory.setDefaultFeeMode(DropFactory.FeeMode.FLAT);
@@ -479,7 +480,7 @@ contract DropFactoryTest is Test {
 
     function test_setAllowedToken_onlyOwner() public {
         vm.prank(operator);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, operator));
+        vm.expectRevert(abi.encodeWithSelector(Ownable.Unauthorized.selector));
         factory.setAllowedToken(address(airdropToken), false);
     }
 
@@ -502,7 +503,7 @@ contract DropFactoryTest is Test {
     // -- admin: registries / treasury ------------------------------------
 
     function test_setters_onlyOwnerAndZeroAddress() public {
-        bytes memory denied = abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, operator);
+        bytes memory denied = abi.encodeWithSelector(Ownable.Unauthorized.selector);
         vm.startPrank(operator);
         vm.expectRevert(denied);
         factory.setOperatorRegistry(address(opReg));
@@ -540,31 +541,110 @@ contract DropFactoryTest is Test {
         assertEq(address(factory.zkFactory()), address(newZk));
     }
 
-    // -- constructor -----------------------------------------------------
+    // -- UUPS upgrade ----------------------------------------------------
 
-    function test_constructor_revertsOnZeroOperatorRegistry() public {
-        vm.expectRevert(DropFactory.InvalidAddress.selector);
-        new DropFactory(admin, address(0), zkFactory, treasury);
+    function test_upgrade_onlyOwner() public {
+        address newImpl = address(new DropFactory());
+        vm.prank(operator); // not the owner
+        vm.expectRevert(abi.encodeWithSelector(Ownable.Unauthorized.selector));
+        factory.upgradeToAndCall(newImpl, "");
     }
 
-    function test_constructor_revertsOnZeroZkFactory() public {
-        vm.expectRevert(DropFactory.InvalidAddress.selector);
-        new DropFactory(admin, address(opReg), IRegistryFactoryLike(address(0)), treasury);
+    function test_upgrade_preservesStorage() public {
+        // Seed state across the storage the upgrade must preserve.
+        _verifyOperator(operator);
+        _fund(operator, TOTAL);
+        _createCsv(operator);
+        uint256 fee = factory.collectedFees(address(airdropToken));
+        assertEq(factory.dropsLength(), 1);
+        assertTrue(factory.isAllowed(address(airdropToken)));
+
+        address newImpl = address(new DropFactory());
+        vm.prank(admin);
+        factory.upgradeToAndCall(newImpl, "");
+
+        // Proxy storage survives the logic swap.
+        assertEq(factory.dropsLength(), 1, "drops preserved");
+        assertTrue(factory.isAllowed(address(airdropToken)), "allow-list preserved");
+        assertEq(factory.collectedFees(address(airdropToken)), fee, "fees preserved");
+        assertEq(factory.owner(), admin, "owner preserved");
     }
 
-    function test_constructor_revertsOnZeroTreasury() public {
-        vm.expectRevert(DropFactory.InvalidAddress.selector);
-        new DropFactory(admin, address(opReg), zkFactory, address(0));
+    // -- pause -----------------------------------------------------------
+
+    function test_setPaused_onlyOwner() public {
+        vm.prank(operator);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.Unauthorized.selector));
+        factory.setPaused(true);
     }
 
-    function test_constructor_revertsOnEoaOperatorRegistry() public {
+    function test_createDrop_revertsWhenPaused() public {
+        vm.prank(admin);
+        factory.setPaused(true);
+        assertTrue(factory.paused());
+
+        _verifyOperator(operator);
+        _fund(operator, TOTAL);
+        vm.prank(operator);
+        vm.expectRevert(DropFactory.ServicePaused.selector);
+        factory.createDrop(
+            uint8(DropFactory.AirdropType.CSV), address(airdropToken), ROOT, TOTAL, startTime, deadline, custReg
+        );
+
+        // Unpausing restores creation.
+        vm.prank(admin);
+        factory.setPaused(false);
+        address drop = _createCsv(operator);
+        assertTrue(drop != address(0));
+        assertEq(factory.dropsLength(), 1);
+    }
+
+    // -- initialize ------------------------------------------------------
+    // Validation moved from the constructor to initialize() (UUPS proxy). Each
+    // deploys an uninitialized proxy, then asserts initialize reverts on bad args.
+
+    // Atomic deploy+init (ERC1967Proxy constructor delegatecalls initialize), so a
+    // bad arg reverts the proxy deployment — no front-runnable uninitialized window.
+    function _initFactory(
+        address owner_,
+        address opReg_,
+        IRegistryFactoryLike zk_,
+        address treasury_
+    ) internal {
+        new ERC1967Proxy(
+            _deployFactoryImpl(),
+            abi.encodeCall(DropFactory.initialize, (owner_, opReg_, zk_, treasury_))
+        );
+    }
+
+    function test_initialize_revertsOnZeroOwner() public {
+        vm.expectRevert(DropFactory.InvalidAddress.selector);
+        _initFactory(address(0), address(opReg), zkFactory, treasury);
+    }
+
+    function test_initialize_revertsOnZeroOperatorRegistry() public {
+        vm.expectRevert(DropFactory.InvalidAddress.selector);
+        _initFactory(admin, address(0), zkFactory, treasury);
+    }
+
+    function test_initialize_revertsOnZeroZkFactory() public {
+        vm.expectRevert(DropFactory.InvalidAddress.selector);
+        _initFactory(admin, address(opReg), IRegistryFactoryLike(address(0)), treasury);
+    }
+
+    function test_initialize_revertsOnZeroTreasury() public {
+        vm.expectRevert(DropFactory.InvalidAddress.selector);
+        _initFactory(admin, address(opReg), zkFactory, address(0));
+    }
+
+    function test_initialize_revertsOnEoaOperatorRegistry() public {
         vm.expectRevert(DropFactory.NotAContract.selector);
-        new DropFactory(admin, makeAddr("eoa"), zkFactory, treasury);
+        _initFactory(admin, makeAddr("eoa"), zkFactory, treasury);
     }
 
-    function test_constructor_revertsOnEoaZkFactory() public {
+    function test_initialize_revertsOnEoaZkFactory() public {
         vm.expectRevert(DropFactory.NotAContract.selector);
-        new DropFactory(admin, address(opReg), IRegistryFactoryLike(makeAddr("eoa")), treasury);
+        _initFactory(admin, address(opReg), IRegistryFactoryLike(makeAddr("eoa")), treasury);
     }
 
     // -- withdrawFees ----------------------------------------------------
