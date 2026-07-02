@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { formatUnits, isAddress, parseUnits } from "viem";
@@ -98,7 +98,6 @@ export default function ToolsPage() {
 
   // Step 2 — airdrop token (for decimals/symbol) + distribution method.
   const [token, setToken] = useState("");
-  const [decimalsInput, setDecimalsInput] = useState("18");
   const [distMode, setDistMode] = useState<"equal" | "prorata" | "sqrt">("equal");
   const [perWallet, setPerWallet] = useState("");
   const [totalDistribute, setTotalDistribute] = useState("");
@@ -150,16 +149,10 @@ export default function ToolsPage() {
     (t) => t.token.toLowerCase() === tokenTrimmed.toLowerCase(),
   )?.symbol;
   const symbol = listedSymbol ?? (typeof symData === "string" && symData ? symData : undefined);
-  // Auto-fill decimals from the token when it can be read on the connected chain.
-  useEffect(() => {
-    if (typeof decData === "number") setDecimalsInput(String(decData));
-  }, [decData]);
-  // Amounts are always entered in whole tokens and scaled by these decimals
-  // (default 18) — the CSV/merkle then carry base units (wei).
-  const dec = useMemo(() => {
-    const n = parseInt(decimalsInput, 10);
-    return Number.isInteger(n) && n >= 0 && n <= 36 ? n : 18;
-  }, [decimalsInput]);
+  // Decimals come from the selected (allow-listed) token on-chain; 18 while the
+  // read resolves. Amounts are entered in whole tokens and scaled by this to the
+  // base units (wei) the CSV/merkle carry.
+  const dec = tokenOk && decData != null ? Number(decData) : 18;
   const unit = symbol ?? "tokens";
 
   // Parse a whole-token input to base units. Returns null on empty/invalid.
@@ -395,35 +388,31 @@ export default function ToolsPage() {
               Choose the token you will distribute — only admin allow-listed tokens can be airdropped
               on-chain. Amounts are entered in whole tokens and scaled by the decimals.
             </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                className="input font-mono text-xs flex-1 min-w-[16rem]"
-              >
-                <option value="">Select an allow-listed token…</option>
-                {(allowedTokens ?? []).map((t) => (
-                  <option key={t.token} value={t.token}>
-                    {t.symbol} — {t.token.slice(0, 8)}…{t.token.slice(-6)}
-                  </option>
-                ))}
-              </select>
-              <label className="text-[11px] font-mono text-slate-400">decimals</label>
-              <input
-                value={decimalsInput}
-                onChange={(e) => setDecimalsInput(e.target.value)}
-                inputMode="numeric"
-                className="input font-mono text-xs w-20"
-              />
-            </div>
+            <select
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              className="input font-mono text-xs"
+            >
+              <option value="">Select an allow-listed token…</option>
+              {(allowedTokens ?? []).map((t) => (
+                <option key={t.token} value={t.token}>
+                  {t.symbol} — {t.token.slice(0, 8)}…{t.token.slice(-6)}
+                </option>
+              ))}
+            </select>
             <div className="flex flex-wrap items-center gap-2 text-xs">
               {allowedTokens && allowedTokens.length === 0 && (
                 <span className="text-amber-600">
                   No tokens are on the platform allow-list yet — ask the admin to add one.
                 </span>
               )}
-              {tokenOk && symbol && <span className="font-mono text-emerald-600">{symbol}</span>}
-              {tokenOk && <span className="text-slate-500">1 = {`1${"0".repeat(dec)}`} base units</span>}
+              {tokenOk && (
+                <span className="text-slate-500">
+                  {symbol && <span className="font-mono text-emerald-600">{symbol} </span>}·{" "}
+                  {decData != null ? `${dec} decimals` : "reading decimals…"} · 1 ={" "}
+                  {`1${"0".repeat(dec)}`} base units
+                </span>
+              )}
             </div>
           </div>
 
