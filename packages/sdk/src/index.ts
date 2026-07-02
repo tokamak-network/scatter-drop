@@ -46,6 +46,7 @@ export {
   encodeOnApproveData,
   buildApproveAndCallRequest,
   buildCreateDropOneTxRequest,
+  buildSetApproveAndCallSupportRequest,
   buildSetDefaultFeeModeRequest,
   buildSetFeeModeRequest,
   buildSetDefaultFeeBpsRequest,

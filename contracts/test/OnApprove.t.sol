@@ -112,4 +112,32 @@ contract OnApproveTest is MerkleTestBase {
         vm.expectRevert(DropFactory.OperatorNotVerified.selector);
         ton.approveAndCall(address(factory), TOTAL + fee, _data());
     }
+
+    // --- Admin-curated approveAndCall capability flag ---
+
+    function test_setApproveAndCallSupport_setsFlag() public {
+        assertFalse(factory.supportsApproveAndCall(address(ton)), "default false");
+        vm.prank(admin);
+        factory.setApproveAndCallSupport(address(ton), true);
+        assertTrue(factory.supportsApproveAndCall(address(ton)), "set true");
+        vm.prank(admin);
+        factory.setApproveAndCallSupport(address(ton), false);
+        assertFalse(factory.supportsApproveAndCall(address(ton)), "cleared");
+    }
+
+    function test_setApproveAndCallSupport_onlyOwner() public {
+        vm.prank(operator); // not the owner
+        vm.expectRevert();
+        factory.setApproveAndCallSupport(address(ton), true);
+    }
+
+    // --- DropParams ABI surface (#2 drift guard) ---
+
+    function test_encodeDropParams_matchesOnApproveData() public view {
+        DropFactory.DropParams memory p =
+            DropFactory.DropParams(uint8(DropFactory.AirdropType.CSV), ROOT, TOTAL, startTime, deadline, address(0));
+        // The on-chain encoder equals both abi.encode(p) and the blob onApprove decodes.
+        assertEq(factory.encodeDropParams(p), abi.encode(p));
+        assertEq(factory.encodeDropParams(p), _data());
+    }
 }

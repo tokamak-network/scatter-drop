@@ -12,6 +12,7 @@ import {
   buildClaimRequest,
   buildCreateDropRequest,
   buildCreateDropOneTxRequest,
+  buildSetApproveAndCallSupportRequest,
   encodeOnApproveData,
   buildSetAllowedTokenRequest,
   buildSetFeeBpsRequest,
@@ -320,14 +321,15 @@ describe("onApprove one-tx create (TON / approveAndCall)", () => {
     expect(req.to).toBe(A(0x707));
   });
 
-  it("encodeOnApproveData layout matches the createDrop ABI (minus airdropToken)", () => {
-    // DropParams == createDrop's inputs without `airdropToken`. Deriving the tuple
-    // from the (drift-guarded) dropFactoryAbi here means a createDrop arg drift makes
-    // this fail, transitively guarding the onApprove `data` layout.
-    const createDrop = dropFactoryAbi.find(
-      (e) => e.type === "function" && e.name === "createDrop",
-    ) as { inputs: readonly { name: string; type: string }[] };
-    const components = createDrop.inputs.filter((i) => i.name !== "airdropToken");
+  it("encodeOnApproveData matches the DropParams ABI surface (encodeDropParams)", () => {
+    // `encodeDropParams`'s tuple input IS the Solidity DropParams struct, and
+    // abi-drift.test.ts pins that tuple to the Foundry artifact. Encoding via it and
+    // comparing to encodeOnApproveData ties the SDK layout to the contract struct —
+    // a struct reorder fails both abi-drift and this test.
+    const enc = dropFactoryAbi.find(
+      (e) => e.type === "function" && e.name === "encodeDropParams",
+    ) as { inputs: readonly { components: readonly { name: string; type: string }[] }[] };
+    const components = enc.inputs[0]!.components;
     const viaAbi = encodeAbiParameters([{ type: "tuple", components }], [
       {
         airdropType: params.airdropType,
@@ -339,5 +341,13 @@ describe("onApprove one-tx create (TON / approveAndCall)", () => {
       },
     ]);
     expect(encodeOnApproveData(params)).toBe(viaAbi);
+  });
+
+  it("buildSetApproveAndCallSupportRequest encodes the admin setter", () => {
+    const req = buildSetApproveAndCallSupportRequest(A(9), A(0x707), true);
+    expect(req.to).toBe(A(9));
+    const { functionName, args } = decodeFunctionData({ abi: dropFactoryAbi, data: req.data });
+    expect(functionName).toBe("setApproveAndCallSupport");
+    expect(args).toEqual([A(0x707), true]);
   });
 });

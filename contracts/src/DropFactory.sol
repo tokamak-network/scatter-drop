@@ -121,6 +121,13 @@ contract DropFactory is Initializable, UUPSUpgradeable, Ownable {
     mapping(address => uint16) private _feeBpsOf;
     mapping(address => bool) private _feeBpsSet;
 
+    /// @notice Admin-curated: does `token` support `approveAndCall` (Tokamak TON /
+    ///         SeigToken)? When true the app offers the one-transaction create path
+    ///         (`onApprove`). Curated by the owner because approveAndCall support is
+    ///         not reliably introspectable on-chain. Appended at the end of storage
+    ///         (UUPS layout-safe — new slot, no reordering of existing vars).
+    mapping(address => bool) public supportsApproveAndCall;
+
     event OperatorRegistryUpdated(address indexed operatorRegistry);
     event ZkFactoryUpdated(address indexed zkFactory);
     event TreasuryUpdated(address indexed treasury);
@@ -130,6 +137,7 @@ contract DropFactory is Initializable, UUPSUpgradeable, Ownable {
     event FeeBpsUpdated(address indexed token, uint16 bps);
     event FlatFeeUpdated(address indexed token, uint256 amount);
     event AllowedTokenSet(address indexed token, bool allowed, address indexed caller);
+    event ApproveAndCallSupportSet(address indexed token, bool supported, address indexed caller);
     event PausedSet(bool paused);
     event FeesWithdrawn(address indexed token, address indexed to, uint256 amount);
     event DropCreated(
@@ -301,6 +309,15 @@ contract DropFactory is Initializable, UUPSUpgradeable, Ownable {
         }
     }
 
+    /// @notice Admin: record whether `token` supports `approveAndCall`, gating whether
+    ///         the app offers the one-transaction (`onApprove`) create path for it.
+    ///         Independent of the allow-list — this flag is only a UI capability hint;
+    ///         `onApprove` still enforces every create-time check.
+    function setApproveAndCallSupport(address token, bool supported) external onlyOwner {
+        supportsApproveAndCall[token] = supported;
+        emit ApproveAndCallSupportSet(token, supported, msg.sender);
+    }
+
     /// @notice Withdraw accrued fees of `token` to the fixed `treasury`.
     function withdrawFees(address token, uint256 amount) external onlyOwner {
         uint256 collected = collectedFees[token];
@@ -374,6 +391,14 @@ contract DropFactory is Initializable, UUPSUpgradeable, Ownable {
         if (amount != p.totalAmount + fee) revert IncorrectValue();
         _createDrop(owner, msg.sender, fee, p);
         return true;
+    }
+
+    /// @notice On-chain encoder for the `onApprove` `data` blob: `abi.encode(p)` here
+    ///         is exactly what `onApprove` decodes. Also gives `DropParams` an ABI
+    ///         surface so off-chain drift guards (SDK abi vs Foundry artifact) pin the
+    ///         struct's field order/types — a struct reorder changes this signature.
+    function encodeDropParams(DropParams calldata p) external pure returns (bytes memory) {
+        return abi.encode(p);
     }
 
     /// @dev Shared create logic for `createDrop` (2-step) and `onApprove` (1-tx).

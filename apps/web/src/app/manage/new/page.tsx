@@ -44,6 +44,7 @@ import {
   useFeeBpsOf,
   useFeeModeOf,
   usePaused,
+  useSupportsApproveAndCall,
   useTokenTier,
 } from "@/lib/contracts";
 
@@ -220,11 +221,6 @@ export default function NewCampaignPage() {
   const [justApproved, setJustApproved] = useState(false);
   // A new token/amount invalidates a prior approval flag.
   useEffect(() => setJustApproved(false), [token, totalDeposit]);
-  // Opt-in one-tx create for approveAndCall tokens (e.g. TON) — ERC-20 only.
-  const [oneTx, setOneTx] = useState(false);
-  // Reset on token change: approveAndCall support is per-token, and switching to
-  // native ETH (where the checkbox is hidden) must not leave a stale opt-in.
-  useEffect(() => setOneTx(false), [token]);
   const approved =
     isNative ||
     justApproved ||
@@ -299,6 +295,12 @@ export default function NewCampaignPage() {
   // block creation in the UI too (with a clear reason).
   const { data: paused } = usePaused(factory);
   const isPaused = paused === true;
+  // approveAndCall (one-tx) support is an admin-curated, per-token property on the
+  // factory — read it rather than asking the operator to assert it.
+  const { data: tokenSupportsOneTx } = useSupportsApproveAndCall(
+    factory,
+    isNative ? undefined : (token as Address),
+  );
   const ready =
     !!factory &&
     tokenValid &&
@@ -329,10 +331,10 @@ export default function NewCampaignPage() {
     fee: fee ?? 0n,
   };
   const createReq = ready && factory ? buildCreateDropRequest(factory, dropParams) : null;
-  // The one-tx (approveAndCall → onApprove) path is offered for ERC-20 tokens that
-  // support it (e.g. TON); `ready` already implies `fee` is set. One flag drives
-  // the guard, the button, and the hint below.
-  const singleTx = oneTx && !isNative;
+  // The one-tx (approveAndCall → onApprove) path is used automatically for ERC-20
+  // tokens the admin has flagged as approveAndCall-capable; `ready` already implies
+  // `fee` is set. One flag drives the guard, the button, and the hint below.
+  const singleTx = !isNative && tokenSupportsOneTx === true;
   const oneTxReq =
     ready && factory && singleTx ? buildCreateDropOneTxRequest(factory, dropParams, fee ?? 0n) : null;
 
@@ -695,17 +697,11 @@ export default function NewCampaignPage() {
                     drop (total + fee), but holds {fmtAmount(walletBalance as bigint)}.
                   </p>
                 )}
-                {!isNative && (
-                  <label className="flex items-center gap-2 text-[11px] text-slate-400">
-                    <input
-                      type="checkbox"
-                      checked={oneTx}
-                      onChange={(e) => setOneTx(e.target.checked)}
-                      className="accent-emerald-500"
-                    />
-                    Create in one transaction — for tokens that support{" "}
-                    <span className="font-mono">approveAndCall</span> (e.g. TON)
-                  </label>
+                {singleTx && (
+                  <p className="text-[11px] text-emerald-600">
+                    This token supports <span className="font-mono">approveAndCall</span> — it will be
+                    created in a single transaction.
+                  </p>
                 )}
                 <div className="grid gap-2">
                   {singleTx ? (
@@ -757,7 +753,7 @@ export default function NewCampaignPage() {
                     {singleTx ? (
                       <>
                         Next: one transaction — <span className="font-mono">approveAndCall</span>{" "}
-                        approves and creates the campaign together. (Only works if the token supports it.)
+                        approves and creates the campaign together.
                       </>
                     ) : isNative || approved ? (
                       "Next: create the campaign to deploy it on-chain."
