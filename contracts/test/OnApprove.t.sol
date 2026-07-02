@@ -135,6 +135,14 @@ contract OnApproveTest is MerkleTestBase {
 
     // --- DropParams ABI surface (#2 drift guard) ---
 
+    function test_supportsInterface_onApprove() public view {
+        // Tokamak TON's approveAndCall ERC165-checks the spender for these.
+        assertTrue(factory.supportsInterface(0x01ffc9a7), "ERC165");
+        assertTrue(factory.supportsInterface(0x4273ca16), "onApprove");
+        assertFalse(factory.supportsInterface(0xffffffff), "invalid id must be false");
+        assertFalse(factory.supportsInterface(0xdeadbeef), "unknown id");
+    }
+
     function test_encodeDropParams_matchesOnApproveData() public view {
         DropFactory.DropParams memory p =
             DropFactory.DropParams(uint8(DropFactory.AirdropType.CSV), ROOT, TOTAL, startTime, deadline, address(0));
