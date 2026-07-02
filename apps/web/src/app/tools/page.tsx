@@ -169,7 +169,8 @@ export default function ToolsPage() {
 
   const perWalletBase = distMode === "equal" ? toBase(perWallet) : null;
   const totalBase = distMode !== "equal" ? toBase(totalDistribute) : null;
-  const capActive = capValue.trim() !== "";
+  // Cap only applies to the pro-rata methods (meaningless when all wallets are equal).
+  const capActive = distMode !== "equal" && capValue.trim() !== "";
   const capBase = capActive ? toBase(capValue) : null;
   const capInvalid = capActive && capBase === null;
 
@@ -422,23 +423,36 @@ export default function ToolsPage() {
             </div>
 
             {distMode === "equal" ? (
-              <Field
-                label="Amount per wallet"
-                hint={`Each wallet receives this much (${unit}).`}
-                invalid={perWallet.trim() !== "" && perWalletBase === null}
-              >
-                <input
-                  value={perWallet}
-                  onChange={(e) => setPerWallet(e.target.value)}
-                  placeholder={dec !== null ? "e.g. 10" : "amount (base units)"}
-                  className="input font-mono text-xs w-56"
-                />
-                <UnitTag unit={unit} />
-              </Field>
+              <div className="space-y-1.5">
+                <Field
+                  label="Amount per wallet"
+                  hint={`Each wallet receives this much (${unit}).`}
+                  invalid={perWallet.trim() !== "" && perWalletBase === null}
+                >
+                  <input
+                    value={perWallet}
+                    onChange={(e) => setPerWallet(e.target.value)}
+                    placeholder={dec !== null ? "e.g. 10" : "amount (base units)"}
+                    className="input font-mono text-xs w-56"
+                  />
+                  <UnitTag unit={unit} />
+                </Field>
+                {perWalletBase !== null && dist.count > 0 && (
+                  <p className="text-[11px] text-slate-400">
+                    Total airdrop ={" "}
+                    <span className="font-mono text-emerald-500">
+                      {human(dist.total)} {unit}
+                    </span>{" "}
+                    across {dist.count.toLocaleString()} wallets.
+                  </p>
+                )}
+              </div>
             ) : (
               <Field
                 label="Total to distribute"
-                hint={`This total is split across all wallets by balance (${unit}).`}
+                hint={`This total is split across all wallets by ${
+                  distMode === "sqrt" ? "√balance" : "balance"
+                } (${unit}).`}
                 invalid={totalDistribute.trim() !== "" && totalBase === null}
               >
                 <input
@@ -451,19 +465,21 @@ export default function ToolsPage() {
               </Field>
             )}
 
-            <Field
-              label="Cap per wallet (optional)"
-              hint="Limit any single wallet to at most this — useful when one holder is huge."
-              invalid={capInvalid}
-            >
-              <input
-                value={capValue}
-                onChange={(e) => setCapValue(e.target.value)}
-                placeholder="no cap"
-                className="input font-mono text-xs w-56"
-              />
-              <UnitTag unit={unit} />
-            </Field>
+            {distMode !== "equal" && (
+              <Field
+                label="Cap per wallet (optional)"
+                hint="Limit any single wallet to at most this — useful when one holder is huge."
+                invalid={capInvalid}
+              >
+                <input
+                  value={capValue}
+                  onChange={(e) => setCapValue(e.target.value)}
+                  placeholder="no cap"
+                  className="input font-mono text-xs w-56"
+                />
+                <UnitTag unit={unit} />
+              </Field>
+            )}
 
             <div className="flex flex-wrap gap-2 border-t border-slate-800/60 pt-3">
               <ToolbarBtn onClick={doDedup}>Dedupe (sum balances)</ToolbarBtn>
