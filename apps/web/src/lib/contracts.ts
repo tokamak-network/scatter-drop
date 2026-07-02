@@ -188,6 +188,27 @@ export function useErc20Decimals(token: Address | undefined) {
   });
 }
 
+const erc20SymbolAbi = [
+  {
+    type: "function",
+    name: "symbol",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "string" }],
+  },
+] as const;
+
+/** ERC20.symbol() for an address — for human-readable amount labels. */
+export function useErc20Symbol(token: Address | undefined) {
+  return useReadContract({
+    address: token,
+    abi: erc20SymbolAbi,
+    functionName: "symbol",
+    chainId: useChainId(),
+    query: { enabled: !!token },
+  });
+}
+
 /** DropFactory.tokenTier(token) — 0 NONE / 1 ALLOWED (admin-curated). */
 export function useTokenTier(
   factory: Address | undefined,

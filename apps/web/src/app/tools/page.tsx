@@ -2,36 +2,19 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { isAddress } from "viem";
-import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  Copy,
-  Download,
-  Plus,
-  Trash2,
-  Upload,
-} from "lucide-react";
+import { formatUnits, isAddress, parseUnits } from "viem";
+import { ArrowLeft, ArrowRight, Check, Copy, Download, Plus, Trash2, Upload } from "lucide-react";
 import { DuneImport, type Recipient } from "@/components/DuneImport";
+import { useErc20Decimals, useErc20Symbol } from "@/lib/contracts";
+import { isPositiveDecimal } from "@/lib/validation";
 import { downloadCsv } from "@/lib/downloadCsv";
 import { DRAFT_CSV_KEY } from "@/lib/draftCsv";
 
 type Row = Recipient;
 const BLANK: Row = { address: "", amount: "" };
-// Amounts must be non-negative base-10 integers — matches the SDK/merkle CSV
-// parser (packages/merkle/src/csv.ts), so /tools can't accept hex/signed values
-// that the create wizard would later reject.
 const DEC = /^\d+$/;
-function isPosAmount(s: string): boolean {
-  const t = s.trim();
-  if (!DEC.test(t)) return false;
-  try {
-    return BigInt(t) > 0n;
-  } catch {
-    return false;
-  }
-}
+// Cap how many rows the step-2 grid renders (totals/export still cover all).
+const RENDER_CAP = 500;
 
 function nonEmpty(r: Row) {
   return r.address.trim() !== "" || r.amount.trim() !== "";
@@ -52,7 +35,6 @@ function csvToRows(text: string): Row[] {
     .filter(Boolean)
     .map((line) => {
       const [a, b] = line.split(/[,\t]/);
-      // Strip wrapping quotes (Excel/CSV exports) so validation/BigInt don't fail.
       const address = (a ?? "").trim().replace(/^["']|["']$/g, "");
       const amount = (b ?? "").trim().replace(/^["']|["']$/g, "");
       return { address, amount };
@@ -67,7 +49,7 @@ function withTrailingBlank(rows: Row[]): Row[] {
   return rows;
 }
 
-/** Merge duplicate addresses, summing amounts; preserves first-seen order and casing. */
+/** Merge duplicate addresses, summing balances; preserves first-seen order/casing. */
 function dedupSum(rows: Row[]): Row[] {
   const totals = new Map<string, bigint>();
   const display = new Map<string, string>();
@@ -76,7 +58,6 @@ function dedupSum(rows: Row[]): Row[] {
     const a = r.address.trim();
     if (!isAddress(a, { strict: false })) continue;
     const key = a.toLowerCase();
-    // Only base-10 amounts count toward the sum (hex/signed/garbage → 0).
     const t = r.amount.trim();
     const amt = DEC.test(t) ? BigInt(t) : 0n;
     if (!totals.has(key)) {
@@ -95,30 +76,24 @@ function dedupSum(rows: Row[]): Row[] {
 export default function ToolsPage() {
   const router = useRouter();
   const [step, setStep] = useState<1 | 2>(1);
-  // Step 1 works on CSV text (paste / upload / Dune fill it); step 2 works on the
-  // parsed rows. They sync at each transition so edits in either survive.
+  // Step 1 works on CSV text (paste / upload / Dune fill it); step 2 on the rows.
   const [csvText, setCsvText] = useState("");
   const [view, setView] = useState<"csv" | "table">("csv");
   const [rows, setRows] = useState<Row[]>([{ ...BLANK }]);
-  const [copied, setCopied] = useState(false);
-  const [equalAmount, setEqualAmount] = useState("");
-  const [proRataTotal, setProRataTotal] = useState("");
-  const [capInput, setCapInput] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Step 2 — airdrop token (for decimals/symbol) + distribution method.
+  const [token, setToken] = useState("");
+  const [distMode, setDistMode] = useState<"equal" | "prorata">("equal");
+  const [perWallet, setPerWallet] = useState("");
+  const [totalDistribute, setTotalDistribute] = useState("");
+  const [capValue, setCapValue] = useState("");
+  const [includeBalance, setIncludeBalance] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const setAndPad = (next: Row[]) => setRows(withTrailingBlank(next));
 
-  const update = (i: number, key: keyof Row, val: string) =>
-    setAndPad(rows.map((r, idx) => (idx === i ? { ...r, [key]: val } : r)));
-
-  const removeRow = (i: number) => {
-    const next = rows.filter((_, idx) => idx !== i);
-    setRows(next.length ? withTrailingBlank(next) : [{ ...BLANK }]);
-  };
-
-  // A Dune fetch or a file upload replaces the CSV box (idempotent — re-loading
-  // the same source can't silently pile up duplicates). Hand-edit or paste in
-  // the box to combine sources.
+  // --- step 1: aggregate ---
   const loadRecipients = (recipients: Recipient[]) =>
     setCsvText(recipients.map((r) => `${r.address},${r.amount}`).join("\n"));
 
@@ -131,7 +106,6 @@ export default function ToolsPage() {
     e.target.value = "";
   };
 
-  // Parse the step-1 CSV once; both the count and the table preview read it.
   const parsedRows = useMemo(() => csvToRows(csvText), [csvText]);
   const parsedCount = useMemo(
     () => parsedRows.filter((r) => isAddress(r.address.trim(), { strict: false })).length,
@@ -148,107 +122,136 @@ export default function ToolsPage() {
     setStep(1);
   };
 
-  const applyEqual = () => {
-    const v = equalAmount.trim();
-    if (!isPosAmount(v)) return; // positive base-10 integer only
-    setAndPad(rows.map((r) => (r.address.trim() ? { ...r, amount: v } : r)));
-  };
+  // --- step 2: token metadata (decimals/symbol from the connected chain) ---
+  const tokenTrimmed = token.trim();
+  const tokenOk = isAddress(tokenTrimmed, { strict: false });
+  const tokenAddr = tokenOk ? (tokenTrimmed as `0x${string}`) : undefined;
+  const { data: decData } = useErc20Decimals(tokenAddr);
+  const { data: symData } = useErc20Symbol(tokenAddr);
+  const dec = tokenOk && decData != null ? Number(decData) : null;
+  const symbol = typeof symData === "string" && symData ? symData : undefined;
+  const unit = dec !== null ? symbol ?? "tokens" : "base units";
 
-  // Split a fixed total across recipients weighted by their current amount
-  // (e.g. the Dune balance). Uses floor per recipient, then gives the rounding
-  // remainder to the largest-weight recipient so the sum equals the total exactly.
-  const applyProRata = () => {
-    const t = proRataTotal.trim();
-    if (!isPosAmount(t)) return;
-    const total = BigInt(t);
-    const weights = rows.map((r) =>
-      r.address.trim() && isPosAmount(r.amount) ? BigInt(r.amount.trim()) : 0n,
-    );
-    const sum = weights.reduce((a, b) => a + b, 0n);
-    if (sum === 0n) return; // nothing to weight by
-    let assigned = 0n;
-    let maxIdx = -1;
-    let maxW = 0n;
-    const next = rows.map((r, i) => {
-      const w = weights[i];
-      if (w > maxW) {
-        maxW = w;
-        maxIdx = i;
+  // Parse an input in the active unit (whole tokens when decimals known, else
+  // raw base units) to base units. Returns null on empty/invalid.
+  const toBase = (v: string): bigint | null => {
+    const t = v.trim();
+    if (!t) return null;
+    if (dec === null) {
+      if (!DEC.test(t)) return null;
+      try {
+        const b = BigInt(t);
+        return b > 0n ? b : null;
+      } catch {
+        return null;
       }
-      if (w === 0n) return r.address.trim() ? { ...r, amount: "0" } : r;
-      const amt = (total * w) / sum;
-      assigned += amt;
-      return { ...r, amount: amt.toString() };
-    });
-    const remainder = total - assigned;
-    if (remainder > 0n && maxIdx >= 0) {
-      next[maxIdx] = {
-        ...next[maxIdx],
-        amount: (BigInt(next[maxIdx].amount || "0") + remainder).toString(),
-      };
     }
-    setAndPad(next);
+    if (!isPositiveDecimal(t, dec)) return null;
+    try {
+      const b = parseUnits(t, dec);
+      return b > 0n ? b : null;
+    } catch {
+      return null;
+    }
   };
 
-  const doDedup = () => setAndPad(dedupSum(rows.filter(nonEmpty)));
-  const doCap = () => {
-    if (!isPosAmount(capInput)) return; // positive base-10 integer only
-    const cap = BigInt(capInput.trim());
-    setAndPad(
-      rows.map((r) =>
-        isPosAmount(r.amount) && BigInt(r.amount.trim()) > cap
-          ? { ...r, amount: cap.toString() }
-          : r,
-      ),
-    );
-  };
+  const perWalletBase = distMode === "equal" ? toBase(perWallet) : null;
+  const totalBase = distMode === "prorata" ? toBase(totalDistribute) : null;
+  const capActive = capValue.trim() !== "";
+  const capBase = capActive ? toBase(capValue) : null;
+  const capInvalid = capActive && capBase === null;
 
-  const onPaste = (e: React.ClipboardEvent, i: number) => {
-    const text = e.clipboardData.getData("text");
-    if (!/[\n,\t]/.test(text)) return;
-    e.preventDefault();
-    // Preserve rows both before and after the paste point (no data loss).
-    const before = rows.slice(0, i).filter(nonEmpty);
-    const after = rows.slice(i + 1).filter(nonEmpty);
-    setAndPad([...before, ...csvToRows(text), ...after]);
-  };
-
-  const analysis = useMemo(() => {
-    const seen = new Set<string>();
-    let total = 0n;
-    let valid = 0;
-    const status = rows.map((r) => {
-      if (!nonEmpty(r)) return { state: "blank" as const };
-      const addrOk = isAddress(r.address.trim(), { strict: false });
-      const amtOk = isPosAmount(r.amount);
-      const amt = amtOk ? BigInt(r.amount.trim()) : 0n;
-      const key = r.address.trim().toLowerCase();
-      const dup = addrOk && seen.has(key);
-      if (addrOk) seen.add(key);
-      const ok = addrOk && amtOk && !dup;
-      if (ok) {
-        valid += 1;
-        total += amt;
-      }
-      return { state: ok ? ("ok" as const) : ("bad" as const), addrOk, amtOk, dup };
+  // Compute the airdrop amount (base units) per row, aligned to `rows`.
+  const dist = useMemo(() => {
+    const airdrops: (bigint | null)[] = rows.map(() => null);
+    const valid: number[] = [];
+    rows.forEach((r, i) => {
+      if (isAddress(r.address.trim(), { strict: false })) valid.push(i);
     });
-    const filled = status.filter((s) => s.state !== "blank").length;
-    return { status, total, valid, invalid: filled - valid };
-  }, [rows]);
-  const hasValid = analysis.valid > 0;
-  // Export/Copy/Use serialize ALL rows, so block them while any row is invalid —
-  // a stray bad row would otherwise produce a CSV the wizard rejects.
-  const canUse = hasValid && analysis.invalid === 0;
 
-  const download = () => downloadCsv("scatter-drop-recipients.csv", `${rowsToCsv(rows)}\n`);
+    if (distMode === "equal" && perWalletBase !== null) {
+      for (const i of valid) {
+        airdrops[i] = capBase !== null && perWalletBase > capBase ? capBase : perWalletBase;
+      }
+    } else if (distMode === "prorata" && totalBase !== null) {
+      const weights = valid.map((i) =>
+        DEC.test(rows[i].amount.trim()) ? BigInt(rows[i].amount.trim()) : 0n,
+      );
+      const sumW = weights.reduce((a, b) => a + b, 0n);
+      if (sumW > 0n) {
+        let assigned = 0n;
+        let maxAt = -1;
+        let maxW = 0n;
+        valid.forEach((i, k) => {
+          const w = weights[k];
+          if (w > maxW) {
+            maxW = w;
+            maxAt = i;
+          }
+          const a = w === 0n ? 0n : (totalBase * w) / sumW;
+          airdrops[i] = a;
+          assigned += a;
+        });
+        // Give the rounding remainder to the largest holder so the sum is exact.
+        const rem = totalBase - assigned;
+        if (rem > 0n && maxAt >= 0) airdrops[maxAt] = (airdrops[maxAt] as bigint) + rem;
+        if (capBase !== null) {
+          for (const i of valid) {
+            const a = airdrops[i];
+            if (a !== null && a > capBase) airdrops[i] = capBase;
+          }
+        }
+      }
+    }
+
+    let total = 0n;
+    let count = 0;
+    for (const a of airdrops) if (a !== null && a > 0n) {
+      total += a;
+      count++;
+    }
+    return { airdrops, total, count };
+  }, [rows, distMode, perWalletBase, totalBase, capBase]);
+
+  const badAddr = rows.some((r) => nonEmpty(r) && !isAddress(r.address.trim(), { strict: false }));
+  const canUse = dist.count > 0 && !badAddr && !capInvalid;
+
+  const human = (bi: bigint) => (dec !== null ? formatUnits(bi, dec) : bi.toString());
+  const totalLabel = `${human(dist.total)} ${unit}`;
+
+  const update = (i: number, key: keyof Row, val: string) =>
+    setAndPad(rows.map((r, idx) => (idx === i ? { ...r, [key]: val } : r)));
+  const removeRow = (i: number) => {
+    const next = rows.filter((_, idx) => idx !== i);
+    setRows(next.length ? withTrailingBlank(next) : [{ ...BLANK }]);
+  };
+  const doDedup = () => setAndPad(dedupSum(rows.filter(nonEmpty)));
+
+  // Serialize the computed airdrop list. `address,amount` (base units) always;
+  // an optional third `balance` column for the download when requested.
+  const buildCsv = (withBalance: boolean) => {
+    const lines = rows
+      .map((r, i) => {
+        const a = dist.airdrops[i];
+        if (a === null || a <= 0n) return null;
+        const addr = r.address.trim();
+        return withBalance ? `${addr},${a.toString()},${r.amount.trim()}` : `${addr},${a.toString()}`;
+      })
+      .filter(Boolean) as string[];
+    const header = withBalance ? "address,amount,balance" : "address,amount";
+    return [header, ...lines].join("\n");
+  };
+
+  const download = () => downloadCsv("scatter-drop-airdrop.csv", `${buildCsv(includeBalance)}\n`);
   const copyCsv = () => {
-    navigator.clipboard?.writeText(rowsToCsv(rows));
+    navigator.clipboard?.writeText(buildCsv(includeBalance));
     setCopied(true);
     setTimeout(() => setCopied(false), 1200);
   };
   const useInCampaign = () => {
     try {
-      localStorage.setItem(DRAFT_CSV_KEY, rowsToCsv(rows));
+      // The campaign draft is always address,amount (base units) — no balance col.
+      localStorage.setItem(DRAFT_CSV_KEY, buildCsv(false));
     } catch {
       /* ignore */
     }
@@ -265,9 +268,8 @@ export default function ToolsPage() {
           Recipient list builder
         </h1>
         <p className="mt-2 text-sm text-slate-400 max-w-2xl">
-          Two steps: aggregate the recipients from a Dune query, then decide how
-          much each one gets. Amounts are in base units (wei-like, no 18-decimal
-          scaling).
+          Two steps: aggregate the recipients (from a Dune query or a CSV), then
+          decide how much each one gets.
         </p>
       </div>
 
@@ -300,7 +302,6 @@ export default function ToolsPage() {
           <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-3">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-sm font-bold text-slate-100 mr-auto">Recipient CSV</h2>
-              {/* View toggle: raw CSV text ↔ spreadsheet-style table */}
               <div className="inline-flex rounded-lg border border-slate-800 bg-slate-950 p-0.5">
                 <ViewBtn active={view === "csv"} onClick={() => setView("csv")}>CSV</ViewBtn>
                 <ViewBtn active={view === "table"} onClick={() => setView("table")}>Table</ViewBtn>
@@ -314,7 +315,7 @@ export default function ToolsPage() {
               </ToolbarBtn>
             </div>
             <p className="text-[11px] text-slate-500">
-              One <span className="font-mono">address,amount</span> per line. A Dune fetch above
+              One <span className="font-mono">address,balance</span> per line. A Dune fetch above
               fills this box; you can also upload, paste, or type directly.
             </p>
 
@@ -348,48 +349,128 @@ export default function ToolsPage() {
       )}
 
       {step === 2 && (
-        <div className="space-y-3">
-          {/* Amount tools */}
-          <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-3">
-            <p className="text-xs text-slate-400">
-              Set amounts across the list, or edit any cell directly below.
+        <div className="space-y-4">
+          {/* Airdrop token */}
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-2">
+            <h2 className="text-sm font-bold text-slate-100">Airdrop token</h2>
+            <p className="text-[11px] text-slate-500">
+              The token you will distribute. Set it to enter amounts in whole tokens (scaled by its
+              decimals); leave empty to enter raw base units.
             </p>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-slate-400 text-xs font-mono">Equal / wallet:</span>
-              <ValueInput value={equalAmount} onChange={setEqualAmount} placeholder="amount" />
-              <ToolbarBtn onClick={applyEqual} icon={<Check className="w-3.5 h-3.5" />} disabled={!equalAmount.trim()}>
-                Set each
-              </ToolbarBtn>
-              <span className="mx-1 h-4 w-px bg-slate-800" />
-              <span className="text-slate-400 text-xs font-mono">Pro-rata total:</span>
-              <ValueInput value={proRataTotal} onChange={setProRataTotal} placeholder="total" />
-              <ToolbarBtn onClick={applyProRata} disabled={!proRataTotal.trim()}>
-                Split by balance
-              </ToolbarBtn>
+              <input
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder="0x… token contract"
+                spellCheck={false}
+                className="input font-mono text-xs flex-1 min-w-[18rem]"
+              />
+              {tokenTrimmed && !tokenOk && <span className="text-xs text-red-500">Invalid address</span>}
+              {tokenOk && dec !== null && (
+                <span className="text-xs font-mono text-emerald-600">
+                  {symbol ?? "TOKEN"} · {dec} decimals
+                </span>
+              )}
+              {tokenOk && dec === null && (
+                <span className="text-xs text-slate-500">reading… (or not an ERC-20 on this chain)</span>
+              )}
             </div>
-            <div className="flex flex-wrap items-center gap-2 border-t border-slate-800/60 pt-3">
-              <span className="text-slate-400 text-xs font-mono">Cap per wallet:</span>
-              <ValueInput value={capInput} onChange={setCapInput} placeholder="max" />
-              <ToolbarBtn onClick={doCap} disabled={!capInput.trim()}>Apply cap</ToolbarBtn>
-              <span className="mx-1 h-4 w-px bg-slate-800" />
-              <ToolbarBtn onClick={doDedup}>Dedupe (sum amounts)</ToolbarBtn>
+          </div>
+
+          {/* Distribution method */}
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4">
+            <div>
+              <h2 className="text-sm font-bold text-slate-100">How to distribute</h2>
+              <p className="text-[11px] text-slate-500">
+                Pick a method, then set its value — the amount each wallet receives updates live in
+                the list below.
+              </p>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-2">
+              <MethodCard
+                active={distMode === "equal"}
+                onClick={() => setDistMode("equal")}
+                title="Same for everyone"
+                desc="Every wallet gets an equal amount, regardless of balance."
+              />
+              <MethodCard
+                active={distMode === "prorata"}
+                onClick={() => setDistMode("prorata")}
+                title="Proportional to balance"
+                desc="A fixed total, split across wallets by their snapshot balance."
+              />
+            </div>
+
+            {distMode === "equal" ? (
+              <Field
+                label="Amount per wallet"
+                hint={`Each wallet receives this much (${unit}).`}
+                invalid={perWallet.trim() !== "" && perWalletBase === null}
+              >
+                <input
+                  value={perWallet}
+                  onChange={(e) => setPerWallet(e.target.value)}
+                  placeholder={dec !== null ? "e.g. 10" : "amount (base units)"}
+                  className="input font-mono text-xs w-56"
+                />
+                <UnitTag unit={unit} />
+              </Field>
+            ) : (
+              <Field
+                label="Total to distribute"
+                hint={`This total is split across all wallets by balance (${unit}).`}
+                invalid={totalDistribute.trim() !== "" && totalBase === null}
+              >
+                <input
+                  value={totalDistribute}
+                  onChange={(e) => setTotalDistribute(e.target.value)}
+                  placeholder={dec !== null ? "e.g. 1000000" : "total (base units)"}
+                  className="input font-mono text-xs w-56"
+                />
+                <UnitTag unit={unit} />
+              </Field>
+            )}
+
+            <Field
+              label="Cap per wallet (optional)"
+              hint="Limit any single wallet to at most this — useful when one holder is huge."
+              invalid={capInvalid}
+            >
+              <input
+                value={capValue}
+                onChange={(e) => setCapValue(e.target.value)}
+                placeholder="no cap"
+                className="input font-mono text-xs w-56"
+              />
+              <UnitTag unit={unit} />
+            </Field>
+
+            <div className="flex flex-wrap gap-2 border-t border-slate-800/60 pt-3">
+              <ToolbarBtn onClick={doDedup}>Dedupe (sum balances)</ToolbarBtn>
               <ToolbarBtn onClick={() => setAndPad([...rows.filter(nonEmpty), { ...BLANK }])} icon={<Plus className="w-3.5 h-3.5" />}>
                 Add row
               </ToolbarBtn>
             </div>
           </div>
 
-          {/* The working list */}
+          {/* Airdrop preview */}
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-bold text-slate-100 mr-auto">
-              Your list
+              Airdrop
               <span className="ml-2 text-xs font-normal text-slate-400">
-                {analysis.valid.toLocaleString()} recipients · total {analysis.total.toLocaleString()}
-                {analysis.invalid > 0 && (
-                  <span className="text-amber-600"> · {analysis.invalid} error(s)</span>
-                )}
+                {dist.count.toLocaleString()} recipients · total {totalLabel}
+                {badAddr && <span className="text-amber-600"> · fix invalid address(es)</span>}
               </span>
             </h2>
+            <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-400 mr-1">
+              <input
+                type="checkbox"
+                checked={includeBalance}
+                onChange={(e) => setIncludeBalance(e.target.checked)}
+                className="accent-emerald-500"
+              />
+              include balance in CSV
+            </label>
             <ToolbarBtn onClick={backToAggregate} icon={<ArrowLeft className="w-3.5 h-3.5" />}>
               Re-aggregate
             </ToolbarBtn>
@@ -414,16 +495,15 @@ export default function ToolsPage() {
                 <tr className="text-left text-[10px] font-mono uppercase tracking-wider text-slate-400 border-b border-slate-800">
                   <th className="w-10 px-3 py-2 text-right">#</th>
                   <th className="px-3 py-2">Address</th>
-                  <th className="px-3 py-2 w-64">Amount (base units)</th>
+                  <th className="px-3 py-2 w-56">Balance (base units)</th>
+                  <th className="px-3 py-2 w-56 text-right">Airdrop amount</th>
                   <th className="w-10 px-2 py-2"></th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r, i) => {
-                  const s = analysis.status[i];
-                  const addrBad = s.state === "bad" && s.addrOk === false;
-                  const amtBad = s.state === "bad" && s.amtOk === false;
-                  const dup = s.state === "bad" && s.dup;
+                {rows.slice(0, RENDER_CAP).map((r, i) => {
+                  const addrBad = nonEmpty(r) && !isAddress(r.address.trim(), { strict: false });
+                  const a = dist.airdrops[i];
                   return (
                     <tr key={i} className="border-b border-slate-800/60 last:border-0">
                       <td className="px-3 py-1 text-right font-mono text-[11px] text-slate-500">{i + 1}</td>
@@ -431,10 +511,9 @@ export default function ToolsPage() {
                         <input
                           value={r.address}
                           onChange={(e) => update(i, "address", e.target.value)}
-                          onPaste={(e) => onPaste(e, i)}
                           placeholder="0x…"
                           className={`w-full bg-transparent px-2 py-1 rounded font-mono text-xs outline-none focus:bg-slate-950 ${
-                            addrBad || dup ? "text-red-500" : "text-slate-100"
+                            addrBad ? "text-red-500" : "text-slate-100"
                           }`}
                         />
                       </td>
@@ -442,12 +521,19 @@ export default function ToolsPage() {
                         <input
                           value={r.amount}
                           onChange={(e) => update(i, "amount", e.target.value)}
-                          onPaste={(e) => onPaste(e, i)}
-                          placeholder="100"
-                          className={`w-full bg-transparent px-2 py-1 rounded font-mono text-xs outline-none focus:bg-slate-950 ${
-                            amtBad ? "text-red-500" : "text-slate-100"
-                          }`}
+                          placeholder="0"
+                          className="w-full bg-transparent px-2 py-1 rounded font-mono text-xs text-slate-300 outline-none focus:bg-slate-950"
                         />
+                      </td>
+                      <td className="px-3 py-1 text-right font-mono text-xs">
+                        {a !== null && a > 0n ? (
+                          <span className="text-emerald-500">
+                            {human(a)}
+                            {dec !== null && <span className="text-slate-500"> {symbol ?? ""}</span>}
+                          </span>
+                        ) : (
+                          <span className="text-slate-600">—</span>
+                        )}
                       </td>
                       <td className="px-1 py-1 text-center">
                         {nonEmpty(r) && (
@@ -461,12 +547,13 @@ export default function ToolsPage() {
                 })}
               </tbody>
             </table>
+            {rows.filter(nonEmpty).length > RENDER_CAP && (
+              <p className="px-3 py-2 text-[11px] text-slate-500 border-t border-slate-800">
+                Showing first {RENDER_CAP.toLocaleString()} rows — totals and export cover all{" "}
+                {rows.filter(nonEmpty).length.toLocaleString()}.
+              </p>
+            )}
           </div>
-          {analysis.invalid > 0 && (
-            <p className="text-[11px] text-amber-600">
-              Rows in red have an invalid address, a non-positive amount, or a duplicate address.
-            </p>
-          )}
         </div>
       )}
     </div>
@@ -508,10 +595,67 @@ function StepPill({
   );
 }
 
-// Read-only spreadsheet-style preview of the step-1 recipient CSV. Renders at
-// most PREVIEW_CAP rows so a large Dune result (thousands of holders) stays
-// responsive; edit happens in the CSV textarea or the step-2 grid.
-const PREVIEW_CAP = 1000;
+function MethodCard({
+  active,
+  onClick,
+  title,
+  desc,
+}: {
+  active: boolean;
+  onClick: () => void;
+  title: string;
+  desc: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`text-left rounded-lg border p-3 transition ${
+        active
+          ? "border-emerald-500/50 bg-emerald-500/10"
+          : "border-slate-800 bg-slate-950 hover:border-slate-700"
+      }`}
+    >
+      <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+        <span
+          className={`h-3.5 w-3.5 rounded-full border-2 ${
+            active ? "border-emerald-500 bg-emerald-500" : "border-slate-600"
+          }`}
+        />
+        {title}
+      </div>
+      <p className="mt-1 text-[11px] text-slate-400">{desc}</p>
+    </button>
+  );
+}
+
+function Field({
+  label,
+  hint,
+  invalid,
+  children,
+}: {
+  label: string;
+  hint: string;
+  invalid?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="text-xs font-mono text-slate-300">{label}</label>
+      <div className="flex items-center gap-2">{children}</div>
+      <p className={`text-[11px] ${invalid ? "text-red-500" : "text-slate-500"}`}>
+        {invalid ? "Enter a positive number." : hint}
+      </p>
+    </div>
+  );
+}
+
+function UnitTag({ unit }: { unit: string }) {
+  return <span className="text-[11px] font-mono text-slate-400">{unit}</span>;
+}
+
+const CSV_PREVIEW_CAP = 1000;
 function CsvTable({ rows }: { rows: Row[] }) {
   const filled = rows.filter((r) => r.address.trim() !== "" || r.amount.trim() !== "");
   if (filled.length === 0) {
@@ -521,7 +665,7 @@ function CsvTable({ rows }: { rows: Row[] }) {
       </div>
     );
   }
-  const shown = filled.slice(0, PREVIEW_CAP);
+  const shown = filled.slice(0, CSV_PREVIEW_CAP);
   return (
     <div className="overflow-auto rounded-lg border border-slate-800 max-h-96">
       <table className="w-full text-xs border-collapse">
@@ -529,7 +673,7 @@ function CsvTable({ rows }: { rows: Row[] }) {
           <tr className="text-left font-mono uppercase tracking-wider text-[10px] text-slate-400">
             <th className="w-12 px-3 py-2 text-right border-b border-slate-800">#</th>
             <th className="px-3 py-2 border-b border-slate-800">Address</th>
-            <th className="px-3 py-2 border-b border-slate-800">Amount (base units)</th>
+            <th className="px-3 py-2 border-b border-slate-800">Balance (base units)</th>
           </tr>
         </thead>
         <tbody>
@@ -549,10 +693,10 @@ function CsvTable({ rows }: { rows: Row[] }) {
           })}
         </tbody>
       </table>
-      {filled.length > PREVIEW_CAP && (
+      {filled.length > CSV_PREVIEW_CAP && (
         <p className="px-3 py-2 text-[11px] text-slate-500 border-t border-slate-800">
-          Showing first {PREVIEW_CAP.toLocaleString()} of {filled.length.toLocaleString()} — all are
-          kept for export.
+          Showing first {CSV_PREVIEW_CAP.toLocaleString()} of {filled.length.toLocaleString()} — all
+          are kept.
         </p>
       )}
     </div>
@@ -577,25 +721,6 @@ function ViewBtn({
     >
       {children}
     </button>
-  );
-}
-
-function ValueInput({
-  value,
-  onChange,
-  placeholder,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder: string;
-}) {
-  return (
-    <input
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      className="bg-slate-950 border border-slate-800 focus:border-slate-700 text-slate-100 px-3 py-1.5 rounded-lg font-mono text-xs outline-none w-40"
-    />
   );
 }
 
