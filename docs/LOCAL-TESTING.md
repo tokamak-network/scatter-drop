@@ -148,7 +148,7 @@ pnpm --filter @scatter-drop/web dev
 | Manage `/manage` | 내가 만든 캠페인 | 목록·통계 | ✅ |
 | New Campaign `/manage/new` | 생성 마법사 | Step1 기본정보→자격(CSV)→배포방식→결제 | ✅ |
 | | createDrop 실행 | approve→createDrop 실 tx | ✅ |
-| | **TON 원-트랜잭션 생성** | 토큰 셀렉터에서 **TON** 선택 → 단일 "Create in one transaction(approveAndCall)" | ✅ |
+| | **TON 원-트랜잭션 생성** | 토큰 셀렉터에서 **TON** 선택 → 단일 "Create in one transaction (approveAndCall)" | ✅ |
 | | 토큰 등록(없으면 추가) | "+토큰추가"(addAllowedToken) | 🔄 W19-FE 후 |
 | | 납부토큰 선택(ETH/TON 할인) | 결제 단계 토큰 셀렉터 | 🔄 W19 후 |
 | 캠페인 관리 `/manage/[id]` | Overview/Participants/Sweep | 통계·잔여회수 | ✅ |
@@ -169,13 +169,13 @@ pnpm --filter @scatter-drop/web dev
 - 데모 drop: 출력의 `drop` 주소 / 고객 anvil#1 `0x7099…79C8`, 금액 1000e18, proof는 dev-fork 출력 참조.
 
 ### TON 원-트랜잭션(approveAndCall) 테스트
-- 포크는 **실제 Sepolia TON**(`0xa30fe40285B8f5c0457DbC3B7C8A280373c40044`)을 allow-list + `setApproveAndCallSupport(true)`로 구성하고, `dev-fork.sh`가 **whale 임퍼소네이트**로 운영자(anvil #0)에게 TON을 넣어준다(실제 토큰이라 mint 불가).
+- 포크는 **실제 Sepolia TON**(`0xa30fe40285B8f5c0457DbC3B7C8A280373c40044`)을 allow-list + `setApproveAndCallSupport(address token, bool supported)`(=`(TON, true)`)로 구성하고, `dev-fork.sh`가 **whale 임퍼소네이트**로 운영자(anvil #0)에게 TON을 넣어준다(실제 토큰이라 mint 불가).
 - 마법사 `/manage/new`에서 에어드랍 토큰으로 **TON**을 고르면 approveAndCall 지원이 자동 감지되어 버튼이 **단일 "Create in one transaction"**으로 바뀐다. 표준 토큰(DROP)은 approve→create 2단계 유지.
 - 어드민 `/admin` → Tokens 탭에서 토큰별 **Enable/Disable one-tx** 토글(`setApproveAndCallSupport`)도 확인 가능.
-- 관련 env (모두 선택):
+- 관련 env (모두 선택 사항):
   - `FUND_TON=false` — TON 자금 조달 단계 건너뛰기
   - `TON_WHALE=0x…` — 자금 출처 홀더 변경 (기본 `0xB68AA9E398c054da7EBAaA446292f611CA0CD52B`)
-  - `TON_FUND_WEI=…` — 지급량 wei (기본 1,000,000 TON)
+  - `TON_FUND_WEI=…` — 지급량 wei (기본 `1000000000000000000000000` = 1,000,000 × 10¹⁸ = 100만 TON)
   - `TON_ADDRESS=0x…` — 다른 approveAndCall 토큰으로 교체 (DeployFork)
 - ⚠️ 실제 TON은 `transferFrom` 호출자 제한(sender/recipient만) + approveAndCall의 **ERC165 `onApprove` 검사**를 한다. 팩토리의 `supportsInterface`(PR #75)가 없으면 `"ERC20OnApprove: spender doesn't support onApprove"`로 리버트한다.
 
