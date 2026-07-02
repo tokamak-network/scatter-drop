@@ -84,6 +84,23 @@ const feeConfigAbi = [
   },
 ] as const;
 
+// `paused()` is a new DropFactory view (service pause); read it with a minimal
+// abi so we don't depend on the SDK's bundled abi being regenerated.
+const pausedAbi = [
+  { type: "function", name: "paused", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
+] as const;
+
+/** DropFactory.paused() — when true, createDrop is blocked (service pause). */
+export function usePaused(factory: Address | undefined) {
+  return useReadContract({
+    address: factory,
+    abi: pausedAbi,
+    functionName: "paused",
+    chainId: useChainId(),
+    query: { enabled: !!factory },
+  });
+}
+
 /** DropFactory.feeOf(token, totalAmount) — computed creation fee (W22, % or flat). */
 export function useComputedFee(
   factory: Address | undefined,
