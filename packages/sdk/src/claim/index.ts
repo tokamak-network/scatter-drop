@@ -325,3 +325,23 @@ export function buildSetAllowedTokenRequest(
     }),
   };
 }
+
+/**
+ * Build `DropFactory.setApproveAndCallSupport(token, supported)` — admin marks
+ * whether `token` supports `approveAndCall`, gating whether the app offers the
+ * one-transaction create path for it (see {@link buildCreateDropOneTxRequest}).
+ */
+export function buildSetApproveAndCallSupportRequest(
+  factory: Address,
+  token: Address,
+  supported: boolean,
+): TxRequest {
+  return {
+    to: getAddress(factory),
+    data: encodeFunctionData({
+      abi: dropFactoryAbi,
+      functionName: "setApproveAndCallSupport",
+      args: [getAddress(token), supported],
+    }),
+  };
+}

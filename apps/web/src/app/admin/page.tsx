@@ -12,6 +12,7 @@ import {
   buildSetFeeBpsRequest,
   buildSetFeeModeRequest,
   buildSetFlatFeeRequest,
+  buildSetApproveAndCallSupportRequest,
   FeeMode,
   NATIVE_ETH,
   TokenTier,
@@ -30,6 +31,7 @@ import {
   useFeeModeOf,
   useFlatFee,
   useIsAdmin,
+  useSupportsApproveAndCall,
   useTokenTier,
 } from "@/lib/contracts";
 import { useAllowedTokens, useCampaigns } from "@/lib/campaigns";
@@ -246,6 +248,7 @@ function TokenFeeConfig({ factory }: { factory: Address }) {
   const { data: bps, refetch: refBps } = useFeeBpsOf(factory, t);
   const { data: flat, refetch: refFlat } = useFlatFee(factory, t);
   const { data: decimals } = useErc20Decimals(t);
+  const { data: supportsAac, refetch: refAac } = useSupportsApproveAndCall(factory, t);
   const dp = decimals ?? 18;
 
   const [bpsInput, setBpsInput] = useState("");
@@ -336,6 +339,26 @@ function TokenFeeConfig({ factory }: { factory: Address }) {
                 setFlatInput("");
                 void refFlat();
               }}
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-mono text-slate-400">
+              approveAndCall (one-tx):{" "}
+              <span className="text-slate-200">
+                {supportsAac === undefined ? "…" : supportsAac ? "enabled" : "disabled"}
+              </span>
+            </span>
+            <TxButton
+              request={buildSetApproveAndCallSupportRequest(factory, t, true)}
+              label="Enable one-tx"
+              disabled={supportsAac === undefined || supportsAac === true}
+              onConfirmed={() => void refAac()}
+            />
+            <TxButton
+              request={buildSetApproveAndCallSupportRequest(factory, t, false)}
+              label="Disable one-tx"
+              disabled={supportsAac === undefined || supportsAac === false}
+              onConfirmed={() => void refAac()}
             />
           </div>
         </div>

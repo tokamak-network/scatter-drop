@@ -90,6 +90,31 @@ const pausedAbi = [
   { type: "function", name: "paused", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
 ] as const;
 
+const supportsApproveAndCallAbi = [
+  {
+    type: "function",
+    name: "supportsApproveAndCall",
+    stateMutability: "view",
+    inputs: [{ name: "token", type: "address" }],
+    outputs: [{ type: "bool" }],
+  },
+] as const;
+
+/** Admin-curated flag: does the factory consider `token` an approveAndCall (one-tx) token? */
+export function useSupportsApproveAndCall(
+  factory: Address | undefined,
+  token: Address | undefined,
+) {
+  return useReadContract({
+    address: factory,
+    abi: supportsApproveAndCallAbi,
+    functionName: "supportsApproveAndCall",
+    args: token ? [token] : undefined,
+    chainId: useChainId(),
+    query: { enabled: !!factory && !!token },
+  });
+}
+
 /** DropFactory.paused() — when true, createDrop is blocked (service pause). */
 export function usePaused(factory: Address | undefined) {
   return useReadContract({

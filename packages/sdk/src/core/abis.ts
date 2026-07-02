@@ -206,6 +206,45 @@ export const dropFactoryAbi = [
     ],
     outputs: [],
   },
+  {
+    type: "function",
+    name: "supportsApproveAndCall",
+    stateMutability: "view",
+    inputs: [{ name: "token", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "setApproveAndCallSupport",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "token", type: "address" },
+      { name: "supported", type: "bool" },
+    ],
+    outputs: [],
+  },
+  // On-chain encoder for onApprove's `data`; its tuple input gives DropParams an
+  // ABI surface so abi-drift.test.ts pins the struct's field order/types.
+  {
+    type: "function",
+    name: "encodeDropParams",
+    stateMutability: "pure",
+    inputs: [
+      {
+        name: "p",
+        type: "tuple",
+        components: [
+          { name: "airdropType", type: "uint8" },
+          { name: "merkleRoot", type: "bytes32" },
+          { name: "totalAmount", type: "uint256" },
+          { name: "startTime", type: "uint64" },
+          { name: "deadline", type: "uint64" },
+          { name: "identityRegistry", type: "address" },
+        ],
+      },
+    ],
+    outputs: [{ name: "", type: "bytes" }],
+  },
 ] as const;
 
 export const identityRegistryAbi = [
