@@ -297,8 +297,11 @@ export function buildCreateDropOneTxRequest(
   fee: bigint,
 ): TxRequest {
   const token = getAddress(params.airdropToken);
-  if (token === NATIVE_ETH || token === NATIVE_FEE_TOKEN) {
+  if (token === NATIVE_ETH) {
     throw new Error("approveAndCall one-tx path is for ERC-20 tokens (e.g. TON), not native ETH");
+  }
+  if (token === NATIVE_FEE_TOKEN) {
+    throw new Error("airdropToken cannot be address(0); use an ERC-20 token (e.g. TON)");
   }
   return buildApproveAndCallRequest(token, factory, params.totalAmount + fee, encodeOnApproveData(params));
 }

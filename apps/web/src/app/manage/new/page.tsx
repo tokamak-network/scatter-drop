@@ -222,6 +222,9 @@ export default function NewCampaignPage() {
   useEffect(() => setJustApproved(false), [token, totalDeposit]);
   // Opt-in one-tx create for approveAndCall tokens (e.g. TON) — ERC-20 only.
   const [oneTx, setOneTx] = useState(false);
+  // Reset on token change: approveAndCall support is per-token, and switching to
+  // native ETH (where the checkbox is hidden) must not leave a stale opt-in.
+  useEffect(() => setOneTx(false), [token]);
   const approved =
     isNative ||
     justApproved ||
