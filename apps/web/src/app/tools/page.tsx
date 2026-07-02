@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatUnits, isAddress, parseUnits } from "viem";
-import { ArrowLeft, ArrowRight, Check, Copy, Download, Plus, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Copy, Download, Trash2, Upload } from "lucide-react";
 import { DuneImport, type Recipient } from "@/components/DuneImport";
 import { useErc20Decimals, useErc20Symbol } from "@/lib/contracts";
 import { isPositiveDecimal } from "@/lib/validation";
@@ -101,6 +101,7 @@ export default function ToolsPage() {
   const [totalDistribute, setTotalDistribute] = useState("");
   const [capValue, setCapValue] = useState("");
   const [includeBalance, setIncludeBalance] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const setAndPad = (next: Row[]) => setRows(withTrailingBlank(next));
@@ -229,7 +230,19 @@ export default function ToolsPage() {
   }, [rows, distMode, perWalletBase, totalBase, capBase]);
 
   const badAddr = rows.some((r) => nonEmpty(r) && !isAddress(r.address.trim(), { strict: false }));
-  const canUse = dist.count > 0 && !badAddr && !capInvalid;
+  // Duplicate addresses break the merkle tree — detect and block until merged.
+  const dupCount = useMemo(() => {
+    const seen = new Set<string>();
+    let d = 0;
+    for (const r of rows) {
+      const a = r.address.trim().toLowerCase();
+      if (!a || !isAddress(a, { strict: false })) continue;
+      if (seen.has(a)) d++;
+      else seen.add(a);
+    }
+    return d;
+  }, [rows]);
+  const canUse = dist.count > 0 && !badAddr && !capInvalid && dupCount === 0;
 
   const human = (bi: bigint) => (dec !== null ? formatUnits(bi, dec) : bi.toString());
   const totalLabel = `${human(dist.total)} ${unit}`;
@@ -257,9 +270,13 @@ export default function ToolsPage() {
     return [header, ...lines].join("\n");
   };
 
-  const download = () => downloadCsv("scatter-drop-airdrop.csv", `${buildCsv(includeBalance)}\n`);
+  const confirmExport = () => {
+    downloadCsv("scatter-drop-airdrop.csv", `${buildCsv(includeBalance)}\n`);
+    setExportOpen(false);
+  };
   const copyCsv = () => {
-    navigator.clipboard?.writeText(buildCsv(includeBalance));
+    // Copy is address,amount only — the balance column is a download-time choice.
+    navigator.clipboard?.writeText(buildCsv(false));
     setCopied(true);
     setTimeout(() => setCopied(false), 1200);
   };
@@ -481,12 +498,6 @@ export default function ToolsPage() {
               </Field>
             )}
 
-            <div className="flex flex-wrap gap-2 border-t border-slate-800/60 pt-3">
-              <ToolbarBtn onClick={doDedup}>Dedupe (sum balances)</ToolbarBtn>
-              <ToolbarBtn onClick={() => setAndPad([...rows.filter(nonEmpty), { ...BLANK }])} icon={<Plus className="w-3.5 h-3.5" />}>
-                Add row
-              </ToolbarBtn>
-            </div>
           </div>
 
           {/* Airdrop preview */}
@@ -496,21 +507,18 @@ export default function ToolsPage() {
               <span className="ml-2 text-xs font-normal text-slate-400">
                 {dist.count.toLocaleString()} recipients · total {totalLabel}
                 {badAddr && <span className="text-amber-600"> · fix invalid address(es)</span>}
+                {dupCount > 0 && (
+                  <span className="text-amber-600"> · {dupCount} duplicate address(es)</span>
+                )}
               </span>
             </h2>
-            <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-400 mr-1">
-              <input
-                type="checkbox"
-                checked={includeBalance}
-                onChange={(e) => setIncludeBalance(e.target.checked)}
-                className="accent-emerald-500"
-              />
-              include balance in CSV
-            </label>
+            {dupCount > 0 && (
+              <ToolbarBtn onClick={doDedup}>Merge duplicates</ToolbarBtn>
+            )}
             <ToolbarBtn onClick={backToAggregate} icon={<ArrowLeft className="w-3.5 h-3.5" />}>
               Re-aggregate
             </ToolbarBtn>
-            <ToolbarBtn onClick={download} icon={<Download className="w-3.5 h-3.5" />} disabled={!canUse}>
+            <ToolbarBtn onClick={() => setExportOpen(true)} icon={<Download className="w-3.5 h-3.5" />} disabled={!canUse}>
               Export CSV
             </ToolbarBtn>
             <ToolbarBtn onClick={copyCsv} icon={copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />} disabled={!canUse}>
@@ -590,8 +598,73 @@ export default function ToolsPage() {
               </p>
             )}
           </div>
+
+          {exportOpen && (
+            <ExportModal
+              count={dist.count}
+              includeBalance={includeBalance}
+              setIncludeBalance={setIncludeBalance}
+              onCancel={() => setExportOpen(false)}
+              onConfirm={confirmExport}
+            />
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+function ExportModal({
+  count,
+  includeBalance,
+  setIncludeBalance,
+  onCancel,
+  onConfirm,
+}: {
+  count: number;
+  includeBalance: boolean;
+  setIncludeBalance: (v: boolean) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-sm font-bold text-slate-100">Export CSV</h3>
+        <p className="text-[11px] text-slate-400">
+          {count.toLocaleString()} recipients · columns{" "}
+          <span className="font-mono text-slate-300">
+            address,amount{includeBalance ? ",balance" : ""}
+          </span>
+          .
+        </p>
+        <label className="flex items-center gap-2 text-xs text-slate-300">
+          <input
+            type="checkbox"
+            checked={includeBalance}
+            onChange={(e) => setIncludeBalance(e.target.checked)}
+            className="accent-emerald-500"
+          />
+          Include the snapshot balance as an extra column
+        </label>
+        <div className="flex justify-end gap-2">
+          <button onClick={onCancel} className="btn text-xs">
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="inline-flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-400 text-white font-bold px-4 py-2 rounded-lg text-sm transition"
+          >
+            <Download className="w-3.5 h-3.5" /> Download
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
