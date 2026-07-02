@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { formatUnits, isAddress, parseUnits } from "viem";
@@ -97,6 +97,7 @@ export default function ToolsPage() {
 
   // Step 2 — airdrop token (for decimals/symbol) + distribution method.
   const [token, setToken] = useState("");
+  const [decimalsInput, setDecimalsInput] = useState("18");
   const [distMode, setDistMode] = useState<"equal" | "prorata" | "sqrt">("equal");
   const [perWallet, setPerWallet] = useState("");
   const [totalDistribute, setTotalDistribute] = useState("");
@@ -142,25 +143,23 @@ export default function ToolsPage() {
   const tokenAddr = tokenOk ? (tokenTrimmed as `0x${string}`) : undefined;
   const { data: decData } = useErc20Decimals(tokenAddr);
   const { data: symData } = useErc20Symbol(tokenAddr);
-  const dec = tokenOk && decData != null ? Number(decData) : null;
   const symbol = typeof symData === "string" && symData ? symData : undefined;
-  const unit = dec !== null ? symbol ?? "tokens" : "base units";
+  // Auto-fill decimals from the token when it can be read on the connected chain.
+  useEffect(() => {
+    if (typeof decData === "number") setDecimalsInput(String(decData));
+  }, [decData]);
+  // Amounts are always entered in whole tokens and scaled by these decimals
+  // (default 18) — the CSV/merkle then carry base units (wei).
+  const dec = useMemo(() => {
+    const n = parseInt(decimalsInput, 10);
+    return Number.isInteger(n) && n >= 0 && n <= 36 ? n : 18;
+  }, [decimalsInput]);
+  const unit = symbol ?? "tokens";
 
-  // Parse an input in the active unit (whole tokens when decimals known, else
-  // raw base units) to base units. Returns null on empty/invalid.
+  // Parse a whole-token input to base units. Returns null on empty/invalid.
   const toBase = (v: string): bigint | null => {
     const t = v.trim();
-    if (!t) return null;
-    if (dec === null) {
-      if (!DEC.test(t)) return null;
-      try {
-        const b = BigInt(t);
-        return b > 0n ? b : null;
-      } catch {
-        return null;
-      }
-    }
-    if (!isPositiveDecimal(t, dec)) return null;
+    if (!t || !isPositiveDecimal(t, dec)) return null;
     try {
       const b = parseUnits(t, dec);
       return b > 0n ? b : null;
@@ -245,7 +244,7 @@ export default function ToolsPage() {
   }, [rows]);
   const canUse = dist.count > 0 && !badAddr && !capInvalid && dupCount === 0;
 
-  const human = (bi: bigint) => (dec !== null ? formatUnits(bi, dec) : bi.toString());
+  const human = (bi: bigint) => formatUnits(bi, dec);
   const totalLabel = `${human(dist.total)} ${unit}`;
 
   const update = (i: number, key: keyof Row, val: string) =>
@@ -387,26 +386,30 @@ export default function ToolsPage() {
           <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-2">
             <h2 className="text-sm font-bold text-slate-100">Airdrop token</h2>
             <p className="text-[11px] text-slate-500">
-              The token you will distribute. Set it to enter amounts in whole tokens (scaled by its
-              decimals); leave empty to enter raw base units.
+              Amounts are entered in whole tokens and scaled by the decimals below. Paste the token
+              address to auto-fill its symbol and decimals, or set decimals manually.
             </p>
             <div className="flex flex-wrap items-center gap-2">
               <input
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
-                placeholder="0x… token contract"
+                placeholder="0x… token contract (optional)"
                 spellCheck={false}
-                className="input font-mono text-xs flex-1 min-w-[18rem]"
+                className="input font-mono text-xs flex-1 min-w-[16rem]"
               />
-              {tokenTrimmed && !tokenOk && <span className="text-xs text-red-500">Invalid address</span>}
-              {tokenOk && dec !== null && (
-                <span className="text-xs font-mono text-emerald-600">
-                  {symbol ?? "TOKEN"} · {dec} decimals
-                </span>
-              )}
-              {tokenOk && dec === null && (
-                <span className="text-xs text-slate-500">reading… (or not an ERC-20 on this chain)</span>
-              )}
+              <label className="text-[11px] font-mono text-slate-400">decimals</label>
+              <input
+                value={decimalsInput}
+                onChange={(e) => setDecimalsInput(e.target.value)}
+                inputMode="numeric"
+                className="input font-mono text-xs w-20"
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              {tokenTrimmed && !tokenOk && <span className="text-red-500">Invalid address</span>}
+              {tokenOk && symbol && <span className="font-mono text-emerald-600">{symbol} detected</span>}
+              {tokenOk && !symbol && <span className="text-slate-500">reading token…</span>}
+              <span className="text-slate-500">1 = {`1${"0".repeat(dec)}`} base units</span>
             </div>
           </div>
 
@@ -450,7 +453,7 @@ export default function ToolsPage() {
                   <input
                     value={perWallet}
                     onChange={(e) => setPerWallet(e.target.value)}
-                    placeholder={dec !== null ? "e.g. 10" : "amount (base units)"}
+                    placeholder="e.g. 1"
                     className="input font-mono text-xs w-56"
                   />
                   <UnitTag unit={unit} />
@@ -476,7 +479,7 @@ export default function ToolsPage() {
                 <input
                   value={totalDistribute}
                   onChange={(e) => setTotalDistribute(e.target.value)}
-                  placeholder={dec !== null ? "e.g. 1000000" : "total (base units)"}
+                  placeholder="e.g. 1000"
                   className="input font-mono text-xs w-56"
                 />
                 <UnitTag unit={unit} />
@@ -574,7 +577,7 @@ export default function ToolsPage() {
                         {a !== null && a > 0n ? (
                           <span className="text-emerald-500">
                             {human(a)}
-                            {dec !== null && <span className="text-slate-500"> {symbol ?? ""}</span>}
+                            {symbol && <span className="text-slate-500"> {symbol}</span>}
                           </span>
                         ) : (
                           <span className="text-slate-600">—</span>
