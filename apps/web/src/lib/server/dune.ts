@@ -121,17 +121,25 @@ export async function fetchDuneRows(first: URL): Promise<DuneImportResult> {
   let total = 0;
   let cols: { addressCol: string; amountCol: string } | null = null;
   let nextUrl: string | null = first.toString();
+  // Dune's `next_uri` doesn't always carry the api_key query param — thread the
+  // original one through each hop so paginated fetches don't 401/403.
+  const apiKey = first.searchParams.get("api_key");
 
   for (let page = 0; nextUrl && page < MAX_PAGES; page++) {
-    // Re-validate each hop: `next_uri` comes from Dune, but guard the host anyway.
+    // Re-validate each hop: `next_uri` comes from Dune, but guard it anyway.
+    // It can be a relative path (e.g. "/v1/…"), so resolve against the Dune
+    // origin before checking protocol + host (the SSRF guard on every hop).
     let hop: URL;
     try {
-      hop = new URL(nextUrl);
+      hop = new URL(nextUrl, `https://${DUNE_HOST}`);
     } catch {
       throw new Error("Dune returned an invalid pagination URL.");
     }
-    if (hop.hostname !== DUNE_HOST) {
+    if (hop.protocol !== "https:" || hop.hostname !== DUNE_HOST) {
       throw new Error("Dune pagination URL had an unexpected host.");
+    }
+    if (apiKey && !hop.searchParams.has("api_key")) {
+      hop.searchParams.set("api_key", apiKey);
     }
 
     const res = await fetch(hop, { headers: { accept: "application/json" } });
@@ -164,5 +172,8 @@ export async function fetchDuneRows(first: URL): Promise<DuneImportResult> {
     nextUrl = page_.next_uri ?? null;
   }
 
-  return { rows, total: total || rows.length, truncated: false };
+  // If we still have a `next_uri` here we exited via the MAX_PAGES backstop, so
+  // the collection is incomplete — report it as truncated rather than silently
+  // returning a partial holder list.
+  return { rows, total: total || rows.length, truncated: nextUrl !== null };
 }
