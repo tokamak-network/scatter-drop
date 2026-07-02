@@ -22,15 +22,20 @@ const hits = new Map<string, number[]>();
 
 export function rateLimited(ip: string, limit = 5, windowMs = 60_000): boolean {
   const now = Date.now();
-  // Prune stale buckets each call so the map can't grow unbounded.
-  for (const [key, ts] of hits) {
-    const live = ts.filter((t) => now - t < windowMs);
-    if (live.length === 0) hits.delete(key);
-    else hits.set(key, live);
-  }
-  const recent = hits.get(ip) ?? [];
+
+  // Fast path: prune only this IP's bucket so the request path stays O(1)
+  // instead of scanning every tracked IP on each call (which would let a flood
+  // of unique IPs block the event loop).
+  const recent = (hits.get(ip) ?? []).filter((t) => now - t < windowMs);
   if (recent.length >= limit) return true;
   recent.push(now);
   hits.set(ip, recent);
+
+  // Occasionally sweep the whole map so idle buckets can't leak unbounded.
+  if (Math.random() < 0.01) {
+    for (const [key, ts] of hits) {
+      if (ts.every((t) => now - t >= windowMs)) hits.delete(key);
+    }
+  }
   return false;
 }
