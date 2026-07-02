@@ -29,11 +29,13 @@ import { TxButton } from "@/components/TxButton";
 import type { SnapshotManifest } from "@/lib/useSnapshotJob";
 import { useAllowedTokens } from "@/lib/campaigns";
 import { DRAFT_CSV_KEY } from "@/lib/draftCsv";
+import { downloadCsv } from "@/lib/downloadCsv";
 import { publishProofs } from "@/lib/proofs";
 import {
   deploymentIssue,
   useComputedFee,
   useDeployment,
+  useErc20Allowance,
   useErc20Balance,
   useErc20Decimals,
   useErc20Symbol,
@@ -186,7 +188,10 @@ export default function NewCampaignPage() {
 
   // The connected wallet must hold total + fee (in the airdrop token, or ETH for
   // native) or it can't fund the drop — block Approve/Create with a clear reason.
-  const { address: account } = useAccount();
+  const { address: account, chain } = useAccount();
+  const explorerBase = chain?.blockExplorers?.default?.url;
+  const explorerAddr = (a: string) =>
+    explorerBase ? `${explorerBase.replace(/\/$/, "")}/address/${a}` : undefined;
   const { data: erc20Bal } = useErc20Balance(
     !isNative && tokenValid ? (token as Address) : undefined,
     account,
@@ -198,6 +203,31 @@ export default function NewCampaignPage() {
   const walletBalance = isNative ? nativeBal?.value : (erc20Bal as bigint | undefined);
   const insufficient =
     !!account && walletBalance !== undefined && totalDeposit > 0n && walletBalance < totalDeposit;
+
+  // Sequential funding: an ERC-20 drop needs an approval before create. Read the
+  // current allowance so an already-approved token skips straight to create.
+  const { data: allowance } = useErc20Allowance(
+    !isNative && tokenValid ? (token as Address) : undefined,
+    account,
+    factory,
+  );
+  const [justApproved, setJustApproved] = useState(false);
+  // A new token/amount invalidates a prior approval flag.
+  useEffect(() => setJustApproved(false), [token, totalDeposit]);
+  const approved =
+    isNative ||
+    justApproved ||
+    (allowance !== undefined && totalDeposit > 0n && (allowance as bigint) >= totalDeposit);
+
+  const fmtWhen = (s: string) => (s ? s.replace("T", " ") : "");
+  // Final recipient CSV (address,amount in base units) — exactly what's committed
+  // to the merkle root, downloadable as a record before creating.
+  const downloadRecipients = () => {
+    if (!activeManifest) return;
+    const claims = Object.values(activeManifest.claims) as { account: string; amount: string }[];
+    const body = claims.map((c) => `${c.account},${c.amount}`).join("\n");
+    downloadCsv(`${name.trim() || "airdrop"}-recipients.csv`, `address,amount\n${body}\n`);
+  };
 
   // Operators pick from the admin-curated allow-list rather than pasting an
   // arbitrary address (the on-chain createDrop rejects non-allow-listed tokens).
@@ -550,12 +580,46 @@ export default function NewCampaignPage() {
                 <dl className="def-grid text-sm">
                   <dt className="muted">Name</dt>
                   <dd>{name}</dd>
+                  {description.trim() && (
+                    <>
+                      <dt className="muted">Description</dt>
+                      <dd className="whitespace-pre-wrap">{description}</dd>
+                    </>
+                  )}
+                  <dt className="muted">Airdrop token</dt>
+                  <dd>
+                    {isNative ? (
+                      "Native ETH"
+                    ) : (
+                      <>
+                        <span className="font-semibold">{unit}</span>{" "}
+                        {explorerAddr(token) ? (
+                          <a
+                            href={explorerAddr(token)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-mono text-xs break-all text-emerald-600 hover:underline"
+                          >
+                            {token} ↗
+                          </a>
+                        ) : (
+                          <span className="font-mono text-xs break-all text-slate-400">{token}</span>
+                        )}
+                      </>
+                    )}
+                  </dd>
                   <dt className="muted">Type</dt>
                   <dd>{airdropTypeLabel(type)}</dd>
                   <dt className="muted">Recipients</dt>
                   <dd>{recipientCount}</dd>
                   <dt className="muted">Total (Σ)</dt>
                   <dd>{fmtAmount(totalAmount)}</dd>
+                  <dt className="muted">Claim window</dt>
+                  <dd>
+                    {startDate ? fmtWhen(startDate) : "immediately on create"} →{" "}
+                    {deadline ? fmtWhen(deadline) : "—"}
+                    <span className="text-xs text-slate-500"> (local time)</span>
+                  </dd>
                   <dt className="muted">Identity gate</dt>
                   <dd>{identityRequired ? "Required (zk-X509)" : "Open claim"}</dd>
                   <dt className="muted">Merkle root</dt>
@@ -580,6 +644,16 @@ export default function NewCampaignPage() {
                     ? "On-top fee: your wallet sends total + fee in ETH (msg.value). The pool gets the full distribution; the platform vault gets the fee. No approval needed."
                     : "On-top fee: you deposit total + fee in the airdrop token (one approval). The pool gets the full distribution; the platform vault gets the fee. Then createDrop deploys the campaign."}
                 </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={downloadRecipients}
+                    disabled={!activeManifest}
+                    className="btn text-xs disabled:opacity-50"
+                  >
+                    ↓ Download recipients CSV
+                  </button>
+                </div>
                 {insufficient && (
                   <p className="text-xs text-red-500">
                     Insufficient balance: your wallet needs {fmtAmount(totalDeposit)} to fund this
@@ -587,18 +661,25 @@ export default function NewCampaignPage() {
                   </p>
                 )}
                 <div className="grid gap-2">
-                  {!isNative && (
-                    <TxButton
-                      request={approveTokenReq}
-                      label="1. Approve token (total + fee)"
-                      disabled={!approveTokenReq || insufficient}
-                    />
-                  )}
+                  {!isNative &&
+                    (approved ? (
+                      <div className="btn text-emerald-600 border-emerald-500/40 cursor-default">
+                        1. Token approved ✓
+                      </div>
+                    ) : (
+                      <TxButton
+                        request={approveTokenReq}
+                        label="1. Approve token (total + fee)"
+                        primary
+                        disabled={!approveTokenReq || insufficient}
+                        onConfirmed={() => setJustApproved(true)}
+                      />
+                    ))}
                   <TxButton
                     request={createReq}
                     label={isNative ? "Create campaign (pay in ETH)" : "2. Create campaign"}
-                    primary
-                    disabled={!createReq || insufficient}
+                    primary={isNative || approved}
+                    disabled={!createReq || insufficient || (!isNative && !approved)}
                     onConfirmed={() => {
                       // Publish the recipient proofs so claimers can look up their
                       // proof by the campaign's merkleRoot.
@@ -608,6 +689,17 @@ export default function NewCampaignPage() {
                     }}
                   />
                 </div>
+                {ready && !isNative && !approved && !insufficient && (
+                  <p className="text-xs text-slate-400">
+                    Next: approve the token, then create. (Approve authorizes the factory to pull
+                    total + fee.)
+                  </p>
+                )}
+                {ready && (isNative || approved) && !insufficient && (
+                  <p className="text-xs text-slate-400">
+                    Next: create the campaign to deploy it on-chain.
+                  </p>
+                )}
                 {!ready && (
                   <p className="text-xs text-amber-600">
                     Complete all steps (allowed token, identity gate, recipients,

@@ -231,6 +231,32 @@ export function useErc20Balance(token: Address | undefined, account: Address | u
   });
 }
 
+const erc20AllowanceAbi = [
+  {
+    type: "function",
+    name: "allowance",
+    stateMutability: "view",
+    inputs: [{ type: "address" }, { type: "address" }],
+    outputs: [{ type: "uint256" }],
+  },
+] as const;
+
+/** ERC20.allowance(owner, spender) — to tell if the drop is already approved. */
+export function useErc20Allowance(
+  token: Address | undefined,
+  owner: Address | undefined,
+  spender: Address | undefined,
+) {
+  return useReadContract({
+    address: token,
+    abi: erc20AllowanceAbi,
+    functionName: "allowance",
+    args: owner && spender ? [owner, spender] : undefined,
+    chainId: useChainId(),
+    query: { enabled: !!token && !!owner && !!spender },
+  });
+}
+
 /** DropFactory.tokenTier(token) — 0 NONE / 1 ALLOWED (admin-curated). */
 export function useTokenTier(
   factory: Address | undefined,
