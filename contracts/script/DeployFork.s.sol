@@ -29,6 +29,10 @@ import { MockERC20 } from "../test/mocks/MockERC20.sol";
 contract DeployFork is Script {
     address internal constant ZK_FACTORY = 0x9e937dF6ac0E85979622519068412A518fa085d9;
     address internal constant USERS_REGISTRY = 0x3cF6A96f1970053ffDf957074F988aD53D13ada3;
+    // Real Tokamak TON on Sepolia (present in the forked state). Curated + flagged
+    // approveAndCall-capable so the one-tx (onApprove) path is exercised against the
+    // genuine token. Operators are funded from a whale in scripts/dev-fork.sh.
+    address internal constant SEPOLIA_TON = 0xa30fe40285B8f5c0457DbC3B7C8A280373c40044;
     uint8 internal constant CSV = 0;
 
     function run() external {
@@ -38,6 +42,7 @@ contract DeployFork is Script {
         uint256 fundAmount = vm.envOr("FUND_AMOUNT", uint256(1_000_000 ether));
         address zkFactory = vm.envOr("SEPOLIA_ZK_REGISTRY_FACTORY", ZK_FACTORY);
         address operatorRegistry = vm.envOr("SEPOLIA_IDENTITY_REGISTRY", USERS_REGISTRY);
+        address ton = vm.envOr("TON_ADDRESS", SEPOLIA_TON);
 
         vm.startBroadcast();
 
@@ -61,18 +66,27 @@ contract DeployFork is Script {
         factory.setFeeMode(address(airdropToken), DropFactory.FeeMode.FLAT);
         factory.setFlatFee(address(airdropToken), feeAmount);
 
+        // Curate the real Sepolia TON and flag it approveAndCall-capable so the create
+        // wizard auto-selects the one-tx path. (Not minted here — it's a real token;
+        // dev-fork.sh funds the operator from a whale via impersonation.)
+        factory.setAllowedToken(ton, true);
+        factory.setFeeMode(ton, DropFactory.FeeMode.FLAT);
+        factory.setFlatFee(ton, feeAmount);
+        factory.setApproveAndCallSupport(ton, true);
+
         feeToken.mint(deployer, fundAmount);
         airdropToken.mint(deployer, fundAmount);
 
         vm.stopBroadcast();
 
-        _writeDeployments(factory, feeToken, airdropToken, operatorRegistry, zkFactory, treasury, deployer);
+        _writeDeployments(factory, feeToken, airdropToken, ton, operatorRegistry, zkFactory, treasury, deployer);
     }
 
     function _writeDeployments(
         DropFactory factory,
         MockERC20 feeToken,
         MockERC20 airdropToken,
+        address ton,
         address operatorRegistry,
         address zkFactory,
         address treasury,
@@ -83,6 +97,7 @@ contract DeployFork is Script {
         vm.serializeAddress(o, "dropFactory", address(factory));
         vm.serializeAddress(o, "feeToken", address(feeToken));
         vm.serializeAddress(o, "airdropToken", address(airdropToken));
+        vm.serializeAddress(o, "tonToken", ton);
         vm.serializeAddress(o, "operatorRegistry", operatorRegistry);
         vm.serializeAddress(o, "zkFactory", zkFactory);
         vm.serializeAddress(o, "treasury", treasury);
@@ -95,5 +110,6 @@ contract DeployFork is Script {
         console2.log("DropFactory ", address(factory));
         console2.log("feeToken    ", address(feeToken));
         console2.log("airdropToken", address(airdropToken));
+        console2.log("tonToken    ", ton);
     }
 }

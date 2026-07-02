@@ -403,6 +403,16 @@ contract DropFactory is Initializable, UUPSUpgradeable, Ownable, ReentrancyGuard
         return abi.encode(p);
     }
 
+    /// @notice ERC165. Tokamak TON's `approveAndCall` ERC165-checks the spender for
+    ///         the `onApprove` interface before invoking it; without this, the real
+    ///         TON reverts "spender doesn't support onApprove" and the one-tx path
+    ///         is unreachable. Returns false for `0xffffffff`, as ERC165 requires.
+    /// @dev `0x4273ca16 = bytes4(keccak256("onApprove(address,address,uint256,bytes)"))`.
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == 0x01ffc9a7 // ERC165 itself
+            || interfaceId == 0x4273ca16; // OnApprove
+    }
+
     /// @dev Shared create logic for `createDrop` (2-step) and `onApprove` (1-tx).
     ///      `operator` is the campaign creator + funder; `fee` is precomputed by the
     ///      caller. ERC20 funding is pull-to-factory then push-to-drop, so a token
