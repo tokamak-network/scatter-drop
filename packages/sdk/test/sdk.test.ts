@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeFunctionData, getAddress, type Address } from "viem";
+import { decodeFunctionData, encodeAbiParameters, getAddress, type Address } from "viem";
 import {
   AirdropType,
   TokenTier,
@@ -318,5 +318,26 @@ describe("onApprove one-tx create (TON / approveAndCall)", () => {
     const data = encodeOnApproveData(params);
     const req = buildApproveAndCallRequest(A(0x707).toLowerCase() as Address, A(9), 42n, data);
     expect(req.to).toBe(A(0x707));
+  });
+
+  it("encodeOnApproveData layout matches the createDrop ABI (minus airdropToken)", () => {
+    // DropParams == createDrop's inputs without `airdropToken`. Deriving the tuple
+    // from the (drift-guarded) dropFactoryAbi here means a createDrop arg drift makes
+    // this fail, transitively guarding the onApprove `data` layout.
+    const createDrop = dropFactoryAbi.find(
+      (e) => e.type === "function" && e.name === "createDrop",
+    ) as { inputs: readonly { name: string; type: string }[] };
+    const components = createDrop.inputs.filter((i) => i.name !== "airdropToken");
+    const viaAbi = encodeAbiParameters([{ type: "tuple", components }], [
+      {
+        airdropType: params.airdropType,
+        merkleRoot: params.merkleRoot,
+        totalAmount: params.totalAmount,
+        startTime: params.startTime,
+        deadline: params.deadline,
+        identityRegistry: params.identityRegistry,
+      },
+    ]);
+    expect(encodeOnApproveData(params)).toBe(viaAbi);
   });
 });

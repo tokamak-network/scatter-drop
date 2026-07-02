@@ -326,12 +326,12 @@ export default function NewCampaignPage() {
     fee: fee ?? 0n,
   };
   const createReq = ready && factory ? buildCreateDropRequest(factory, dropParams) : null;
-  // One-tx path (approveAndCall → onApprove) for tokens that support it (e.g. TON).
-  // ERC-20 only; the token's callback creates + funds in a single operator tx.
+  // The one-tx (approveAndCall → onApprove) path is offered for ERC-20 tokens that
+  // support it (e.g. TON); `ready` already implies `fee` is set. One flag drives
+  // the guard, the button, and the hint below.
+  const singleTx = oneTx && !isNative;
   const oneTxReq =
-    ready && factory && oneTx && !isNative && fee !== undefined
-      ? buildCreateDropOneTxRequest(factory, dropParams, fee)
-      : null;
+    ready && factory && singleTx ? buildCreateDropOneTxRequest(factory, dropParams, fee ?? 0n) : null;
 
   const canNext =
     step === 0 ||
@@ -705,7 +705,7 @@ export default function NewCampaignPage() {
                   </label>
                 )}
                 <div className="grid gap-2">
-                  {oneTx && !isNative ? (
+                  {singleTx ? (
                     // approveAndCall → onApprove: the token approves + the factory
                     // creates and funds the campaign in a single operator tx.
                     <TxButton
@@ -749,21 +749,18 @@ export default function NewCampaignPage() {
                     </>
                   )}
                 </div>
-                {ready && oneTx && !isNative && !insufficient && (
+                {ready && !insufficient && (
                   <p className="text-xs text-slate-400">
-                    Next: one transaction — <span className="font-mono">approveAndCall</span> approves
-                    and creates the campaign together. (Only works if the token supports it.)
-                  </p>
-                )}
-                {ready && !oneTx && !isNative && !approved && !insufficient && (
-                  <p className="text-xs text-slate-400">
-                    Next: approve the token, then create. (Approve authorizes the factory to pull
-                    total + fee.)
-                  </p>
-                )}
-                {ready && !oneTx && (isNative || approved) && !insufficient && (
-                  <p className="text-xs text-slate-400">
-                    Next: create the campaign to deploy it on-chain.
+                    {singleTx ? (
+                      <>
+                        Next: one transaction — <span className="font-mono">approveAndCall</span>{" "}
+                        approves and creates the campaign together. (Only works if the token supports it.)
+                      </>
+                    ) : isNative || approved ? (
+                      "Next: create the campaign to deploy it on-chain."
+                    ) : (
+                      "Next: approve the token, then create. (Approve authorizes the factory to pull total + fee.)"
+                    )}
                   </p>
                 )}
                 {isPaused ? (

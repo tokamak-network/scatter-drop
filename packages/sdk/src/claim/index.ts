@@ -221,7 +221,12 @@ export function buildApproveRequest(token: Address, spender: Address, amount: bi
 
 /**
  * The `DropParams` tuple `DropFactory.onApprove` decodes from its `data` argument
- * (`abi.decode(data, (DropParams))`). Field order MUST match the Solidity struct.
+ * (`abi.decode(data, (DropParams))`). Field order MUST match the Solidity
+ * `DropFactory.DropParams` struct — which is `createDrop`'s inputs minus
+ * `airdropToken` (the token is the caller in `onApprove`). `createDrop`'s ABI is
+ * drift-guarded (see packages/sdk/test/sdk.test.ts, which asserts this layout
+ * against `dropFactoryAbi`); a struct-only reorder would need a contract-side ABI
+ * surface to guard fully.
  */
 const DROP_PARAMS = [
   {
@@ -234,21 +239,6 @@ const DROP_PARAMS = [
       { name: "deadline", type: "uint64" },
       { name: "identityRegistry", type: "address" },
     ],
-  },
-] as const;
-
-/** ERC-1363/TON-style `approveAndCall(spender, amount, data)`. */
-const approveAndCallAbi = [
-  {
-    type: "function",
-    name: "approveAndCall",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "spender", type: "address" },
-      { name: "amount", type: "uint256" },
-      { name: "data", type: "bytes" },
-    ],
-    outputs: [{ type: "bool" }],
   },
 ] as const;
 
@@ -285,7 +275,7 @@ export function buildApproveAndCallRequest(
   return {
     to: getAddress(token),
     data: encodeFunctionData({
-      abi: approveAndCallAbi,
+      abi: erc20Abi,
       functionName: "approveAndCall",
       args: [getAddress(spender), amount, data],
     }),
