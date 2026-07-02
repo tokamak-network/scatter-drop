@@ -557,7 +557,7 @@ contract DropFactory is Initializable, UUPSUpgradeable, Ownable {
         if (a.code.length == 0) revert NotAContract();
     }
 
-    /// @dev Gate 1: revert unless `msg.sender` is currently verified against `operatorRegistry`.
+    /// @dev Gate 1: revert unless `operator` is currently verified against `operatorRegistry`.
     function _requireVerifiedOperator(address operator) private view {
         if (IIdentityRegistry(operatorRegistry).verifiedUntil(operator) < block.timestamp) {
             revert OperatorNotVerified();
@@ -584,8 +584,9 @@ contract DropFactory is Initializable, UUPSUpgradeable, Ownable {
     /// @dev Reverts unless `to`'s balance rose by exactly `amount` — the single
     ///      load-bearing guard rejecting fee-on-transfer / rebasing tokens.
     function _requireExactReceipt(IERC20 token, address to, uint256 balBefore, uint256 amount) private view {
-        unchecked {
-            if (token.balanceOf(to) - balBefore != amount) revert IncorrectAmountReceived();
-        }
+        uint256 balAfter = token.balanceOf(to);
+        // Explicit `>=` guard: a balance that *drops* (rebasing-down / burn-on-
+        // transfer token) must revert here, not wrap around an unchecked subtraction.
+        if (balAfter < balBefore || balAfter - balBefore != amount) revert IncorrectAmountReceived();
     }
 }
