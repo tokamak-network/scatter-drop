@@ -20,6 +20,18 @@ function nonEmpty(r: Row) {
   return r.address.trim() !== "" || r.amount.trim() !== "";
 }
 
+/** Integer square root (Newton's method) — for √balance pro-rata weighting. */
+function isqrt(n: bigint): bigint {
+  if (n < 2n) return n < 0n ? 0n : n;
+  let x = n;
+  let y = (x + 1n) / 2n;
+  while (y < x) {
+    x = y;
+    y = (x + n / x) / 2n;
+  }
+  return x;
+}
+
 function rowsToCsv(rows: Row[]): string {
   return rows
     .filter(nonEmpty)
@@ -84,7 +96,7 @@ export default function ToolsPage() {
 
   // Step 2 — airdrop token (for decimals/symbol) + distribution method.
   const [token, setToken] = useState("");
-  const [distMode, setDistMode] = useState<"equal" | "prorata">("equal");
+  const [distMode, setDistMode] = useState<"equal" | "prorata" | "sqrt">("equal");
   const [perWallet, setPerWallet] = useState("");
   const [totalDistribute, setTotalDistribute] = useState("");
   const [capValue, setCapValue] = useState("");
@@ -156,7 +168,7 @@ export default function ToolsPage() {
   };
 
   const perWalletBase = distMode === "equal" ? toBase(perWallet) : null;
-  const totalBase = distMode === "prorata" ? toBase(totalDistribute) : null;
+  const totalBase = distMode !== "equal" ? toBase(totalDistribute) : null;
   const capActive = capValue.trim() !== "";
   const capBase = capActive ? toBase(capValue) : null;
   const capInvalid = capActive && capBase === null;
@@ -173,10 +185,12 @@ export default function ToolsPage() {
       for (const i of valid) {
         airdrops[i] = capBase !== null && perWalletBase > capBase ? capBase : perWalletBase;
       }
-    } else if (distMode === "prorata" && totalBase !== null) {
-      const weights = valid.map((i) =>
-        DEC.test(rows[i].amount.trim()) ? BigInt(rows[i].amount.trim()) : 0n,
-      );
+    } else if (totalBase !== null) {
+      // prorata: weight by balance; sqrt: weight by √balance (dampens whales).
+      const weights = valid.map((i) => {
+        const b = DEC.test(rows[i].amount.trim()) ? BigInt(rows[i].amount.trim()) : 0n;
+        return distMode === "sqrt" ? isqrt(b) : b;
+      });
       const sumW = weights.reduce((a, b) => a + b, 0n);
       if (sumW > 0n) {
         let assigned = 0n;
@@ -386,7 +400,7 @@ export default function ToolsPage() {
                 the list below.
               </p>
             </div>
-            <div className="grid sm:grid-cols-2 gap-2">
+            <div className="grid sm:grid-cols-3 gap-2">
               <MethodCard
                 active={distMode === "equal"}
                 onClick={() => setDistMode("equal")}
@@ -398,6 +412,12 @@ export default function ToolsPage() {
                 onClick={() => setDistMode("prorata")}
                 title="Proportional to balance"
                 desc="A fixed total, split across wallets by their snapshot balance."
+              />
+              <MethodCard
+                active={distMode === "sqrt"}
+                onClick={() => setDistMode("sqrt")}
+                title="Proportional to √balance"
+                desc="Split by the square root of each balance — dampens whales, flatter distribution."
               />
             </div>
 
