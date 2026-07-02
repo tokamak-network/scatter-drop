@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { formatUnits, isAddress, parseUnits } from "viem";
 import { ArrowLeft, ArrowRight, Check, Copy, Download, Trash2, Upload } from "lucide-react";
@@ -627,7 +628,11 @@ function ExportModal({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  return (
+  // Portal to <body> so the overlay escapes any transformed ancestor (the page
+  // root's animate-fade-in), otherwise `fixed` centers within the tall page box
+  // and the modal lands off-screen.
+  if (typeof document === "undefined") return null;
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
       onClick={onCancel}
@@ -665,7 +670,8 @@ function ExportModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
