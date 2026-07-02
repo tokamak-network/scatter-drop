@@ -220,6 +220,22 @@ export default function NewCampaignPage() {
     (allowance !== undefined && totalDeposit > 0n && (allowance as bigint) >= totalDeposit);
 
   const fmtWhen = (s: string) => (s ? s.replace("T", " ") : "");
+  // Resolve the viewer's timezone after mount (avoids SSR/hydration mismatch) so
+  // the claim window states its exact zone instead of a vague "local time".
+  const [tzLabel, setTzLabel] = useState("local time");
+  useEffect(() => {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const total = -new Date().getTimezoneOffset(); // minutes east of UTC
+      const sign = total >= 0 ? "+" : "-";
+      const h = Math.floor(Math.abs(total) / 60);
+      const m = Math.abs(total) % 60;
+      const off = `UTC${sign}${h}${m ? `:${String(m).padStart(2, "0")}` : ""}`;
+      setTzLabel(tz ? `${tz}, ${off}` : off);
+    } catch {
+      /* keep the default label */
+    }
+  }, []);
   // Final recipient CSV (address,amount in base units) — exactly what's committed
   // to the merkle root, downloadable as a record before creating.
   const downloadRecipients = () => {
@@ -618,7 +634,7 @@ export default function NewCampaignPage() {
                   <dd>
                     {startDate ? fmtWhen(startDate) : "immediately on create"} →{" "}
                     {deadline ? fmtWhen(deadline) : "—"}
-                    <span className="text-xs text-slate-500"> (local time)</span>
+                    <span className="text-xs text-slate-500"> ({tzLabel})</span>
                   </dd>
                   <dt className="muted">Identity gate</dt>
                   <dd>{identityRequired ? "Required (zk-X509)" : "Open claim"}</dd>
