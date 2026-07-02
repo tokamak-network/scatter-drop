@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import { Test } from "forge-std/Test.sol";
 import { LibClone } from "solady/utils/LibClone.sol";
+import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { MerkleDrop } from "../../src/MerkleDrop.sol";
 import { DropFactory } from "../../src/DropFactory.sol";
@@ -44,21 +45,27 @@ abstract contract MerkleTestBase is Test {
         drop = MerkleDrop(payable(LibClone.clone(_dropImpl, args)));
     }
 
-    /// @dev An uninitialized factory behind an ERC1967 (UUPS) proxy — for tests
-    ///      that assert `initialize` reverts on bad args.
-    function _deployFactoryProxy() internal returns (DropFactory) {
-        address impl = address(new DropFactory());
-        return DropFactory(LibClone.deployERC1967(impl));
+    /// @dev Cached DropFactory logic implementation. Cached so revert tests can
+    ///      warm it (deploy it in setUp) and then `vm.expectRevert` sees only the
+    ///      proxy deployment, not an intermediate impl CREATE.
+    address private _factoryImpl;
+    function _deployFactoryImpl() internal returns (address) {
+        if (_factoryImpl == address(0)) _factoryImpl = address(new DropFactory());
+        return _factoryImpl;
     }
 
-    /// @dev Deploy the factory behind an ERC1967 (UUPS) proxy + initialize it.
+    /// @dev Deploy the factory behind an ERC1967 (UUPS) proxy, **initializing
+    ///      atomically** in the proxy constructor (no front-runnable uninitialized
+    ///      window — mirrors the production deploy scripts).
     function _deployFactory(
         address owner_,
         address operatorRegistry_,
         IRegistryFactoryLike zkFactory_,
         address treasury_
     ) internal returns (DropFactory factory) {
-        factory = _deployFactoryProxy();
-        factory.initialize(owner_, operatorRegistry_, zkFactory_, treasury_);
+        bytes memory initData = abi.encodeCall(
+            DropFactory.initialize, (owner_, operatorRegistry_, zkFactory_, treasury_)
+        );
+        factory = DropFactory(payable(address(new ERC1967Proxy(_deployFactoryImpl(), initData))));
     }
 }

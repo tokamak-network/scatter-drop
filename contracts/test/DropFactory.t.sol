@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import { MerkleTestBase } from "./util/MerkleTestBase.sol";
 import { Ownable } from "solady/auth/Ownable.sol";
+import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { DropFactory } from "../src/DropFactory.sol";
 import { MerkleDrop } from "../src/MerkleDrop.sol";
@@ -540,6 +541,35 @@ contract DropFactoryTest is MerkleTestBase {
         assertEq(address(factory.zkFactory()), address(newZk));
     }
 
+    // -- UUPS upgrade ----------------------------------------------------
+
+    function test_upgrade_onlyOwner() public {
+        address newImpl = address(new DropFactory());
+        vm.prank(operator); // not the owner
+        vm.expectRevert(abi.encodeWithSelector(Ownable.Unauthorized.selector));
+        factory.upgradeToAndCall(newImpl, "");
+    }
+
+    function test_upgrade_preservesStorage() public {
+        // Seed state across the storage the upgrade must preserve.
+        _verifyOperator(operator);
+        _fund(operator, TOTAL);
+        _createCsv(operator);
+        uint256 fee = factory.collectedFees(address(airdropToken));
+        assertEq(factory.dropsLength(), 1);
+        assertTrue(factory.isAllowed(address(airdropToken)));
+
+        address newImpl = address(new DropFactory());
+        vm.prank(admin);
+        factory.upgradeToAndCall(newImpl, "");
+
+        // Proxy storage survives the logic swap.
+        assertEq(factory.dropsLength(), 1, "drops preserved");
+        assertTrue(factory.isAllowed(address(airdropToken)), "allow-list preserved");
+        assertEq(factory.collectedFees(address(airdropToken)), fee, "fees preserved");
+        assertEq(factory.owner(), admin, "owner preserved");
+    }
+
     // -- pause -----------------------------------------------------------
 
     function test_setPaused_onlyOwner() public {
@@ -573,34 +603,48 @@ contract DropFactoryTest is MerkleTestBase {
     // Validation moved from the constructor to initialize() (UUPS proxy). Each
     // deploys an uninitialized proxy, then asserts initialize reverts on bad args.
 
-    function test_initialize_revertsOnZeroOperatorRegistry() public {
-        DropFactory f = _deployFactoryProxy();
+    // Atomic deploy+init (ERC1967Proxy constructor delegatecalls initialize), so a
+    // bad arg reverts the proxy deployment — no front-runnable uninitialized window.
+    function _initFactory(
+        address owner_,
+        address opReg_,
+        IRegistryFactoryLike zk_,
+        address treasury_
+    ) internal {
+        new ERC1967Proxy(
+            _deployFactoryImpl(),
+            abi.encodeCall(DropFactory.initialize, (owner_, opReg_, zk_, treasury_))
+        );
+    }
+
+    function test_initialize_revertsOnZeroOwner() public {
         vm.expectRevert(DropFactory.InvalidAddress.selector);
-        f.initialize(admin, address(0), zkFactory, treasury);
+        _initFactory(address(0), address(opReg), zkFactory, treasury);
+    }
+
+    function test_initialize_revertsOnZeroOperatorRegistry() public {
+        vm.expectRevert(DropFactory.InvalidAddress.selector);
+        _initFactory(admin, address(0), zkFactory, treasury);
     }
 
     function test_initialize_revertsOnZeroZkFactory() public {
-        DropFactory f = _deployFactoryProxy();
         vm.expectRevert(DropFactory.InvalidAddress.selector);
-        f.initialize(admin, address(opReg), IRegistryFactoryLike(address(0)), treasury);
+        _initFactory(admin, address(opReg), IRegistryFactoryLike(address(0)), treasury);
     }
 
     function test_initialize_revertsOnZeroTreasury() public {
-        DropFactory f = _deployFactoryProxy();
         vm.expectRevert(DropFactory.InvalidAddress.selector);
-        f.initialize(admin, address(opReg), zkFactory, address(0));
+        _initFactory(admin, address(opReg), zkFactory, address(0));
     }
 
     function test_initialize_revertsOnEoaOperatorRegistry() public {
-        DropFactory f = _deployFactoryProxy();
         vm.expectRevert(DropFactory.NotAContract.selector);
-        f.initialize(admin, makeAddr("eoa"), zkFactory, treasury);
+        _initFactory(admin, makeAddr("eoa"), zkFactory, treasury);
     }
 
     function test_initialize_revertsOnEoaZkFactory() public {
-        DropFactory f = _deployFactoryProxy();
         vm.expectRevert(DropFactory.NotAContract.selector);
-        f.initialize(admin, address(opReg), IRegistryFactoryLike(makeAddr("eoa")), treasury);
+        _initFactory(admin, address(opReg), IRegistryFactoryLike(makeAddr("eoa")), treasury);
     }
 
     // -- withdrawFees ----------------------------------------------------

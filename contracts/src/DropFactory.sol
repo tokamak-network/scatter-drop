@@ -173,7 +173,10 @@ contract DropFactory is Initializable, UUPSUpgradeable, Ownable {
         IRegistryFactoryLike zkFactory_,
         address treasury_
     ) external initializer {
-        if (operatorRegistry_ == address(0) || address(zkFactory_) == address(0) || treasury_ == address(0)) {
+        if (
+            initialOwner == address(0) || operatorRegistry_ == address(0)
+                || address(zkFactory_) == address(0) || treasury_ == address(0)
+        ) {
             revert InvalidAddress();
         }
         _requireContract(operatorRegistry_);
