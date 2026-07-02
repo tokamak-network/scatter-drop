@@ -9,6 +9,7 @@ import { DropFactory } from "../src/DropFactory.sol";
 import { IRegistryFactoryLike } from "../src/interfaces/IRegistryFactoryLike.sol";
 
 import { MockERC20 } from "../test/mocks/MockERC20.sol";
+import { MockSeigToken } from "../test/mocks/MockSeigToken.sol";
 import { MockIdentityRegistry } from "../test/mocks/MockIdentityRegistry.sol";
 import { MockRegistryFactory } from "../test/mocks/MockRegistryFactory.sol";
 
@@ -61,6 +62,9 @@ contract DeployLocal is Script {
         // Tokens: a fee token and the airdrop token (separate, as in production).
         MockERC20 feeToken = new MockERC20("Fee Token", "FEE", 18);
         MockERC20 airdropToken = new MockERC20("Airdrop Token", "DROP", 18);
+        // Tokamak-TON-like token (restricted transferFrom + approveAndCall) for the
+        // one-transaction (onApprove) create path.
+        MockSeigToken tonToken = new MockSeigToken("Tokamak (demo)", "TON", 18);
 
         // zk-X509 mocks: operator gate (global) + customer gate (per-campaign).
         MockIdentityRegistry operatorRegistry = new MockIdentityRegistry();
@@ -72,16 +76,32 @@ contract DeployLocal is Script {
 
         // The factory (UUPS: impl + ERC1967 proxy + initialize), then its CSV fee
         // tier (in the fee token) and the registered token.
-        address factoryImpl = address(new DropFactory());
-        bytes memory initData = abi.encodeCall(
-            DropFactory.initialize,
-            (deployer, address(operatorRegistry), IRegistryFactoryLike(address(zkFactory)), treasury)
+        // Inlined impl + initData (no intermediate locals) to keep this script's
+        // stack under the legacy-pipeline limit without enabling via-IR.
+        DropFactory factory = DropFactory(
+            payable(
+                address(
+                    new ERC1967Proxy(
+                        address(new DropFactory()),
+                        abi.encodeCall(
+                            DropFactory.initialize,
+                            (deployer, address(operatorRegistry), IRegistryFactoryLike(address(zkFactory)), treasury)
+                        )
+                    )
+                )
+            )
         );
-        DropFactory factory = DropFactory(payable(address(new ERC1967Proxy(factoryImpl, initData))));
         // Curate the demo airdrop token and price its creation fee as a flat amount in that token.
         factory.setAllowedToken(address(airdropToken), true);
         factory.setFeeMode(address(airdropToken), DropFactory.FeeMode.FLAT);
         factory.setFlatFee(address(airdropToken), feeAmount);
+
+        // Same curation for the TON-like token, flagged approveAndCall-capable so the
+        // wizard offers the one-tx path.
+        factory.setAllowedToken(address(tonToken), true);
+        factory.setFeeMode(address(tonToken), DropFactory.FeeMode.FLAT);
+        factory.setFlatFee(address(tonToken), feeAmount);
+        factory.setApproveAndCallSupport(address(tonToken), true);
 
         // Verify the operator (deployer) and the demo customer well past any deadline.
         operatorRegistry.setVerifiedUntil(deployer, type(uint64).max);
@@ -90,12 +110,14 @@ contract DeployLocal is Script {
         // Fund the operator with fees + tokens to distribute.
         feeToken.mint(deployer, fundAmount);
         airdropToken.mint(deployer, fundAmount);
+        tonToken.mint(deployer, fundAmount);
 
         vm.stopBroadcast();
 
         console2.log("DropFactory       ", address(factory));
         console2.log("feeToken          ", address(feeToken));
         console2.log("airdropToken      ", address(airdropToken));
+        console2.log("tonToken          ", address(tonToken));
         console2.log("operatorRegistry  ", address(operatorRegistry));
         console2.log("customerRegistry  ", address(customerRegistry));
         console2.log("zkFactory         ", address(zkFactory));
