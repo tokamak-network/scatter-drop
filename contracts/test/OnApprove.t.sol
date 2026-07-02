@@ -6,8 +6,10 @@ import { DropFactory } from "../src/DropFactory.sol";
 import { MerkleDrop } from "../src/MerkleDrop.sol";
 import { IRegistryFactoryLike } from "../src/interfaces/IRegistryFactoryLike.sol";
 import { MockSeigToken } from "./mocks/MockSeigToken.sol";
+import { MockReentrantToken } from "./mocks/MockReentrantToken.sol";
 import { MockIdentityRegistry } from "./mocks/MockIdentityRegistry.sol";
 import { MockRegistryFactory } from "./mocks/MockRegistryFactory.sol";
+import { ReentrancyGuard } from "solady/utils/ReentrancyGuard.sol";
 
 /// @notice The TON/SeigToken one-tx path: `approveAndCall(factory, total+fee, data)`
 ///         → `factory.onApprove(...)` creates + funds the drop in a single tx, and
@@ -139,5 +141,25 @@ contract OnApproveTest is MerkleTestBase {
         // The on-chain encoder equals both abi.encode(p) and the blob onApprove decodes.
         assertEq(factory.encodeDropParams(p), abi.encode(p));
         assertEq(factory.encodeDropParams(p), _data());
+    }
+
+    // --- Reentrancy guard (defense-in-depth) ---
+
+    function test_createDrop_reentrancyBlocked() public {
+        // A token that reenters createDrop while the factory pulls funds must abort.
+        MockReentrantToken evil = new MockReentrantToken();
+        vm.prank(admin);
+        factory.setAllowedToken(address(evil), true);
+        uint256 fee = factory.feeOf(address(evil), TOTAL);
+        evil.mint(operator, TOTAL + fee);
+        vm.prank(operator);
+        evil.approve(address(factory), TOTAL + fee);
+        evil.arm(factory); // reenter on the next transferFrom
+
+        vm.prank(operator);
+        vm.expectRevert(ReentrancyGuard.Reentrancy.selector);
+        factory.createDrop(
+            uint8(DropFactory.AirdropType.CSV), address(evil), ROOT, TOTAL, startTime, deadline, address(0)
+        );
     }
 }

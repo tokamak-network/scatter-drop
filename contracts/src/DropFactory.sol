@@ -7,6 +7,7 @@ import { SafeTransferLib } from "solmate/utils/SafeTransferLib.sol";
 import { LibClone } from "solady/utils/LibClone.sol";
 import { Ownable } from "solady/auth/Ownable.sol";
 import { UUPSUpgradeable } from "solady/utils/UUPSUpgradeable.sol";
+import { ReentrancyGuard } from "solady/utils/ReentrancyGuard.sol";
 import { Initializable } from "solady/utils/Initializable.sol";
 
 import { IIdentityRegistry } from "./interfaces/IIdentityRegistry.sol";
@@ -32,7 +33,7 @@ import { MerkleDrop } from "./MerkleDrop.sol";
 ///         Fees accrue in `collectedFees[airdropToken]` and are withdrawable only to the fixed
 ///         `treasury`. Trust model and audit summary live in `docs/SECURITY.md`; supported
 ///         tokens are standard, non-rebasing, non-fee-on-transfer ERC20 (exact-receipt guard).
-contract DropFactory is Initializable, UUPSUpgradeable, Ownable {
+contract DropFactory is Initializable, UUPSUpgradeable, Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     /// @notice Airdrop distribution mechanisms. v1 ships CSV (Merkle) only; the rest
@@ -364,7 +365,7 @@ contract DropFactory is Initializable, UUPSUpgradeable, Ownable {
         uint64 startTime,
         uint64 deadline,
         address identityRegistry
-    ) external payable returns (address drop) {
+    ) external payable nonReentrant returns (address drop) {
         // 2-step path: operator pre-approved this factory for `totalAmount + fee`.
         DropParams memory p =
             DropParams(airdropType, merkleRoot, totalAmount, startTime, deadline, identityRegistry);
@@ -380,6 +381,7 @@ contract DropFactory is Initializable, UUPSUpgradeable, Ownable {
     ///      only insofar as it's allow-listed (re-checked in `_createDrop`).
     function onApprove(address owner, address spender, uint256 amount, bytes calldata data)
         external
+        nonReentrant
         returns (bool)
     {
         // The approval must name this factory as spender; the caller is the token.
