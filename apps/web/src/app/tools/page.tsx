@@ -9,6 +9,7 @@ import {
   Check,
   Coins,
   Copy,
+  Database,
   Download,
   Image as ImageIcon,
   Layers,
@@ -18,6 +19,8 @@ import {
   Upload,
 } from "lucide-react";
 import { SnapshotBuilder } from "@/components/SnapshotBuilder";
+import { DuneImport } from "@/components/DuneImport";
+import { downloadCsv } from "@/lib/downloadCsv";
 import type { SnapshotManifest } from "@/lib/useSnapshotJob";
 import { DRAFT_CSV_KEY } from "@/lib/draftCsv";
 
@@ -37,10 +40,11 @@ function isPosAmount(s: string): boolean {
   }
 }
 
-type Tab = "manual" | "snapshot" | "combine";
+type Tab = "manual" | "snapshot" | "dune" | "combine";
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "manual", label: "Manual / CSV", icon: <Pencil className="w-3.5 h-3.5" /> },
   { id: "snapshot", label: "Snapshot", icon: <Camera className="w-3.5 h-3.5" /> },
+  { id: "dune", label: "Dune", icon: <Database className="w-3.5 h-3.5" /> },
   { id: "combine", label: "Combine & filter", icon: <Layers className="w-3.5 h-3.5" /> },
 ];
 
@@ -227,18 +231,7 @@ export default function ToolsPage() {
   // a stray bad row would otherwise produce a CSV the wizard rejects.
   const canUse = hasValid && analysis.invalid === 0;
 
-  const download = () => {
-    const blob = new Blob([`${rowsToCsv(rows)}\n`], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "scatter-drop-recipients.csv";
-    // Append to the DOM and defer revoke so the download isn't canceled (iOS Safari).
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  };
+  const download = () => downloadCsv("scatter-drop-recipients.csv", `${rowsToCsv(rows)}\n`);
   const copyCsv = () => {
     navigator.clipboard?.writeText(rowsToCsv(rows));
     setCopied(true);
@@ -361,6 +354,15 @@ export default function ToolsPage() {
                 </button>
               )}
             </div>
+          )}
+
+          {tab === "dune" && (
+            <DuneImport
+              onRows={(rows) => {
+                setAndPad(rows);
+                setTab("manual");
+              }}
+            />
           )}
 
           {tab === "combine" && (
