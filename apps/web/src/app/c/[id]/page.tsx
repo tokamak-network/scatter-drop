@@ -22,6 +22,7 @@ import { useVerifiedUntil } from "@/lib/contracts";
 import { fmtUnixDateTime, useCampaign } from "@/lib/campaigns";
 import { explorerUrl } from "@/lib/explorer";
 import { ClaimPanel } from "./ClaimPanel";
+import { RecipientsList } from "./RecipientsList";
 
 export default function CampaignDetailPage({
   params,
@@ -184,6 +185,8 @@ export default function CampaignDetailPage({
           />
 
           <IdentityGate state={gateState} registryLabel={campaign.identityRegistryLabel} />
+
+          <RecipientsList campaign={campaign} />
         </div>
 
         {/* Right: claims portal + share */}
