@@ -63,6 +63,11 @@ function toChain(n: PublicNetwork): Chain {
     // publicRpcUrl is guaranteed present (server filters out networks without one);
     // never fall back to the fork RPC for a different chainId (RPC↔chainId mismatch).
     rpcUrls: { default: { http: [n.publicRpcUrl] } },
+    // Registry explorerUrl → chain.blockExplorers, so explorerUrl(chain, …)
+    // links (tx status, contract addresses) work on registered networks.
+    ...(n.explorerUrl
+      ? { blockExplorers: { default: { name: "Explorer", url: n.explorerUrl } } }
+      : {}),
     testnet: true,
   });
 }

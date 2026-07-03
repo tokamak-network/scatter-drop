@@ -3,11 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useAccount, useBalance, useChainId, useChains } from "wagmi";
 import {
+  decodeEventLog,
   formatUnits,
   isAddress,
   zeroAddress,
   type Address,
   type Hex,
+  type TransactionReceipt,
 } from "viem";
 import {
   AirdropType,
@@ -16,6 +18,7 @@ import {
   buildCreateDropRequest,
   buildCreateDropOneTxRequest,
   buildDrop,
+  dropFactoryAbi,
   getZkX509,
   NATIVE_ETH,
   parseCsv,
@@ -32,6 +35,7 @@ import { useAllowedTokens } from "@/lib/campaigns";
 import { DRAFT_CSV_KEY } from "@/lib/draftCsv";
 import { downloadCsv } from "@/lib/downloadCsv";
 import { explorerUrl } from "@/lib/explorer";
+import { publishCampaignMeta } from "@/lib/campaignMeta";
 import { publishProofs } from "@/lib/proofs";
 import {
   deploymentIssue,
@@ -47,6 +51,31 @@ import {
   useSupportsApproveAndCall,
   useTokenTier,
 } from "@/lib/contracts";
+
+/**
+ * The new campaign's address, read from the receipt's DropCreated log. Only
+ * logs emitted by `factory` are considered — another contract in the same tx
+ * could emit a signature-compatible event.
+ */
+function dropFromReceipt(
+  receipt: TransactionReceipt,
+  factory: Address,
+): Address | null {
+  for (const log of receipt.logs) {
+    if (log.address.toLowerCase() !== factory.toLowerCase()) continue;
+    try {
+      const ev = decodeEventLog({
+        abi: dropFactoryAbi,
+        data: log.data,
+        topics: log.topics,
+      });
+      if (ev.eventName === "DropCreated") return (ev.args as { drop: Address }).drop;
+    } catch {
+      /* not a DropCreated log — keep scanning */
+    }
+  }
+  return null;
+}
 
 const SAMPLE_CSV =
   "0x70997970C51812dc3A010C7d01b50e0d17dc79C8,1000\n0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC,500";
@@ -225,6 +254,23 @@ export default function NewCampaignPage() {
     isNative ||
     justApproved ||
     (allowance !== undefined && totalDeposit > 0n && (allowance as bigint) >= totalDeposit);
+
+  // After createDrop confirms: publish the recipient proofs (claimers look
+  // their proof up by merkleRoot) and the wizard's name/description (not in
+  // the on-chain event — without this the entered copy is silently lost).
+  const onCampaignCreated = (receipt: TransactionReceipt) => {
+    if (activeManifest) void publishProofs(merkleRoot, activeManifest.claims);
+    const drop = dep && dropFromReceipt(receipt, dep.dropFactory);
+    const trimmedName = name.trim();
+    if (drop && trimmedName) {
+      void publishCampaignMeta({
+        chainId,
+        drop,
+        name: trimmedName,
+        description: description.trim(),
+      });
+    }
+  };
 
   const fmtWhen = (s: string) => (s ? s.replace("T", " ") : "");
   // Resolve the viewer's timezone after mount (avoids SSR/hydration mismatch) so
@@ -713,9 +759,7 @@ export default function NewCampaignPage() {
                       primary
                       disabled={!oneTxReq || insufficient}
                       disableWhenConfirmed
-                      onConfirmed={() => {
-                        if (activeManifest) void publishProofs(merkleRoot, activeManifest.claims);
-                      }}
+                      onConfirmed={onCampaignCreated}
                     />
                   ) : (
                     <>
@@ -740,13 +784,7 @@ export default function NewCampaignPage() {
                         primary={isNative || approved}
                         disabled={!createReq || insufficient || (!isNative && !approved)}
                         disableWhenConfirmed
-                        onConfirmed={() => {
-                          // Publish the recipient proofs so claimers can look up their
-                          // proof by the campaign's merkleRoot.
-                          if (activeManifest) {
-                            void publishProofs(merkleRoot, activeManifest.claims);
-                          }
-                        }}
+                        onConfirmed={onCampaignCreated}
                       />
                     </>
                   )}

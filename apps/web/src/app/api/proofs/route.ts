@@ -1,23 +1,23 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/db";
+import { LOWER_ADDR_RE, ROOT_RE } from "@/lib/server/apiInput";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * In-memory proofs store keyed by the campaign's `merkleRoot`. This is the
- * off-chain proofs.json seam (DESIGN §8.7/§12) made real without infra: a
- * campaign publishes its per-recipient `claims` here and the claim page reads
- * them back to find a wallet's proof.
+ * Proofs store keyed by the campaign's `merkleRoot`. This is the off-chain
+ * proofs.json seam (DESIGN §8.7/§12): a campaign publishes its per-recipient
+ * `claims` here and the claim page reads them back to find a wallet's proof.
  *
- * NOTE: ephemeral (per server instance) — a stand-in for IPFS pinning
- * (Filebase/Pinata) + an on-chain proofsCid. Swap the backend later; the
+ * Persisted in the app DB (CampaignProofs) so a dev-server restart no longer
+ * wipes eligibility for every campaign. Still a stand-in for IPFS pinning
+ * (Filebase/Pinata) + the on-chain proofsCid; swap the backend later — the
  * client contract (root → claims) stays the same.
  */
-const store = new Map<string, Record<string, unknown>>();
 
-const ROOT_RE = /^0x[0-9a-f]{64}$/;
-const ADDR_RE = /^0x[0-9a-f]{40}$/;
-// Bound memory: this is an untrusted, unauthenticated dev store (a stand-in for
+// Bound storage: this is an untrusted, unauthenticated store (a stand-in for
 // IPFS). Cap claims per root and total roots to limit DoS surface.
 const MAX_CLAIMS = 50_000;
 const MAX_ROOTS = 100;
@@ -38,11 +38,7 @@ export async function POST(req: NextRequest) {
   if (typeof b.claims !== "object" || b.claims === null || Array.isArray(b.claims)) {
     return NextResponse.json({ error: "Invalid claims" }, { status: 400 });
   }
-  // Proofs are immutable (tied to the root) — don't let anyone overwrite them.
-  if (store.has(root)) {
-    return NextResponse.json({ error: "Proofs already published for this root" }, { status: 409 });
-  }
-  if (store.size >= MAX_ROOTS) {
+  if ((await prisma.campaignProofs.count()) >= MAX_ROOTS) {
     return NextResponse.json({ error: "Proofs store is full" }, { status: 507 });
   }
   const entries = Object.entries(b.claims as Record<string, unknown>);
@@ -54,10 +50,28 @@ export async function POST(req: NextRequest) {
   const norm: Record<string, unknown> = Object.create(null);
   for (const [k, v] of entries) {
     const key = k.toLowerCase();
-    if (ADDR_RE.test(key)) norm[key] = v;
+    if (LOWER_ADDR_RE.test(key)) norm[key] = v;
   }
-  store.set(root, norm);
-  return NextResponse.json({ ok: true, count: Object.keys(norm).length });
+  const count = Object.keys(norm).length;
+  // All keys were junk → nothing claimable; storing it would only let junk
+  // rows fill the MAX_ROOTS cap.
+  if (count === 0) {
+    return NextResponse.json({ error: "No valid claims" }, { status: 400 });
+  }
+  try {
+    await prisma.campaignProofs.create({
+      data: { root, claims: JSON.stringify(norm), count },
+    });
+  } catch (err) {
+    // Unique violation — proofs are immutable (tied to the root), so a second
+    // publish for the same root is rejected rather than overwriting. Anything
+    // else is a real DB failure, not a conflict.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return NextResponse.json({ error: "Proofs already published for this root" }, { status: 409 });
+    }
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+  return NextResponse.json({ ok: true, count });
 }
 
 export async function GET(req: NextRequest) {
@@ -65,7 +79,12 @@ export async function GET(req: NextRequest) {
   if (!root || !ROOT_RE.test(root)) {
     return NextResponse.json({ error: "root query required" }, { status: 400 });
   }
-  const claims = store.get(root);
-  if (!claims) return NextResponse.json({ error: "not found" }, { status: 404 });
-  return NextResponse.json({ claims });
+  const row = await prisma.campaignProofs.findUnique({ where: { root } });
+  if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
+  // The stored claims are JSON text we wrote ourselves — embed the string
+  // directly instead of parse + re-stringify (up to MAX_CLAIMS entries on the
+  // eligibility hot path).
+  return new NextResponse(`{"claims":${row.claims}}`, {
+    headers: { "content-type": "application/json" },
+  });
 }

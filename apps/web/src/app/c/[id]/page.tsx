@@ -2,7 +2,7 @@
 
 import { use, useState } from "react";
 import Link from "next/link";
-import { useAccount } from "wagmi";
+import { useAccount, useChainId, useChains } from "wagmi";
 import { zeroAddress } from "viem";
 import { airdropTypeLabel, isVerificationValid } from "@tokamak-network/scatter-drop-sdk";
 import {
@@ -20,6 +20,7 @@ import {
 import { IdentityGate } from "@/components/IdentityGate";
 import { useVerifiedUntil } from "@/lib/contracts";
 import { fmtUnixDateTime, useCampaign } from "@/lib/campaigns";
+import { explorerUrl } from "@/lib/explorer";
 import { ClaimPanel } from "./ClaimPanel";
 
 export default function CampaignDetailPage({
@@ -34,6 +35,11 @@ export default function CampaignDetailPage({
     campaign?.identityRegistry,
     address,
   );
+  // The chain this campaign was read from — shown explicitly (and used for
+  // explorer links) so contract lookups aren't confused across networks.
+  const chainId = useChainId();
+  const chains = useChains();
+  const currentChain = chains.find((c) => c.id === chainId);
 
   if (isPending) {
     return (
@@ -100,6 +106,11 @@ export default function CampaignDetailPage({
                   <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold border uppercase tracking-wide bg-slate-950 text-slate-400 border-slate-800">
                     {airdropTypeLabel(campaign.type)}
                   </span>
+                  {/* Which chain this campaign lives on — contracts below are
+                      only meaningful on this network. */}
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold border uppercase tracking-wide bg-indigo-500/10 text-indigo-400 border-indigo-500/20">
+                    {currentChain ? `${currentChain.name} · ${chainId}` : `Chain ${chainId}`}
+                  </span>
                   {campaign.status === "active" ? (
                     <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -141,9 +152,25 @@ export default function CampaignDetailPage({
               />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-950 p-4 rounded-lg border border-slate-800/60 text-xs font-mono">
-              <AddressField label="Airdrop Token" value={campaign.token} />
-              <AddressField label="Drop Contract" value={campaign.drop} />
+            <div className="space-y-3 bg-slate-950 p-4 rounded-lg border border-slate-800/60 text-xs font-mono">
+              <div className="text-slate-500">
+                Network:{" "}
+                <span className="text-slate-300 font-semibold">
+                  {currentChain ? `${currentChain.name} (chainId ${chainId})` : `chainId ${chainId}`}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <AddressField
+                  label="Airdrop Token"
+                  value={campaign.token}
+                  href={explorerUrl(currentChain, "address", campaign.token)}
+                />
+                <AddressField
+                  label="Drop Contract"
+                  value={campaign.drop}
+                  href={explorerUrl(currentChain, "address", campaign.drop)}
+                />
+              </div>
             </div>
           </div>
 
@@ -254,7 +281,16 @@ function StatItem({ label, value }: { label: string; value: string }) {
   );
 }
 
-function AddressField({ label, value }: { label: string; value: string }) {
+function AddressField({
+  label,
+  value,
+  href,
+}: {
+  label: string;
+  value: string;
+  /** Block-explorer address URL — omitted on chains without one (local fork). */
+  href?: string;
+}) {
   return (
     <div className="space-y-1 min-w-0">
       <span className="text-slate-500">{label}</span>
@@ -263,6 +299,18 @@ function AddressField({ label, value }: { label: string; value: string }) {
           {value}
         </span>
         <CopyButton value={value} label={`Copy ${label}`} />
+        {href && (
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`View ${label} on the block explorer`}
+            title={`View ${label} on the block explorer`}
+            className="text-emerald-600 hover:underline shrink-0"
+          >
+            ↗
+          </a>
+        )}
       </div>
     </div>
   );

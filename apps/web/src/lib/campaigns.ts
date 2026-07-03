@@ -16,6 +16,7 @@ import {
   getZkX509,
   NATIVE_ETH,
 } from "@tokamak-network/scatter-drop-sdk";
+import { fetchCampaignMetas, type CampaignMetaEntry } from "./campaignMeta";
 import { useDeployment } from "./contracts";
 import type { WebDeployment } from "./deployment";
 import {
@@ -186,11 +187,36 @@ function taglineFor(type: AirdropType, symbol: string): string {
   }
 }
 
-/** Map a DropCreated event into the UI Campaign shape (on-chain fields only). */
+/**
+ * DropCreated events → UI Campaigns: resolve token symbols/decimals and the
+ * operator-entered name/description (metadata store) in parallel, then map.
+ * Pass `drop` when resolving a single campaign so only its meta row is fetched.
+ */
+async function enrichCampaigns(
+  client: PublicClient,
+  chainId: number,
+  args: DropCreatedArgs[],
+  drop?: Address,
+): Promise<Campaign[]> {
+  const [meta, metas] = await Promise.all([
+    loadTokenMeta(client, args.map((a) => a.airdropToken)),
+    fetchCampaignMetas(chainId, drop),
+  ]);
+  return args.map((a) =>
+    toCampaign(a, chainId, meta.get(a.airdropToken.toLowerCase()), metas[a.drop.toLowerCase()]),
+  );
+}
+
+/**
+ * Map a DropCreated event into the UI Campaign shape. On-chain fields, plus
+ * the operator-entered name/description from the metadata store when present
+ * (the event doesn't carry them; the generic "<SYMBOL> airdrop" is a fallback).
+ */
 function toCampaign(
   args: DropCreatedArgs,
   chainId: number,
   meta?: TokenMeta,
+  cm?: CampaignMetaEntry,
 ): Campaign {
   const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
   const deadlineMs = Number(args.deadline) * 1000;
@@ -199,8 +225,8 @@ function toCampaign(
   const type = Number(args.airdropType) as AirdropType;
   return {
     id: args.drop,
-    name: `${symbol} airdrop`,
-    description: taglineFor(type, symbol),
+    name: cm?.name ?? `${symbol} airdrop`,
+    description: cm?.description ?? taglineFor(type, symbol),
     type: Number(args.airdropType) as AirdropType,
     drop: args.drop,
     token: args.airdropToken,
@@ -320,13 +346,7 @@ export function useCampaigns() {
         return { live: false, campaigns: await listStubCampaigns() };
       }
       const args = await scanDropCreated(client, dep);
-      const meta = await loadTokenMeta(client, args.map((a) => a.airdropToken));
-      return {
-        live: true,
-        campaigns: args.map((a) =>
-          toCampaign(a, dep.chainId, meta.get(a.airdropToken.toLowerCase())),
-        ),
-      };
+      return { live: true, campaigns: await enrichCampaigns(client, dep.chainId, args) };
     },
   });
 }
@@ -344,10 +364,7 @@ export function useManagedCampaigns(address: Address | undefined) {
     queryFn: async (): Promise<Campaign[]> => {
       if (!client || !dep || !address) return [];
       const args = await scanDropCreated(client, dep, { operator: address });
-      const meta = await loadTokenMeta(client, args.map((a) => a.airdropToken));
-      return args.map((a) =>
-        toCampaign(a, dep.chainId, meta.get(a.airdropToken.toLowerCase())),
-      );
+      return enrichCampaigns(client, dep.chainId, args);
     },
   });
 }
@@ -370,8 +387,8 @@ export function useCampaign(id: string) {
       if (isAddress(id) && client && dep) {
         const [args] = await scanDropCreated(client, dep, { drop: id as Address });
         if (!args) return undefined;
-        const meta = await loadTokenMeta(client, [args.airdropToken]);
-        return toCampaign(args, dep.chainId, meta.get(args.airdropToken.toLowerCase()));
+        const [campaign] = await enrichCampaigns(client, dep.chainId, [args], args.drop);
+        return campaign;
       }
       return getStubCampaign(id);
     },

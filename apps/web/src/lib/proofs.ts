@@ -48,6 +48,7 @@ async function fetchEligibility(
   address: Address | undefined,
 ): Promise<Eligibility> {
   if (!address) return { eligible: false, alreadyClaimed: false };
+  let notPublished = false;
   if (root) {
     try {
       const res = await fetch(`/api/proofs?root=${encodeURIComponent(root)}`, {
@@ -60,13 +61,17 @@ async function fetchEligibility(
           ? { eligible: true, alreadyClaimed: false, claim }
           : { eligible: false, alreadyClaimed: false };
       }
-      // 404 = no proofs published for this root yet → fall through to the stub.
+      // 404 = no proofs published for this root → fall through to the stub,
+      // and unless the stub grants eligibility (dev-fork demo seed), surface
+      // "list not published" instead of a false "not on the list".
+      if (res.status === 404) notPublished = true;
     } catch {
       /* fall through to stub */
     }
   }
   // No published proofs → dev-fork demo seed (keeps the seeded recipient claimable).
-  return getStubEligibility(campaignId, address);
+  const stub = await getStubEligibility(campaignId, address);
+  return stub.eligible ? stub : { ...stub, notPublished };
 }
 
 /**
