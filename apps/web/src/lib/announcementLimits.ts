@@ -23,4 +23,4 @@ export const MAX_OPEN_PER_OPERATOR = 20;
  * localhost forms stay allowed so dev-fork announcements can link local
  * pages.
  */
-export const LINK_URL_RE = /^https:\/\/|^http:\/\/(localhost|127\.0\.0\.1)([:/]|$)/i;
+export const LINK_URL_RE = /^https:\/\/|^http:\/\/(localhost|127\.0\.0\.1)([:/?#]|$)/i;

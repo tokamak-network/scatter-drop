@@ -51,25 +51,35 @@ export async function POST(req: NextRequest) {
   }
   const parsed = parseAnnouncement(body);
   if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
-  if ((await prisma.announcement.count()) >= MAX_ANNOUNCEMENTS) {
-    return NextResponse.json({ error: "Announcement store is full" }, { status: 507 });
-  }
-  // Per-wallet cap on open announcements, so one operator can't occupy the
-  // board. Canceled entries free their slot; linked (live/ended) ones keep
-  // theirs — history stays attributable and bounded per wallet.
-  const open = await prisma.announcement.count({
-    where: { operator, canceled: false },
-  });
-  if (open >= MAX_OPEN_PER_OPERATOR) {
-    return NextResponse.json(
-      {
+  // Both caps re-checked and the row inserted in one transaction, so
+  // concurrent POSTs can't all pass the counts and overshoot (TOCTOU).
+  const result = await prisma.$transaction(async (tx) => {
+    // Open (non-canceled) rows only: counting canceled history would let the
+    // ever-growing tombstones permanently brick the board once 1000 total
+    // announcements have ever existed. Storage growth from canceled rows is
+    // bounded in practice by the per-operator cap + SIWE attribution.
+    if (
+      (await tx.announcement.count({ where: { canceled: false } })) >= MAX_ANNOUNCEMENTS
+    ) {
+      return { status: 507, error: "Announcement store is full" } as const;
+    }
+    // Per-wallet cap on open announcements, so one operator can't occupy the
+    // board. Canceled entries free their slot; linked (live/ended) ones keep
+    // theirs — history stays attributable and bounded per wallet.
+    const open = await tx.announcement.count({
+      where: { operator, canceled: false },
+    });
+    if (open >= MAX_OPEN_PER_OPERATOR) {
+      return {
+        status: 429,
         error: `You already have ${MAX_OPEN_PER_OPERATOR} open announcements — cancel one to post another`,
-      },
-      { status: 429 },
-    );
-  }
-  const row = await prisma.announcement.create({
-    data: { ...parsed.value, operator },
+      } as const;
+    }
+    const row = await tx.announcement.create({ data: { ...parsed.value, operator } });
+    return { status: 200, row } as const;
   });
-  return NextResponse.json({ announcement: announcementDto(row) });
+  if (result.status !== 200) {
+    return NextResponse.json({ error: result.error }, { status: result.status });
+  }
+  return NextResponse.json({ announcement: announcementDto(result.row) });
 }

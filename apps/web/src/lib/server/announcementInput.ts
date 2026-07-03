@@ -59,7 +59,7 @@ function parseLinks(v: unknown): Result<string | null> {
       url.length > MAX_LINK_URL ||
       !LINK_URL_RE.test(url)
     ) {
-      return { error: "each link needs a label and an https:// url" };
+      return { error: "each link needs a label and an https:// url (http is allowed for localhost only)" };
     }
     links.push({ label: label.trim(), url });
   }
