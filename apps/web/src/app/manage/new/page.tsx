@@ -28,6 +28,7 @@ import {
 import { ArrowLeft, ArrowRight, Check, Download, Upload } from "lucide-react";
 import Link from "next/link";
 import { ConnectGate } from "@/components/ConnectGate";
+import { NetworkSelect } from "@/components/NetworkSelect";
 import { SnapshotBuilder } from "@/components/SnapshotBuilder";
 import { TxButton } from "@/components/TxButton";
 import type { SnapshotManifest } from "@/lib/useSnapshotJob";
@@ -263,13 +264,22 @@ export default function NewCampaignPage() {
   const { data: myAnnouncements } = useAnnouncements(account, { enabled: !!account });
   const openAnnouncements = (myAnnouncements ?? []).filter((a) => !a.drop && !a.canceled);
   const [announcementId, setAnnouncementId] = useState("");
-  // Derive validity instead of resetting state: the announcement list is
+  // The announcement selection is derived, not reset: the list is
   // chain-scoped, so a selection made on another network (or one canceled
   // elsewhere) simply stops resolving — nothing stale can be linked (the
-  // server's dropVerify would reject it too).
+  // server's dropVerify rejects it as the backstop).
   const linkedAnnouncementId = openAnnouncements.some((a) => a.id === announcementId)
     ? announcementId
     : "";
+  // Chain-scoped address inputs must not survive a network switch — a
+  // token/registry address means something else (or nothing) on the new
+  // chain. Chain-independent inputs (name, dates, CSV/snapshot recipient
+  // lists — cross-chain drops like "mainnet stakers, L2 payout" are a real
+  // use case) are deliberately kept.
+  useEffect(() => {
+    setToken("");
+    setRegistry("");
+  }, [chainId]);
   const { ensureSession } = useWalletSession(
     "Sign in to scatter.drop to manage your announcements.",
   );
@@ -429,6 +439,10 @@ export default function NewCampaignPage() {
       <h1 className="text-2xl font-bold text-slate-100 tracking-tight">
         New Campaign
       </h1>
+
+      {/* Target network — the campaign deploys on the wallet's active chain,
+          so make that choice explicit before anything else. */}
+      <NetworkSelect />
 
       {/* Step indicator */}
       <div className="flex items-center gap-2">
