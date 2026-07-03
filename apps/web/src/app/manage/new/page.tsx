@@ -709,7 +709,7 @@ export default function NewCampaignPage() {
                     // creates and funds the campaign in a single operator tx.
                     <TxButton
                       request={oneTxReq}
-                      label="Create in one transaction (approveAndCall)"
+                      label="Create campaign"
                       primary
                       disabled={!oneTxReq || insufficient}
                       onConfirmed={() => {
