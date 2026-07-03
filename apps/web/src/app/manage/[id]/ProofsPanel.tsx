@@ -10,10 +10,9 @@ import { TxButton } from "@/components/TxButton";
 import { useDeployment } from "@/lib/contracts";
 import { scanLatestProofsCid } from "@/lib/dropScan";
 import { shortHash } from "@/lib/explorer";
+import { useProofsMeta, type ProofsMeta } from "@/lib/proofs";
 import type { Campaign } from "@/lib/stub";
 import { useWalletSession } from "@/lib/useWalletSession";
-
-type ProofsMeta = { count: number; cid: string | null };
 
 /**
  * Operator console — durability status of the campaign's recipient list and
@@ -41,18 +40,7 @@ export function ProofsPanel({
   const [repinError, setRepinError] = useState<string | null>(null);
 
   // Store status: published? how many recipients? pinned CID?
-  const { data: meta, isPending: metaPending } = useQuery({
-    queryKey: ["proofsMeta", root],
-    enabled: !!root,
-    queryFn: async (): Promise<ProofsMeta | null> => {
-      const res = await fetch(`/api/proofs?root=${encodeURIComponent(root!)}&meta=1`, {
-        cache: "no-store",
-      });
-      if (res.status === 404) return null;
-      if (!res.ok) throw new Error("Failed to load proofs status");
-      return (await res.json()) as ProofsMeta;
-    },
-  });
+  const { data: meta, isPending: metaPending } = useProofsMeta(campaign);
 
   // The currently anchored CID (latest ProofsPublished event), if any.
   const { data: anchoredCid, isPending: anchorPending } = useQuery({

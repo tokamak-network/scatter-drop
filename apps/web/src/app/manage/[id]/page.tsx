@@ -3,7 +3,6 @@
 import { use, useState } from "react";
 import Link from "next/link";
 import { useAccount } from "wagmi";
-import { useQuery } from "@tanstack/react-query";
 import { encodeFunctionData } from "viem";
 import { merkleDropAbi } from "@tokamak-network/scatter-drop-sdk";
 import {
@@ -14,9 +13,10 @@ import {
   Users,
 } from "lucide-react";
 import { TxButton } from "@/components/TxButton";
-import { useCampaign } from "@/lib/campaigns";
+import { useCampaign, useCampaignStats } from "@/lib/campaigns";
+import { useProofsMeta } from "@/lib/proofs";
 import { ProofsPanel } from "./ProofsPanel";
-import { getParticipantStats } from "@/lib/stub";
+import type { Campaign } from "@/lib/stub";
 import { useMounted } from "@/lib/useMounted";
 
 const TABS = ["Overview", "Participants", "Proofs", "Sweep"] as const;
@@ -109,7 +109,7 @@ export default function ManageCampaignPage({
         </div>
       )}
 
-      {tab === "Participants" && <Participants id={id} />}
+      {tab === "Participants" && <Participants campaign={campaign} />}
 
       {tab === "Proofs" && (
         <ProofsPanel campaign={campaign} isOperator={isOperator} />
@@ -160,52 +160,64 @@ function Kpi({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Participants({ id }: { id: string }) {
-  const { data: stats, isPending, isError } = useQuery({
-    queryKey: ["participantStats", id],
-    queryFn: () => getParticipantStats(id),
-  });
+/**
+ * Live participant stats: eligible from the published proofs store (recipient
+ * count), claimed from on-chain Claimed logs, the rest derived. No off-chain
+ * indexer — same sources the claim page itself uses.
+ */
+function Participants({ campaign }: { campaign: Campaign }) {
+  const { data: meta, isPending: metaPending } = useProofsMeta(campaign);
+  const { data: stats, isPending: statsPending } = useCampaignStats(campaign);
 
-  if (isPending) {
+  if (metaPending || statsPending) {
     return (
       <div className="flex items-center justify-center p-12 text-slate-500">
         <Loader2 className="w-6 h-6 animate-spin" />
       </div>
     );
   }
-  if (isError || !stats) {
-    return (
-      <p className="text-sm text-amber-600">
-        Could not load participant stats.
-      </p>
-    );
-  }
+
+  const claimed = stats?.claimedCount ?? 0;
+  const eligible = meta?.count ?? null; // null = recipient list not published
+  const unclaimed = eligible !== null ? Math.max(0, eligible - claimed) : null;
+  // Capped at 100 so a republished-smaller list (or scan-window skew) can't
+  // print >100% next to a floored unclaimed of 0.
+  const claimRatePct =
+    eligible !== null && eligible > 0
+      ? Math.min(100, Math.round((claimed / eligible) * 100))
+      : null;
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <Kpi label="Eligible" value={stats.eligible.toLocaleString()} />
-        <Kpi label="Verified" value={stats.verified.toLocaleString()} />
-        <Kpi label="Claimed" value={stats.claimed.toLocaleString()} />
-        <Kpi label="Unclaimed" value={stats.unclaimed.toLocaleString()} />
-        <Kpi label="Claim rate" value={`${stats.claimRatePct}%`} />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Kpi label="Eligible" value={eligible !== null ? eligible.toLocaleString() : "—"} />
+        <Kpi label="Claimed" value={claimed.toLocaleString()} />
+        <Kpi label="Unclaimed" value={unclaimed !== null ? unclaimed.toLocaleString() : "—"} />
+        <Kpi label="Claim rate" value={claimRatePct !== null ? `${claimRatePct}%` : "—"} />
       </div>
+      {eligible === null && (
+        <p className="text-xs text-amber-600">
+          The recipient list isn&apos;t published, so eligible/unclaimed counts are
+          unavailable — see the Proofs tab.
+        </p>
+      )}
+      {stats && (
+        <p className="text-xs text-slate-500 font-mono">
+          Distributed {stats.distributed} · Remaining {stats.remaining}
+        </p>
+      )}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm text-slate-300">
           <Users className="w-4 h-4 text-slate-500" />
           Participant breakdown &amp; distribution report
         </div>
         <Link
-          href={`/manage/${id}/report`}
+          href={`/manage/${campaign.id}/report`}
           className="btn inline-flex items-center gap-1 text-xs"
         >
           <Download className="w-3 h-3" /> Distribution report
         </Link>
       </div>
-      <p className="text-xs text-slate-500 font-mono">
-        Stats are stubbed (off-chain aggregation); live claim-event indexing
-        lands in a later milestone.
-      </p>
     </div>
   );
 }

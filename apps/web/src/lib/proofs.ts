@@ -178,6 +178,30 @@ function useClaims(campaign: Campaign | undefined, opts?: ChainOpt) {
   });
 }
 
+export type ProofsMeta = { count: number; cid: string | null };
+
+/**
+ * Store status for a campaign's proofs — recipient count + pinned CID —
+ * without downloading the multi-MB claims body (`?meta=1`). `null` = not
+ * published. Shared by the operator console's durability panel and the
+ * participants stats.
+ */
+export function useProofsMeta(campaign: Campaign | undefined) {
+  const root = campaign?.merkleRoot?.toLowerCase() as Hex | undefined;
+  return useQuery({
+    queryKey: ["proofsMeta", root],
+    enabled: !!root,
+    queryFn: async (): Promise<ProofsMeta | null> => {
+      const res = await fetch(`/api/proofs?root=${encodeURIComponent(root!)}&meta=1`, {
+        cache: "no-store",
+      });
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error("Failed to load proofs status");
+      return (await res.json()) as ProofsMeta;
+    },
+  });
+}
+
 export type RecipientRow = { address: Address; amount: bigint };
 
 /** Claims map → amount-sorted display rows (memoized by useRecipients). */
