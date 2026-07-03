@@ -27,7 +27,8 @@ export async function pinJson(name: string, content: unknown): Promise<string | 
     }),
   });
   if (!res.ok) throw new Error(`Pinning failed: ${res.status}`);
-  const data = (await res.json()) as { IpfsHash?: string };
-  if (!data.IpfsHash) throw new Error("Pinning returned no CID");
-  return data.IpfsHash;
+  const data = (await res.json()) as { IpfsHash?: string } | null;
+  const cid = data?.IpfsHash;
+  if (typeof cid !== "string" || !cid) throw new Error("Pinning returned no CID");
+  return cid;
 }

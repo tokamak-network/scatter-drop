@@ -68,7 +68,11 @@ function validateClaims(raw: Record<string, unknown>): Record<string, ClaimProof
 }
 
 // Public gateway for reading pinned proofs.json back; override per deployment.
-const IPFS_GATEWAY = process.env.NEXT_PUBLIC_IPFS_GATEWAY || "https://ipfs.io";
+// Trailing slash stripped so a configured "https://gw.io/" doesn't produce "//ipfs/…".
+const IPFS_GATEWAY = (process.env.NEXT_PUBLIC_IPFS_GATEWAY || "https://ipfs.io").replace(
+  /\/+$/,
+  "",
+);
 
 /**
  * Recover a campaign's claims from IPFS via its on-chain anchor: latest
@@ -88,8 +92,12 @@ async function fetchClaimsFromIpfs(
   if (!cid) return null;
   const res = await fetch(`${IPFS_GATEWAY}/ipfs/${encodeURIComponent(cid)}`);
   if (!res.ok) return null;
-  const data = (await res.json()) as { root?: string; claims?: Record<string, unknown> };
-  // Cheap early bail on an obviously-wrong file before hashing anything.
+  const data = (await res.json()) as
+    | { root?: string; claims?: Record<string, unknown> }
+    | null;
+  // Untrusted payload: guard the shape, then cheap early bail on an
+  // obviously-wrong file before hashing anything.
+  if (!data || typeof data !== "object") return null;
   if (data.root?.toLowerCase() !== root) return null;
   const valid = validateClaims(data.claims ?? {});
   const verified: Record<string, ClaimProof> = {};
