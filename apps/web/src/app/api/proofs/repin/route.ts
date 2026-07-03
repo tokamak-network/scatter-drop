@@ -41,7 +41,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid merkleRoot" }, { status: 400 });
   }
 
-  const rejection = await verifyDropOperator(chainId, drop, wallet, b.txHash);
+  // expectedRoot binds the re-pin to the drop's own merkle root — without it,
+  // an operator of ANY campaign could mutate any root's stored cid.
+  const rejection = await verifyDropOperator(chainId, drop, wallet, b.txHash, root);
   if (rejection) return NextResponse.json({ error: rejection }, { status: 422 });
 
   const row = await prisma.campaignProofs.findUnique({ where: { root } });

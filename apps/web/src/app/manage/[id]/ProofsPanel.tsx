@@ -81,11 +81,14 @@ export function ProofsPanel({
         setRepinError(data.error ?? "Re-pin failed");
         return;
       }
-      queryClient.setQueryData(["proofsMeta", root], (prev: ProofsMeta | null | undefined) =>
-        prev
-          ? { ...prev, cid: data.cid! }
-          : { count: meta?.count ?? 0, cid: data.cid! },
-      );
+      // Update in place when cached; otherwise refetch rather than seeding a
+      // possibly-wrong count.
+      const prev = queryClient.getQueryData<ProofsMeta | null>(["proofsMeta", root]);
+      if (prev) {
+        queryClient.setQueryData(["proofsMeta", root], { ...prev, cid: data.cid! });
+      } else {
+        void queryClient.invalidateQueries({ queryKey: ["proofsMeta", root] });
+      }
     } catch {
       setRepinError("Re-pin failed — please retry.");
     } finally {
