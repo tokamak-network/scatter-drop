@@ -28,6 +28,7 @@ import {
 import { ArrowLeft, ArrowRight, Check, Download, Upload } from "lucide-react";
 import Link from "next/link";
 import { ConnectGate } from "@/components/ConnectGate";
+import { NetworkSelect } from "@/components/NetworkSelect";
 import { SnapshotBuilder } from "@/components/SnapshotBuilder";
 import { TxButton } from "@/components/TxButton";
 import type { SnapshotManifest } from "@/lib/useSnapshotJob";
@@ -263,6 +264,17 @@ export default function NewCampaignPage() {
   const { data: myAnnouncements } = useAnnouncements(account, { enabled: !!account });
   const openAnnouncements = (myAnnouncements ?? []).filter((a) => !a.drop && !a.canceled);
   const [announcementId, setAnnouncementId] = useState("");
+  // Chain-scoped selections must not survive a network switch: an
+  // announcement link would tie a chain-A announcement to a chain-B drop,
+  // and a token/registry address means something else (or nothing) on the
+  // new chain. Chain-independent inputs (name, dates, CSV/snapshot recipient
+  // lists — cross-chain drops like "mainnet stakers, L2 payout" are a real
+  // use case) are deliberately kept.
+  useEffect(() => {
+    setAnnouncementId("");
+    setToken("");
+    setRegistry("");
+  }, [chainId]);
   const { ensureSession } = useWalletSession(
     "Sign in to scatter.drop to manage your announcements.",
   );
@@ -422,6 +434,10 @@ export default function NewCampaignPage() {
       <h1 className="text-2xl font-bold text-slate-100 tracking-tight">
         New Campaign
       </h1>
+
+      {/* Target network — the campaign deploys on the wallet's active chain,
+          so make that choice explicit before anything else. */}
+      <NetworkSelect />
 
       {/* Step indicator */}
       <div className="flex items-center gap-2">
