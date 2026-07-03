@@ -18,7 +18,18 @@ export async function POST(req: NextRequest) {
   }
   try {
     const siwe = new SiweMessage(message);
-    const { data } = await siwe.verify({ signature, nonce: session.nonce });
+    // Bind the signed message to this app's domain (the client signs
+    // window.location.host) so a message signed on another site can't be
+    // replayed here. SIWE_DOMAIN is the trusted anchor — set it in
+    // production; the Host-header fallback is dev-only convenience (an
+    // attacker POSTing directly controls their own headers, so the header
+    // is not a trusted anchor). Empty domain fails verification (closed).
+    const expectedDomain = process.env.SIWE_DOMAIN ?? req.headers.get("host") ?? "";
+    const { data } = await siwe.verify({
+      signature,
+      nonce: session.nonce,
+      domain: expectedDomain,
+    });
     const address = data.address.toLowerCase();
     // Any verified wallet gets a session — operator-facing writes (e.g.
     // announcements) need a signed-in author. Admin-only routes still gate on
