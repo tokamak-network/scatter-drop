@@ -264,9 +264,17 @@ export default function NewCampaignPage() {
   const { data: myAnnouncements } = useAnnouncements(account, { enabled: !!account });
   const openAnnouncements = (myAnnouncements ?? []).filter((a) => !a.drop && !a.canceled);
   const [announcementId, setAnnouncementId] = useState("");
-  // Announcements are per-chain; a selection must not survive a network
-  // switch (it would link a chain-A announcement to a chain-B drop).
-  useEffect(() => setAnnouncementId(""), [chainId]);
+  // Chain-scoped selections must not survive a network switch: an
+  // announcement link would tie a chain-A announcement to a chain-B drop,
+  // and a token/registry address means something else (or nothing) on the
+  // new chain. Chain-independent inputs (name, dates, CSV/snapshot recipient
+  // lists — cross-chain drops like "mainnet stakers, L2 payout" are a real
+  // use case) are deliberately kept.
+  useEffect(() => {
+    setAnnouncementId("");
+    setToken("");
+    setRegistry("");
+  }, [chainId]);
   const { ensureSession } = useWalletSession(
     "Sign in to scatter.drop to manage your announcements.",
   );

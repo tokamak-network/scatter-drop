@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   useChainId,
   useChains,
@@ -37,13 +37,15 @@ export function TxButton({
   disableWhenConfirmed?: boolean;
 }) {
   const { data: hash, sendTransaction, isPending, error } = useSendTransaction();
-  const { data: receipt, isLoading: mining, isSuccess } =
-    useWaitForTransactionReceipt({ hash });
   const chainId = useChainId();
+  // Pin the chain the tx was actually SENT on: if the wallet switches
+  // networks while the tx is pending, the receipt poll and the explorer link
+  // must keep pointing at the original chain, not follow the wallet.
+  const [sentChainId, setSentChainId] = useState<number | undefined>();
+  const { data: receipt, isLoading: mining, isSuccess } =
+    useWaitForTransactionReceipt({ hash, chainId: sentChainId });
   const chains = useChains();
-  // Resolve the chain from the active chainId (the chain the tx is sent on),
-  // not the wallet's connected chain — the two can diverge.
-  const currentChain = chains.find((c) => c.id === chainId);
+  const currentChain = chains.find((c) => c.id === (sentChainId ?? chainId));
 
   // A mined receipt with status "reverted" still resolves `isSuccess` (the
   // receipt was fetched), so gate the confirmed/failed states — and the
@@ -82,16 +84,18 @@ export function TxButton({
         disabled={
           disabled || busy || !request || (confirmed && disableWhenConfirmed)
         }
-        onClick={() =>
-          request &&
-          // Write on the wallet's active chain (matching the chain-aware reads).
+        onClick={() => {
+          if (!request) return;
+          // Write on the wallet's active chain (matching the chain-aware
+          // reads), and remember it for the receipt wait above.
+          setSentChainId(chainId);
           sendTransaction({
             to: request.to,
             data: request.data,
             value: request.value,
             chainId,
-          })
-        }
+          });
+        }}
       >
         {text}
       </button>
