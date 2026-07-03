@@ -204,7 +204,7 @@ export default function CampaignDetailPage({
 }
 
 /**
- * Humanized duration at two-unit precision ("2d 4h", "1h 05m", "12m", "45s") —
+ * Humanized duration at two-unit precision ("2d 4h", "1h 05m", "12m", "<1m") —
  * the old whole-day ceil showed "Starts in 1 day" for a window opening in an
  * hour.
  */

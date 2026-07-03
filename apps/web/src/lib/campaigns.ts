@@ -46,9 +46,9 @@ type DropCreatedArgs = {
 };
 
 function registryLabel(addr: Address, chainId: number): string {
-  // W24: address(0) = no identity gate (open claim).
-  // "No identity gate", not "open claim" — the recipient list still applies;
-  // only the zk-X509 verification step is skipped.
+  // W24: address(0) = no identity gate. Labeled "No identity gate", not
+  // "open claim" — the recipient list still applies; only the zk-X509
+  // verification step is skipped.
   if (/^0x0{40}$/i.test(addr)) return "No identity gate";
   const zk = getZkX509(chainId);
   const lc = addr.toLowerCase();
