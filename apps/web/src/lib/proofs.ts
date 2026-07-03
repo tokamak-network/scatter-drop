@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Address, Hex } from "viem";
 import type { ClaimProof } from "@tokamak-network/scatter-drop-sdk";
@@ -42,48 +43,114 @@ export async function publishProofs(
   }
 }
 
-async function fetchEligibility(
-  campaignId: string,
-  root: Hex | undefined,
-  address: Address | undefined,
-): Promise<Eligibility> {
-  if (!address) return { eligible: false, alreadyClaimed: false };
-  let notPublished = false;
-  if (root) {
-    try {
-      const res = await fetch(`/api/proofs?root=${encodeURIComponent(root)}`, {
-        cache: "no-store",
-      });
-      if (res.ok) {
-        const data = (await res.json()) as { claims?: Record<string, unknown> };
-        const claim = data.claims?.[address.toLowerCase()];
-        return isValidClaim(claim)
-          ? { eligible: true, alreadyClaimed: false, claim }
-          : { eligible: false, alreadyClaimed: false };
-      }
-      // 404 = no proofs published for this root → fall through to the stub,
-      // and unless the stub grants eligibility (dev-fork demo seed), surface
-      // "list not published" instead of a false "not on the list".
-      if (res.status === 404) notPublished = true;
-    } catch {
-      /* fall through to stub */
-    }
+/**
+ * The validated claims map for a root, or `null` when the store has no proofs
+ * for it (404 = the operator hasn't published the list).
+ */
+async function fetchClaims(root: Hex): Promise<Record<string, ClaimProof> | null> {
+  const res = await fetch(`/api/proofs?root=${encodeURIComponent(root)}`, {
+    cache: "no-store",
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error("Failed to load proofs");
+  const data = (await res.json()) as { claims?: Record<string, unknown> };
+  const valid: Record<string, ClaimProof> = {};
+  for (const [addr, c] of Object.entries(data.claims ?? {})) {
+    const key = addr.toLowerCase();
+    // The claim's account must match the key it's stored under — a mismatch
+    // would attribute the allocation to the wrong row and produce an
+    // "eligible" state that MerkleDrop (account == msg.sender) would revert.
+    if (isValidClaim(c) && c.account.toLowerCase() === key) valid[key] = c;
   }
-  // No published proofs → dev-fork demo seed (keeps the seeded recipient claimable).
-  const stub = await getStubEligibility(campaignId, address);
-  return stub.eligible ? stub : { ...stub, notPublished };
+  return valid;
+}
+
+/**
+ * One proofs download per root — eligibility and the recipients directory
+ * both observe this query (same key), so the largest payload on the claim
+ * page (up to 50k claims) is fetched once, not once per consumer.
+ */
+function useClaims(root: Hex | undefined) {
+  return useQuery({
+    queryKey: ["proofs", root],
+    enabled: !!root,
+    staleTime: 60_000,
+    queryFn: () => fetchClaims(root!),
+  });
+}
+
+export type RecipientRow = { address: Address; amount: bigint };
+
+/** Shared-query `select` — React Query memoizes this per cached data identity. */
+function toRecipientRows(
+  claims: Record<string, ClaimProof> | null,
+): RecipientRow[] | null {
+  if (!claims) return null;
+  const rows = Object.entries(claims).map(([address, c]) => ({
+    address: address as Address,
+    amount: BigInt(c.amount),
+  }));
+  rows.sort((a, b) => (b.amount > a.amount ? 1 : b.amount < a.amount ? -1 : 0));
+  return rows;
+}
+
+/**
+ * A campaign's full published recipient list (from the proofs store), sorted
+ * by amount desc, or `null` when the operator hasn't published proofs. Powers
+ * the Recipients section — a merkle airdrop's list is public by design
+ * (anyone must be able to look up their proof to claim).
+ */
+export function useRecipients(campaign: Campaign | undefined) {
+  const root = campaign?.merkleRoot?.toLowerCase() as Hex | undefined;
+  return useQuery({
+    queryKey: ["proofs", root],
+    enabled: !!root,
+    staleTime: 60_000,
+    queryFn: () => fetchClaims(root!),
+    select: toRecipientRows,
+  });
 }
 
 /**
  * Live eligibility for a campaign: look the connected wallet up in the published
  * proofs (by merkleRoot), falling back to the dev-fork demo stub when none are
- * published. Replaces the demo-only stub lookup.
+ * published. Derived synchronously from the shared per-root claims query — no
+ * second download, and background claims refetches don't bounce the result
+ * through a pending state.
  */
 export function useEligibility(campaign: Campaign | undefined, address: Address | undefined) {
   const root = campaign?.merkleRoot?.toLowerCase() as Hex | undefined;
-  return useQuery({
-    queryKey: ["eligibility", root ?? campaign?.id, address],
-    enabled: !!campaign && !!address,
-    queryFn: () => fetchEligibility(campaign!.id, root, address),
+  const claimsQ = useClaims(root);
+  // undefined while loading/on error; null = not published (404).
+  const claims = claimsQ.data;
+
+  // The stub (dev-fork demo seed) only matters when there's no published list:
+  // no root at all, a 404, or a failed proofs fetch.
+  const stubEnabled =
+    !!campaign && !!address && (!root || claims === null || claimsQ.isError);
+  const stubQ = useQuery({
+    queryKey: ["eligibility-stub", campaign?.id, address],
+    enabled: stubEnabled,
+    queryFn: () => getStubEligibility(campaign!.id, address!),
   });
+
+  const data = useMemo((): Eligibility | undefined => {
+    if (!campaign || !address) return undefined;
+    if (claims) {
+      const claim = claims[address.toLowerCase()];
+      return claim
+        ? { eligible: true, alreadyClaimed: false, claim }
+        : { eligible: false, alreadyClaimed: false };
+    }
+    if (!stubQ.data) return undefined;
+    // Unless the stub grants eligibility, surface "list not published"
+    // (404 only) instead of a false "not on the list".
+    return stubQ.data.eligible
+      ? stubQ.data
+      : { ...stubQ.data, notPublished: claims === null };
+  }, [campaign, address, claims, stubQ.data]);
+
+  const isPending =
+    (!!root && claimsQ.isPending) || (stubEnabled && stubQ.isPending);
+  return { data, isPending, isError: stubEnabled ? stubQ.isError : claimsQ.isError };
 }
