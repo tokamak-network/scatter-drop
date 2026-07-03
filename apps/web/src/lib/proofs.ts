@@ -89,16 +89,20 @@ async function fetchClaimsFromIpfs(
   root: Hex,
 ): Promise<Record<string, ClaimProof> | null> {
   const cid = await scanLatestProofsCid(client, dep, drop);
+  // No anchor = genuinely nothing published on-chain. Everything below has
+  // an anchor, so a failure is a recovery OUTAGE and must throw — mapping it
+  // to null would misreport an anchored campaign as "not published".
   if (!cid) return null;
   const res = await fetch(`${IPFS_GATEWAY}/ipfs/${encodeURIComponent(cid)}`);
-  if (!res.ok) return null;
+  if (!res.ok) throw new Error(`IPFS gateway error: ${res.status}`);
   const data = (await res.json()) as
     | { root?: string; claims?: Record<string, unknown> }
     | null;
   // Untrusted payload: guard the shape, then cheap early bail on an
   // obviously-wrong file before hashing anything.
-  if (!data || typeof data !== "object") return null;
-  if (data.root?.toLowerCase() !== root) return null;
+  if (!data || typeof data !== "object" || data.root?.toLowerCase() !== root) {
+    throw new Error("Anchored proofs file is malformed or for a different root");
+  }
   const valid = validateClaims(data.claims ?? {});
   const verified: Record<string, ClaimProof> = {};
   for (const [addr, claim] of Object.entries(valid)) {
@@ -140,8 +144,11 @@ async function fetchClaims(
         root,
       );
       if (viaIpfs) return viaIpfs;
+      // null = no on-chain anchor either → the store's 404 verdict stands.
     } catch {
-      /* anchor unavailable too */
+      // An anchor exists but recovery failed (gateway down / bad file) —
+      // that's an outage, not "not published".
+      throw new Error("Failed to recover proofs from the on-chain anchor");
     }
   }
   if (notPublished) return null;

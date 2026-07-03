@@ -193,6 +193,9 @@ export function buildPublishProofsRequest(
   drop: Address,
   cid: string,
 ): TxRequest {
+  // The contract reverts on an empty CID (EmptyCid) — fail fast instead of
+  // building a tx that is guaranteed to revert.
+  if (!cid) throw new Error("cid must be non-empty");
   return {
     to: getAddress(factory),
     data: encodeFunctionData({
