@@ -82,7 +82,9 @@ export function ProofsPanel({
         return;
       }
       queryClient.setQueryData(["proofsMeta", root], (prev: ProofsMeta | null | undefined) =>
-        prev ? { ...prev, cid: data.cid! } : { count: 0, cid: data.cid! },
+        prev
+          ? { ...prev, cid: data.cid! }
+          : { count: meta?.count ?? 0, cid: data.cid! },
       );
     } catch {
       setRepinError("Re-pin failed — please retry.");

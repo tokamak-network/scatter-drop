@@ -26,6 +26,9 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
+  if (typeof body !== "object" || body === null) {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
   const b = body as { chainId?: unknown; drop?: unknown; root?: unknown; txHash?: unknown };
   const chainId = isChainId(b.chainId) ? b.chainId : null;
   const drop = typeof b.drop === "string" ? b.drop.toLowerCase() : null;
