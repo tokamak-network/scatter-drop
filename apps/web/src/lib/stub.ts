@@ -182,17 +182,3 @@ export async function getStubEligibility(
   };
 }
 
-export interface ParticipantStats {
-  eligible: number;
-  verified: number;
-  claimed: number;
-  unclaimed: number;
-  claimRatePct: number;
-}
-
-export async function getParticipantStats(
-  _id: string,
-): Promise<ParticipantStats> {
-  return { eligible: 4200, verified: 3100, claimed: 1764, unclaimed: 1336, claimRatePct: 42 };
-}
-
