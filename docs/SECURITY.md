@@ -310,8 +310,13 @@ its `approveAndCall` ERC165-checks the spender before invoking `onApprove`:
   (drift here silently corrupts every drop's config).
 - *onApprove trust.* Only allow-listed tokens reach `_createDrop`, and the fee is
   computed on `msg.sender` (the token) — a hostile non-listed token calling
-  `onApprove` directly reverts on the allow-list check; a listed-but-malicious
-  token could at worst create drops funded by its own approvals.
+  `onApprove` directly reverts on the allow-list check. A listed-but-malicious
+  token is a larger surface than "drops funded by its own approvals": the token
+  supplies the `owner` argument, so it can forge **arbitrary operator
+  attribution** (that operator gains `sweep` rights and board attribution), and
+  the exact-receipt checks rely on the token's own `transferFrom`/`balanceOf`
+  honesty. The trust boundary is the admin allow-list, not the `onApprove`
+  plumbing.
 - *Files.* `DropFactory.sol` (proxy/init/pause, `onApprove`, `_createDrop`,
   `supportsInterface`), `MerkleDrop.sol` (clone args). Tests: `OnApprove.t.sol`,
   `DropFactory.t.sol` (init/pause/upgrade), `GasSnapshot.t.sol` (§7.3 numbers
