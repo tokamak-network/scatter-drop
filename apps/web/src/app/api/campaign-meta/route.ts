@@ -37,19 +37,32 @@ export async function POST(req: NextRequest) {
   const parsed = parseCampaignMeta(body);
   if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
   const { chainId, drop, name, description, txHash } = parsed.value;
-  if ((await prisma.campaignMeta.count()) >= MAX_METAS) {
-    return NextResponse.json({ error: "Metadata store is full" }, { status: 507 });
-  }
   // The name/description render as the drop's public identity, so only its
   // on-chain operator may set them. txHash (the creation tx, sent by the
   // wizard) is the O(1) receipt path; without it the verifier falls back to a
-  // bounded DropCreated scan.
+  // bounded DropCreated scan. Verified BEFORE the DB transaction so the RPC
+  // round-trip doesn't hold locks.
   const dropErr = await verifyDropOperator(chainId, drop, wallet, txHash);
   if (dropErr) return NextResponse.json({ error: dropErr }, { status: 422 });
   try {
-    await prisma.campaignMeta.create({
-      data: { chainId, drop, name, description: description || null },
-    });
+    // Cap check + insert in one Serializable transaction — concurrent POSTs
+    // near the cap could otherwise all pass the count and overshoot (TOCTOU),
+    // like the announcements caps.
+    const result = await prisma.$transaction(
+      async (tx) => {
+        if ((await tx.campaignMeta.count()) >= MAX_METAS) {
+          return { status: 507, error: "Metadata store is full" } as const;
+        }
+        await tx.campaignMeta.create({
+          data: { chainId, drop, name, description: description || null },
+        });
+        return { status: 200 } as const;
+      },
+      { isolationLevel: "Serializable" },
+    );
+    if (result.status !== 200) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
   } catch (err) {
     // Unique violation → the campaign already has metadata; first write wins.
     // Anything else is a real DB failure, not a conflict.
