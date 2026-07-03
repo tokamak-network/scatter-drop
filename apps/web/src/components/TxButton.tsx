@@ -7,7 +7,7 @@ import {
   useSendTransaction,
   useWaitForTransactionReceipt,
 } from "wagmi";
-import type { Address, Hex } from "viem";
+import type { Address, Hex, TransactionReceipt } from "viem";
 import { explorerUrl, shortHash } from "@/lib/explorer";
 
 /**
@@ -27,7 +27,8 @@ export function TxButton({
   label: string;
   disabled?: boolean;
   primary?: boolean;
-  onConfirmed?: () => void;
+  /** Fired once when the tx succeeds, with its receipt (for reading logs). */
+  onConfirmed?: (receipt: TransactionReceipt) => void;
   /**
    * One-shot actions (claim, createDrop): keep the button disabled after the
    * tx confirms so it can't be re-sent. Leave unset for repeatable actions
@@ -62,8 +63,8 @@ export function TxButton({
     onConfirmedRef.current = onConfirmed;
   }, [onConfirmed]);
   useEffect(() => {
-    if (confirmed) onConfirmedRef.current?.();
-  }, [confirmed]);
+    if (confirmed && receipt) onConfirmedRef.current?.(receipt);
+  }, [confirmed, receipt]);
 
   const busy = isPending || mining;
   const text = isPending

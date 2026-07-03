@@ -34,3 +34,28 @@ model PlatformAdmin {
   label     String?
   createdAt DateTime @default(now())
 }
+
+/// Per-recipient claim proofs for a campaign, keyed by merkleRoot — the
+/// off-chain proofs.json seam (DESIGN §8.7/§12), persisted so a dev-server
+/// restart no longer wipes eligibility. Stand-in for IPFS pinning; immutable
+/// once written (the claims are tied to the root).
+model CampaignProofs {
+  root      String   @id // lowercased 0x… merkleRoot
+  claims    String   // JSON: { [lowercased address]: {index, account, amount, proof[]} }
+  count     Int
+  createdAt DateTime @default(now())
+}
+
+/// Operator-entered campaign name/description — collected by the wizard but
+/// not part of the on-chain DropCreated event, so persisted here and merged
+/// into the campaign list at read time. Create-only (no auth): first write
+/// for a drop wins, like CampaignProofs.
+model CampaignMeta {
+  chainId     Int
+  drop        String // lowercased drop (campaign) address
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+
+  @@id([chainId, drop])
+}

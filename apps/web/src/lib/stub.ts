@@ -139,6 +139,11 @@ export interface Eligibility {
   alreadyClaimed: boolean;
   /** SDK ClaimProof — feeds buildClaimRequest(drop, claim) unchanged in M5. */
   claim?: ClaimProof;
+  /**
+   * The campaign's recipient list isn't in the proofs store — eligibility is
+   * unknown, which is different from "checked and not on the list".
+   */
+  notPublished?: boolean;
 }
 
 /**

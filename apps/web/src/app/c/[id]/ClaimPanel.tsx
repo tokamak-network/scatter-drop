@@ -69,6 +69,38 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
   const claimRequest =
     canClaim && elig?.claim ? buildClaimRequest(campaign.drop, elig.claim) : null;
 
+  // Single eligibility discriminant so the button label and the status box
+  // (title + description) can't drift apart as states are added.
+  const eligState = eligLoading
+    ? "loading"
+    : elig?.eligible
+      ? "eligible"
+      : elig?.notPublished
+        ? "notPublished"
+        : "notEligible";
+  const ELIG_COPY: Record<
+    typeof eligState,
+    { title: string; detail: string }
+  > = {
+    loading: {
+      title: "Checking eligibility…",
+      detail: "Verifying your address against the distribution list…",
+    },
+    eligible: {
+      title: amount ? `Eligible for ${amount}` : "Eligible",
+      detail: "Your address is in the distribution list.",
+    },
+    notPublished: {
+      title: "Recipient list not published",
+      detail:
+        "The operator hasn't published this campaign's recipient list, so eligibility can't be checked yet.",
+    },
+    notEligible: {
+      title: "Not eligible",
+      detail: "This wallet is not in the distribution list for this campaign.",
+    },
+  };
+
   const claimLabel = isLoading
     ? "Checking eligibility…"
     : !verified
@@ -79,9 +111,11 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
           ? "Claim window not open yet"
           : ended
             ? "Claim window closed"
-            : !elig?.eligible
-              ? "Not eligible"
-              : "Claim";
+            : eligState === "notPublished"
+              ? "Recipient list not published"
+              : eligState === "notEligible"
+                ? "Not eligible"
+                : "Claim";
 
   return (
     <div className="space-y-6">
@@ -154,18 +188,10 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
             )}
             <div className="text-xs space-y-0.5">
               <div className="font-bold text-slate-300">
-                {eligLoading
-                  ? "Checking eligibility…"
-                  : elig?.eligible && amount
-                    ? `Eligible for ${amount}`
-                    : "Not eligible"}
+                {ELIG_COPY[eligState].title}
               </div>
               <div className="text-slate-500 text-[11px] leading-snug">
-                {eligLoading
-                  ? "Verifying your address against the distribution list…"
-                  : elig?.eligible
-                    ? "Your address is in the distribution list."
-                    : "This wallet is not in the distribution list for this campaign."}
+                {ELIG_COPY[eligState].detail}
               </div>
             </div>
           </div>
