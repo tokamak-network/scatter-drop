@@ -17,3 +17,8 @@ export function explorerUrl(
     ? `${base.replace(/\/+$/, "")}/${kind}/${encodeURIComponent(value)}`
     : undefined;
 }
+
+/** 0x05fd…1f86-style shortening for inline tx-hash display next to those links. */
+export function shortHash(value: string): string {
+  return `${value.slice(0, 10)}…${value.slice(-4)}`;
+}

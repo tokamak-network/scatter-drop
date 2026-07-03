@@ -12,7 +12,7 @@ import { Check, CheckCircle2, Gift, Loader2, Minus, XCircle } from "lucide-react
 import { ConnectGate } from "@/components/ConnectGate";
 import { TxButton } from "@/components/TxButton";
 import { useIsClaimed, useVerifiedUntil } from "@/lib/contracts";
-import { useCampaignStats } from "@/lib/campaigns";
+import { fmtUnixDateTime, useCampaignStats } from "@/lib/campaigns";
 import type { Campaign } from "@/lib/stub";
 
 /**
@@ -27,9 +27,7 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
   const { data: stats } = useCampaignStats(campaign);
   const pct = stats?.pct ?? campaign.claimedPct;
   const startDate =
-    campaign.startTimeUnix > 0n
-      ? new Date(Number(campaign.startTimeUnix) * 1000).toISOString().slice(0, 10)
-      : "now";
+    campaign.startTimeUnix > 0n ? fmtUnixDateTime(campaign.startTimeUnix) : "now";
 
   const { data: elig, isPending: eligLoading } = useEligibility(campaign, address);
   // W24: identityRegistry == 0 means an open campaign — no identity check.
@@ -178,6 +176,7 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
               label={claimLabel}
               primary
               disabled={!canClaim}
+              disableWhenConfirmed
             />
             <ul className="mt-3 space-y-1.5 text-[11px]">
               {!gateOff && <ReqRow ok={verified} label="Identity verified" />}
@@ -197,6 +196,35 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
             )}
           </div>
         </ConnectGate>
+      </div>
+
+      {/* How to participate */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-3">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">
+          How to participate
+        </h3>
+        <ol className="space-y-1.5 text-[11px] text-slate-400 list-decimal list-inside leading-relaxed">
+          <li>
+            Connect the wallet that&apos;s on the distribution list — the
+            recipient list was fixed when the campaign was created.
+          </li>
+          {!gateOff && (
+            <li>Verify your identity with zk-X509 (one-time, on-chain).</li>
+          )}
+          <li>
+            Wait for the claim window ({startDate} →{" "}
+            {campaign.deadline === "No deadline" ? "no deadline" : campaign.deadline}
+            ).
+          </li>
+          <li>
+            Press <span className="font-mono text-slate-300">Claim</span> — one
+            transaction sends the tokens straight to your wallet.
+          </li>
+        </ol>
+        <p className="text-[11px] text-slate-500">
+          Not on the list? This campaign can&apos;t be joined after creation —
+          check other campaigns on Explore.
+        </p>
       </div>
     </div>
   );
