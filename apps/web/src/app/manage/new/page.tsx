@@ -263,6 +263,13 @@ export default function NewCampaignPage() {
   const { data: myAnnouncements } = useAnnouncements(account, { enabled: !!account });
   const openAnnouncements = (myAnnouncements ?? []).filter((a) => !a.drop && !a.canceled);
   const [announcementId, setAnnouncementId] = useState("");
+  // Derive validity instead of resetting state: the announcement list is
+  // chain-scoped, so a selection made on another network (or one canceled
+  // elsewhere) simply stops resolving — nothing stale can be linked (the
+  // server's dropVerify would reject it too).
+  const linkedAnnouncementId = openAnnouncements.some((a) => a.id === announcementId)
+    ? announcementId
+    : "";
   const { ensureSession } = useWalletSession(
     "Sign in to scatter.drop to manage your announcements.",
   );
@@ -284,9 +291,9 @@ export default function NewCampaignPage() {
     }
     // Best-effort, like the meta/proofs publishes — a failed link never blocks
     // the created campaign, and the operator can re-link from the board later.
-    if (drop && announcementId) {
+    if (drop && linkedAnnouncementId) {
       void ensureSession(account).then((session) => {
-        if (session) void patchAnnouncement(announcementId, { drop: drop.toLowerCase() });
+        if (session) void patchAnnouncement(linkedAnnouncementId, { drop: drop.toLowerCase() });
       });
     }
   };
@@ -751,7 +758,7 @@ export default function NewCampaignPage() {
                     </label>
                     <select
                       id="link-announcement"
-                      value={announcementId}
+                      value={linkedAnnouncementId}
                       onChange={(e) => {
                         setAnnouncementId(e.target.value);
                         // Sign in now so the post-creation link PATCH can't die

@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { useAccount } from "wagmi";
+import { useAccount, useChainId, useChains, useSwitchChain } from "wagmi";
 import {
   AlertCircle,
   ArrowLeft,
@@ -30,8 +30,14 @@ import { useWalletSession } from "@/lib/useWalletSession";
 export default function AnnouncementPage() {
   const { id } = useParams<{ id: string }>();
   const { data: a, isPending, isError } = useAnnouncement(id);
+  // A shared link can be opened from any network; against the wrong chain the
+  // campaign scan comes back empty and would misreport an ended drop as
+  // UPCOMING. Detect the mismatch and swap the on-chain sections for a
+  // switch-network prompt instead of deriving anything.
+  const chainId = useChainId();
+  const wrongChain = !!a && a.chainId !== chainId;
   // Resolve the linked campaign (when the drop exists) for live status + times.
-  const { data: campaign } = useCampaign(a?.drop ?? "");
+  const { data: campaign } = useCampaign(wrongChain ? "" : (a?.drop ?? ""));
 
   if (isPending) {
     return (
@@ -68,7 +74,14 @@ export default function AnnouncementPage() {
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
             <div className="flex items-center justify-between gap-3">
-              <AnnouncementStatusChip status={status} />
+              {wrongChain ? (
+                // Status can't be derived from another network's chain state.
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded border bg-amber-500/10 text-amber-500 border-amber-500/20">
+                  OTHER NETWORK
+                </span>
+              ) : (
+                <AnnouncementStatusChip status={status} />
+              )}
               {a.tokenSymbol && (
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded border uppercase tracking-wide bg-slate-950 text-slate-400 border-slate-800">
                   {a.tokenSymbol}
@@ -104,8 +117,11 @@ export default function AnnouncementPage() {
             )}
           </div>
 
+          {/* Network mismatch — the on-chain sections would read empty */}
+          {wrongChain && <SwitchNetworkCard targetChainId={a.chainId} hasDrop={!!a.drop} />}
+
           {/* Linked campaign — the announcement fulfilled */}
-          {a.drop && (
+          {!wrongChain && a.drop && (
             <div className="bg-slate-900 border border-emerald-500/20 rounded-xl p-6 space-y-3">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">
                 Campaign is on-chain
@@ -141,6 +157,45 @@ export default function AnnouncementPage() {
           <OperatorActions id={a.id} operator={a.operator} canceled={a.canceled} />
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Shown when the announcement belongs to a different network than the one the
+ * viewer is connected to — live status / the claim CTA can't be derived here.
+ */
+function SwitchNetworkCard({
+  targetChainId,
+  hasDrop,
+}: {
+  targetChainId: number;
+  hasDrop: boolean;
+}) {
+  const chains = useChains();
+  const { switchChain, isPending } = useSwitchChain();
+  const target = chains.find((c) => c.id === targetChainId);
+
+  return (
+    <div className="bg-slate-900 border border-amber-500/30 rounded-xl p-6 space-y-3">
+      <h3 className="text-xs font-bold uppercase tracking-wider text-amber-500 font-mono">
+        Different network
+      </h3>
+      <p className="text-xs text-slate-400 leading-relaxed">
+        This announcement is for {target?.name ?? `chain ${targetChainId}`}. Switch your
+        wallet&apos;s network to see the live status{hasDrop ? " and claim" : ""}.
+      </p>
+      {target && (
+        <button
+          type="button"
+          onClick={() => switchChain({ chainId: targetChainId })}
+          disabled={isPending}
+          className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-amber-950 font-semibold px-4 py-2 rounded-lg text-xs transition disabled:opacity-60"
+        >
+          {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+          Switch to {target.name}
+        </button>
+      )}
     </div>
   );
 }
