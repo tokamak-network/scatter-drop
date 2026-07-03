@@ -196,7 +196,7 @@ export function useProofsMeta(campaign: Campaign | undefined) {
         cache: "no-store",
       });
       if (res.status === 404) return null;
-      if (!res.ok) throw new Error("Failed to load proofs status");
+      if (!res.ok) throw new Error(`Failed to load proofs status (HTTP ${res.status})`);
       return (await res.json()) as ProofsMeta;
     },
   });

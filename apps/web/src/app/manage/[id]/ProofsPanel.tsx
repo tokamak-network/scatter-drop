@@ -39,11 +39,13 @@ export function ProofsPanel({
   const [repinning, setRepinning] = useState(false);
   const [repinError, setRepinError] = useState<string | null>(null);
 
-  // Store status: published? how many recipients? pinned CID?
-  const { data: meta, isPending: metaPending } = useProofsMeta(campaign);
+  // Store status: published? how many recipients? pinned CID? isLoading, not
+  // isPending — a no-root campaign disables the query, which then stays
+  // isPending forever (stuck spinner).
+  const { data: meta, isLoading: metaLoading } = useProofsMeta(campaign);
 
   // The currently anchored CID (latest ProofsPublished event), if any.
-  const { data: anchoredCid, isPending: anchorPending } = useQuery({
+  const { data: anchoredCid, isLoading: anchorLoading } = useQuery({
     queryKey: ["proofsAnchor", chainId, campaign.drop],
     enabled: !!client && !!dep,
     staleTime: 30_000,
@@ -99,7 +101,7 @@ export function ProofsPanel({
         store is unavailable.
       </p>
 
-      {metaPending || anchorPending ? (
+      {metaLoading || anchorLoading ? (
         <div className="flex items-center gap-2 text-xs text-slate-500">
           <Loader2 className="w-4 h-4 animate-spin" /> Checking proofs status…
         </div>
