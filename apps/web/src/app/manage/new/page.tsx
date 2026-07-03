@@ -538,7 +538,7 @@ export default function NewCampaignPage() {
                   <span className="text-[11px] text-slate-500">
                     {identityRequired
                       ? "Claims require a valid zk-X509 verification at claim time."
-                      : "Open claim — anyone in the recipient list can claim (no identity check)."}
+                      : "No identity gate — anyone on the recipient list can claim without identity verification."}
                   </span>
                 </Field>
 
@@ -723,7 +723,7 @@ export default function NewCampaignPage() {
                     <span className="text-xs text-slate-500"> ({tzLabel})</span>
                   </dd>
                   <dt className="muted">Identity gate</dt>
-                  <dd>{identityRequired ? "Required (zk-X509)" : "Open claim"}</dd>
+                  <dd>{identityRequired ? "Required (zk-X509)" : "No identity gate"}</dd>
                   <dt className="muted">Merkle root</dt>
                   <dd className="font-mono text-xs break-all">{merkleRoot}</dd>
                   <dt className="muted">Distribution (pool)</dt>
