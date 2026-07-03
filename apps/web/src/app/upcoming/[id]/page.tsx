@@ -30,14 +30,12 @@ import { useWalletSession } from "@/lib/useWalletSession";
 export default function AnnouncementPage() {
   const { id } = useParams<{ id: string }>();
   const { data: a, isPending, isError } = useAnnouncement(id);
-  // A shared link can be opened from any network; against the wrong chain the
-  // campaign scan comes back empty and would misreport an ended drop as
-  // UPCOMING. Detect the mismatch and swap the on-chain sections for a
-  // switch-network prompt instead of deriving anything.
+  // The linked campaign is read on the ANNOUNCEMENT's chain, not the wallet's
+  // — a shared link opened from any network still shows the true live status.
+  // The wallet chain only decides whether the claim CTA needs a switch prompt.
   const chainId = useChainId();
   const wrongChain = !!a && a.chainId !== chainId;
-  // Resolve the linked campaign (when the drop exists) for live status + times.
-  const { data: campaign } = useCampaign(wrongChain ? "" : (a?.drop ?? ""));
+  const { data: campaign } = useCampaign(a?.drop ?? "", { chainId: a?.chainId });
 
   if (isPending) {
     return (
@@ -74,14 +72,7 @@ export default function AnnouncementPage() {
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
             <div className="flex items-center justify-between gap-3">
-              {wrongChain ? (
-                // Status can't be derived from another network's chain state.
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded border bg-amber-500/10 text-amber-500 border-amber-500/20">
-                  OTHER NETWORK
-                </span>
-              ) : (
-                <AnnouncementStatusChip status={status} />
-              )}
+              <AnnouncementStatusChip status={status} />
               {a.tokenSymbol && (
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded border uppercase tracking-wide bg-slate-950 text-slate-400 border-slate-800">
                   {a.tokenSymbol}
@@ -117,11 +108,10 @@ export default function AnnouncementPage() {
             )}
           </div>
 
-          {/* Network mismatch — the on-chain sections would read empty */}
-          {wrongChain && <SwitchNetworkCard targetChainId={a.chainId} hasDrop={!!a.drop} />}
-
-          {/* Linked campaign — the announcement fulfilled */}
-          {!wrongChain && a.drop && (
+          {/* Linked campaign — the announcement fulfilled. Status/times come
+              from the announcement's chain regardless of the wallet; only the
+              claim CTA needs the wallet on the right network. */}
+          {a.drop && (
             <div className="bg-slate-900 border border-emerald-500/20 rounded-xl p-6 space-y-3">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">
                 Campaign is on-chain
@@ -137,13 +127,22 @@ export default function AnnouncementPage() {
                   Resolving campaign {a.drop.slice(0, 10)}…
                 </p>
               )}
-              <Link
-                href={`/c/${a.drop}`}
-                className="inline-flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-400 text-white font-semibold px-4 py-2 rounded-lg text-xs transition"
-              >
-                View campaign & claim <ArrowUpRight className="w-3.5 h-3.5" />
-              </Link>
+              {wrongChain ? (
+                <SwitchNetworkCard targetChainId={a.chainId} hasDrop />
+              ) : (
+                <Link
+                  href={`/c/${a.drop}`}
+                  className="inline-flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-400 text-white font-semibold px-4 py-2 rounded-lg text-xs transition"
+                >
+                  View campaign & claim <ArrowUpRight className="w-3.5 h-3.5" />
+                </Link>
+              )}
             </div>
+          )}
+          {/* No linked drop yet — a wrong-chain wallet only matters once there
+              is something to claim, but flag it early anyway. */}
+          {!a.drop && wrongChain && (
+            <SwitchNetworkCard targetChainId={a.chainId} hasDrop={false} />
           )}
         </div>
 
@@ -162,8 +161,9 @@ export default function AnnouncementPage() {
 }
 
 /**
- * Shown when the announcement belongs to a different network than the one the
- * viewer is connected to — live status / the claim CTA can't be derived here.
+ * Shown when the viewer's wallet is on a different network than the
+ * announcement. Status and times still render (they're read on the
+ * announcement's chain) — the switch is only needed to claim.
  */
 function SwitchNetworkCard({
   targetChainId,
@@ -182,8 +182,11 @@ function SwitchNetworkCard({
         Different network
       </h3>
       <p className="text-xs text-slate-400 leading-relaxed">
-        This announcement is for {target?.name ?? `chain ${targetChainId}`}. Switch your
-        wallet&apos;s network to see the live status{hasDrop ? " and claim" : ""}.
+        This {hasDrop ? "campaign runs" : "announcement is"} on{" "}
+        {target?.name ?? `chain ${targetChainId}`}
+        {hasDrop
+          ? " — switch your wallet's network to claim."
+          : ". You'll need your wallet on that network when the drop goes live."}
       </p>
       {target && (
         <button

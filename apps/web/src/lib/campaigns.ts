@@ -17,7 +17,7 @@ import {
   NATIVE_ETH,
 } from "@tokamak-network/scatter-drop-sdk";
 import { fetchCampaignMetas, type CampaignMetaEntry } from "./campaignMeta";
-import { useDeployment } from "./contracts";
+import { useDeployment, type ChainOpt } from "./contracts";
 import {
   getForkBlock,
   LOOKBACK,
@@ -226,8 +226,11 @@ export type CampaignStats = {
  * `Claimed` logs and reads the drop's token balance. The recipient *count*
  * (Merkle leaf total) is off-chain, so only claims-so-far are shown.
  */
-export function useCampaignStats(campaign?: Campaign) {
-  const chainId = useChainId();
+export function useCampaignStats(campaign?: Campaign, opts?: ChainOpt) {
+  const walletChainId = useChainId();
+  const chainId = opts?.chainId ?? walletChainId;
+  // Undefined for a chain wagmi has no transport for (unregistered network) —
+  // `enabled` then keeps the query off instead of reading the wrong chain.
   const client = usePublicClient({ chainId });
 
   return useQuery({
@@ -278,10 +281,11 @@ export function useCampaignStats(campaign?: Campaign) {
  * back to the stub list when no deployment is configured so Explore still
  * renders without a running fork. `live` reports which source was used.
  */
-export function useCampaigns() {
-  const chainId = useChainId();
+export function useCampaigns(opts?: ChainOpt) {
+  const walletChainId = useChainId();
+  const chainId = opts?.chainId ?? walletChainId;
   const client = usePublicClient({ chainId });
-  const { data: dep } = useDeployment();
+  const { data: dep } = useDeployment(opts);
 
   return useQuery({
     queryKey: ["campaigns", chainId, dep?.dropFactory],
@@ -322,10 +326,11 @@ export function useManagedCampaigns(address: Address | undefined) {
  * DropCreated log; numeric ids fall back to the stub (for browsing without a
  * fork).
  */
-export function useCampaign(id: string) {
-  const chainId = useChainId();
+export function useCampaign(id: string, opts?: ChainOpt) {
+  const walletChainId = useChainId();
+  const chainId = opts?.chainId ?? walletChainId;
   const client = usePublicClient({ chainId });
-  const { data: dep } = useDeployment();
+  const { data: dep } = useDeployment(opts);
 
   return useQuery({
     queryKey: ["campaign", chainId, id, dep?.dropFactory],

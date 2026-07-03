@@ -55,9 +55,17 @@ export function useIsAdmin(address: Address | undefined): boolean {
   return !!address && !!admin && admin.toLowerCase() === address.toLowerCase();
 }
 
-/** Active deployment for the connected chain, resolved from the network registry. */
-export function useDeployment() {
-  const chainId = useChainId();
+/** Explicit-chain override for read hooks (defaults to the wallet's chain). */
+export type ChainOpt = { chainId?: number };
+
+/**
+ * Active deployment resolved from the network registry — the connected
+ * wallet's chain by default, or an explicit `opts.chainId` for surfaces that
+ * know their target chain (e.g. an announcement viewed from another network).
+ */
+export function useDeployment(opts?: ChainOpt) {
+  const walletChainId = useChainId();
+  const chainId = opts?.chainId ?? walletChainId;
   return useQuery({
     queryKey: ["deployment", chainId],
     queryFn: () => resolveDeployment(chainId),
