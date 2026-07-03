@@ -21,7 +21,7 @@ export function MetaEditor({ campaign }: { campaign: Campaign }) {
   );
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(campaign.name);
-  const [description, setDescription] = useState(campaign.description);
+  const [description, setDescription] = useState(campaign.description ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,6 +56,10 @@ export function MetaEditor({ campaign }: { campaign: Campaign }) {
         queryClient.invalidateQueries({ queryKey: ["managedCampaigns"] }),
       ]);
       setEditing(false);
+    } catch {
+      // e.g. a rejected wallet signature — surface it instead of an
+      // unhandled rejection with a silently-stuck form.
+      setError("Save failed — please retry.");
     } finally {
       setSaving(false);
     }
@@ -67,7 +71,7 @@ export function MetaEditor({ campaign }: { campaign: Campaign }) {
         type="button"
         onClick={() => {
           setName(campaign.name);
-          setDescription(campaign.description);
+          setDescription(campaign.description ?? "");
           setEditing(true);
         }}
         className="inline-flex items-center gap-1.5 text-[11px] font-mono text-slate-400 hover:text-slate-200 transition"
