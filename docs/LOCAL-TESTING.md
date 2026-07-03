@@ -57,6 +57,8 @@ node apps/web/prisma/seed.mjs
 > **어드민 로그인**: 브라우저에서 anvil #0(`0xf39F…2266`)로 지갑 연결 → **Admin → Networks 탭
 > → "Sign in with wallet"**(SIWE 서명, 가스 없음) → 네트워크 목록/추가/토글.
 > `SESSION_SECRET`은 dev 폴백을 쓴다(프로덕션은 `apps/web/.env`에 ≥32자 필수).
+> `SIWE_DOMAIN`도 프로덕션 필수(예: `app.example.com`) — SIWE 서명을 이 도메인에 바인딩한다.
+> 로컬은 미설정 시 Host 헤더로 폴백(dev 편의).
 
 ## 2. (선택) 내 지갑을 게이트 통과시키기
 데모 고객(anvil #1)이 아닌 **내 지갑**으로 claim/create 하려면, 그 주소를 포크에서 검증됨 처리:
