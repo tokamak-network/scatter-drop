@@ -30,11 +30,15 @@ export async function verifyDropOperator(
   operator: string,
   txHash?: unknown,
 ): Promise<string | null> {
-  // The routes' input validation already guarantees a lowercased address;
-  // this guard keeps the lib safe for future callers and stops a malformed
-  // value from reaching the DB/RPC (where a throw would be misreported as a
-  // transient RPC failure).
+  // The routes' input validation already guarantees lowercased addresses;
+  // normalizing + validating here keeps the lib safe for future callers
+  // (a checksummed input must not fail the case-sensitive comparisons or
+  // burn an RPC round-trip) and stops malformed values from reaching the
+  // DB/RPC, where a throw would be misreported as a transient RPC failure.
   if (!isAddress(drop)) return "Invalid drop address format";
+  if (!isAddress(operator)) return "Invalid operator address format";
+  const lowerDrop = drop.toLowerCase() as Address;
+  const lowerOperator = operator.toLowerCase();
   const network = await prisma.network.findUnique({ where: { chainId } });
   if (!network?.rpcUrl || /^0x0{40}$/i.test(network.dropFactory)) {
     return "This network is not registered for on-chain verification";
@@ -54,8 +58,8 @@ export async function verifyDropOperator(
         const created = receipt.status === "success" ? findDropCreated(receipt.logs, factory) : null;
         if (
           created &&
-          created.drop.toLowerCase() === drop &&
-          created.operator.toLowerCase() === operator
+          created.drop.toLowerCase() === lowerDrop &&
+          created.operator.toLowerCase() === lowerOperator
         ) {
           return null;
         }
@@ -71,9 +75,9 @@ export async function verifyDropOperator(
         dropFactory: factory,
         deployBlock: network.deployBlock != null ? BigInt(network.deployBlock) : undefined,
       },
-      { drop: drop as Address },
+      { drop: lowerDrop },
     );
-    const owned = logs.some((l) => l.operator.toLowerCase() === operator);
+    const owned = logs.some((l) => l.operator.toLowerCase() === lowerOperator);
     return owned ? null : "Drop not found on-chain for this operator";
   } catch {
     return "Could not verify the drop on-chain — please retry";

@@ -62,7 +62,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       row.chainId,
       parsed.value.drop,
       row.operator,
-      (body as { txHash?: unknown }).txHash,
+      body && typeof body === "object" ? (body as Record<string, unknown>).txHash : undefined,
     );
     if (dropErr) return NextResponse.json({ error: dropErr }, { status: 422 });
   }
