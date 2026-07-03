@@ -166,14 +166,29 @@ function Kpi({ label, value }: { label: string; value: string }) {
  * indexer — same sources the claim page itself uses.
  */
 function Participants({ campaign }: { campaign: Campaign }) {
-  const { data: meta, isPending: metaPending } = useProofsMeta(campaign);
-  const { data: stats, isPending: statsPending } = useCampaignStats(campaign);
+  // isLoading (pending AND fetching), not isPending: for campaigns without a
+  // merkleRoot/totalRaw these queries are disabled, and a disabled query
+  // stays isPending forever — the spinner would never resolve.
+  const { data: meta, isLoading: metaLoading, isError: metaError } = useProofsMeta(campaign);
+  const {
+    data: stats,
+    isLoading: statsLoading,
+    isError: statsError,
+  } = useCampaignStats(campaign);
 
-  if (metaPending || statsPending) {
+  if (metaLoading || statsLoading) {
     return (
       <div className="flex items-center justify-center p-12 text-slate-500">
         <Loader2 className="w-6 h-6 animate-spin" />
       </div>
+    );
+  }
+  // A fetch failure must not masquerade as "0 claims" / "list not published".
+  if (metaError || statsError) {
+    return (
+      <p className="text-sm text-amber-600">
+        Could not load participant stats — check the fork/RPC and retry.
+      </p>
     );
   }
 
