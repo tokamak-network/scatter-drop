@@ -21,10 +21,13 @@ export default function DistributionReportPage({
 }) {
   const { id } = use(params);
   const { data: campaign, isPending } = useCampaign(id);
-  const { data: recipients, isPending: recipientsPending } = useRecipients(campaign);
+  // isLoading, not isPending: both queries are disabled until the campaign
+  // resolves, and a disabled query stays isPending forever — the not-found
+  // branch below would be unreachable.
+  const { data: recipients, isLoading: recipientsLoading } = useRecipients(campaign);
   const { data: claims, isLoading: claimsLoading } = useClaimEvents(campaign);
 
-  if (isPending || recipientsPending || claimsLoading) {
+  if (isPending || recipientsLoading || claimsLoading) {
     return (
       <div className="flex items-center justify-center p-12 text-slate-500">
         <Loader2 className="w-6 h-6 animate-spin" />
@@ -55,16 +58,17 @@ export default function DistributionReportPage({
         return {
           recipient: r.address,
           amount: fmt(r.amount),
-          // timestamp 0 = claim exists but block time wasn't resolved
-          // (too many blocks) — the tx column still records the claim.
-          claimedAt: claim ? (claim.timestamp ? fmtUnixDateTime(claim.timestamp) : "claimed") : "—",
+          // timestamp 0 = claim exists but block time wasn't resolved (too
+          // many blocks) — the column stays date-or-dash and the tx column
+          // still records the claim.
+          claimedAt: claim?.timestamp ? fmtUnixDateTime(claim.timestamp) : "—",
           tx: claim?.txHash ?? "—",
         };
       })
     : (claims ?? []).map((c) => ({
         recipient: c.account,
         amount: fmt(c.amount),
-        claimedAt: c.timestamp ? fmtUnixDateTime(c.timestamp) : "claimed",
+        claimedAt: c.timestamp ? fmtUnixDateTime(c.timestamp) : "—",
         tx: c.txHash,
       }));
 

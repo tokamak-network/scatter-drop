@@ -332,8 +332,11 @@ export function useClaimEvents(campaign?: Campaign, opts?: ChainOpt) {
       }
       return logs.map((l) => {
         const args = l.args as { account?: Address; amount?: bigint };
+        // Fail fast on a malformed log — a fabricated "0x" account would
+        // silently corrupt downstream joins while type-checking as Address.
+        if (!args.account) throw new Error("Malformed Claimed log (no account)");
         return {
-          account: (args.account ?? "0x").toLowerCase() as Address,
+          account: args.account.toLowerCase() as Address,
           amount: args.amount ?? 0n,
           txHash: l.transactionHash,
           timestamp: times.get(l.blockNumber) ?? 0,
