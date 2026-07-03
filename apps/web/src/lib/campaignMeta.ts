@@ -3,7 +3,9 @@
 /**
  * Client seam for /api/campaign-meta — the operator-entered name/description
  * that DropCreated doesn't carry on-chain. Published by the wizard right after
- * createDrop confirms; merged into the campaign list at read time.
+ * createDrop confirms; merged into the campaign list at read time. Writes are
+ * operator-authenticated (SIWE session + on-chain operator check); `txHash`
+ * (the creation tx) lets the server verify via one receipt read.
  */
 
 export type CampaignMetaEntry = { name: string; description: string | null };
@@ -14,6 +16,7 @@ export async function publishCampaignMeta(meta: {
   drop: string;
   name: string;
   description?: string;
+  txHash?: string;
 }): Promise<void> {
   try {
     await fetch("/api/campaign-meta", {
