@@ -92,7 +92,7 @@ export async function scanDropCreated(
   filter?: { drop?: Address; operator?: Address },
 ): Promise<DropCreatedArgs[]> {
   const { fromBlock, toBlock } = await scanWindow(client, source);
-  const logs = await client.getLogs({
+  const logs = await getLogsChunked(client, {
     address: source.dropFactory,
     event: DROP_CREATED,
     ...(filter ? { args: filter } : {}),
@@ -104,7 +104,9 @@ export async function scanDropCreated(
 
 /**
  * The latest ProofsPublished CID for `drop` (the current proofs.json anchor),
- * or null when the operator never published one. Same fork-floor rules.
+ * or null when the operator never published one. Same fork-floor rules; when
+ * the single-range read hits a provider range cap, falls back to scanning
+ * newest-first chunks and early-exits on the first (most recent) hit.
  */
 export async function scanLatestProofsCid(
   client: PublicClient,
@@ -112,15 +114,62 @@ export async function scanLatestProofsCid(
   drop: Address,
 ): Promise<string | null> {
   const { fromBlock, toBlock } = await scanWindow(client, source);
-  const logs = await client.getLogs({
+  const params = {
     address: source.dropFactory,
     event: PROOFS_PUBLISHED,
     args: { drop },
-    fromBlock,
-    toBlock,
-  });
+  } as const;
+  try {
+    const logs = await client.getLogs({ ...params, fromBlock, toBlock });
+    return latestCid(logs);
+  } catch {
+    // Range-capped provider: walk back from the head one chunk at a time —
+    // we only want the LATEST event, so the first non-empty chunk wins.
+    for (let hi = toBlock; hi >= fromBlock; hi -= CHUNK) {
+      const lo = hi - CHUNK + 1n > fromBlock ? hi - CHUNK + 1n : fromBlock;
+      const logs = await client.getLogs({ ...params, fromBlock: lo, toBlock: hi });
+      const cid = latestCid(logs);
+      if (cid !== null) return cid;
+      if (lo === fromBlock) break;
+    }
+    return null;
+  }
+}
+
+function latestCid(logs: { args: unknown }[]): string | null {
   const last = logs.at(-1);
   return last ? ((last.args as { cid?: string }).cid ?? null) : null;
+}
+
+// Chunk size for range-capped fallbacks — well under common provider caps
+// (10k–100k blocks) while keeping the number of round-trips sane.
+const CHUNK = 9_000n;
+
+/**
+ * getLogs with a chunked fallback: try the whole window in one call (fast
+ * path — anvil and paid RPCs take any range), and only on failure re-scan in
+ * CHUNK-sized slices, oldest-first, concatenating results. Throws only when a
+ * chunked slice itself fails (a real provider error, not a range cap).
+ */
+async function getLogsChunked(
+  client: PublicClient,
+  params: { fromBlock: bigint; toBlock: bigint } & Record<string, unknown>,
+): Promise<{ args: unknown }[]> {
+  try {
+    return (await client.getLogs(params as never)) as unknown as { args: unknown }[];
+  } catch {
+    const out: { args: unknown }[] = [];
+    for (let lo = params.fromBlock; lo <= params.toBlock; lo += CHUNK) {
+      const hi = lo + CHUNK - 1n < params.toBlock ? lo + CHUNK - 1n : params.toBlock;
+      const slice = (await client.getLogs({
+        ...params,
+        fromBlock: lo,
+        toBlock: hi,
+      } as never)) as unknown as { args: unknown }[];
+      out.push(...slice);
+    }
+    return out;
+  }
 }
 
 /**
