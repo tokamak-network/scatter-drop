@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireWallet } from "@/lib/server/session";
 import { isChainId, LOWER_ADDR_RE } from "@/lib/server/apiInput";
+import { MAX_OPEN_PER_OPERATOR } from "@/lib/announcementLimits";
 import { announcementDto, parseAnnouncement } from "@/lib/server/announcementInput";
 
 export const runtime = "nodejs";
@@ -52,6 +53,20 @@ export async function POST(req: NextRequest) {
   if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
   if ((await prisma.announcement.count()) >= MAX_ANNOUNCEMENTS) {
     return NextResponse.json({ error: "Announcement store is full" }, { status: 507 });
+  }
+  // Per-wallet cap on open announcements, so one operator can't occupy the
+  // board. Canceled entries free their slot; linked (live/ended) ones keep
+  // theirs — history stays attributable and bounded per wallet.
+  const open = await prisma.announcement.count({
+    where: { operator, canceled: false },
+  });
+  if (open >= MAX_OPEN_PER_OPERATOR) {
+    return NextResponse.json(
+      {
+        error: `You already have ${MAX_OPEN_PER_OPERATOR} open announcements — cancel one to post another`,
+      },
+      { status: 429 },
+    );
   }
   const row = await prisma.announcement.create({
     data: { ...parsed.value, operator },
