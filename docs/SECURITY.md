@@ -290,7 +290,8 @@ its `approveAndCall` ERC165-checks the spender before invoking `onApprove`:
 - `supportsInterface` answers `0x4273ca16` (`onApprove`) + ERC165; without it the
   real TON reverts before `onApprove` and the one-tx path is unreachable.
 - `setApproveAndCallSupport(token, bool)` is an owner-curated capability flag the
-  frontend reads (`AacSupportSet` event) — advisory only, no funding-path effect.
+  frontend reads (`ApproveAndCallSupportSet` event) — advisory only, no
+  funding-path effect.
 
 **Reentrancy (#73).** `createDrop` and `onApprove` are `nonReentrant`
 (factory-level guard, complementing the drop-level guards on `claim`/`sweep`);
