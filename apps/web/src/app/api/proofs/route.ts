@@ -90,6 +90,17 @@ export async function GET(req: NextRequest) {
   if (!root || !ROOT_RE.test(root)) {
     return NextResponse.json({ error: "root query required" }, { status: 400 });
   }
+  // ?meta=1 → status only (count + cid), skipping the multi-MB claims body —
+  // for surfaces like the operator console that only need "is it published?".
+  const metaOnly = req.nextUrl.searchParams.get("meta") === "1";
+  if (metaOnly) {
+    const meta = await prisma.campaignProofs.findUnique({
+      where: { root },
+      select: { count: true, cid: true },
+    });
+    if (!meta) return NextResponse.json({ error: "not found" }, { status: 404 });
+    return NextResponse.json(meta);
+  }
   const row = await prisma.campaignProofs.findUnique({ where: { root } });
   if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
   // The stored claims are JSON text we wrote ourselves — embed the string

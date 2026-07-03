@@ -15,10 +15,11 @@ import {
 } from "lucide-react";
 import { TxButton } from "@/components/TxButton";
 import { useCampaign } from "@/lib/campaigns";
+import { ProofsPanel } from "./ProofsPanel";
 import { getParticipantStats } from "@/lib/stub";
 import { useMounted } from "@/lib/useMounted";
 
-const TABS = ["Overview", "Participants", "Sweep"] as const;
+const TABS = ["Overview", "Participants", "Proofs", "Sweep"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function ManageCampaignPage({
@@ -109,6 +110,10 @@ export default function ManageCampaignPage({
       )}
 
       {tab === "Participants" && <Participants id={id} />}
+
+      {tab === "Proofs" && (
+        <ProofsPanel campaign={campaign} isOperator={isOperator} />
+      )}
 
       {tab === "Sweep" && (
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4 max-w-xl">

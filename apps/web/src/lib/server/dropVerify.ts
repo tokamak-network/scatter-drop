@@ -29,6 +29,12 @@ export async function verifyDropOperator(
   drop: string,
   operator: string,
   txHash?: unknown,
+  /**
+   * When set, the drop's DropCreated must also carry this merkleRoot
+   * (lowercased 0x…). Binds a root-keyed record (e.g. a proofs re-pin) to
+   * the drop — without it, an operator of ANY campaign could act on any root.
+   */
+  expectedRoot?: string,
 ): Promise<string | null> {
   // The routes' input validation already guarantees lowercased addresses;
   // normalizing + validating here keeps the lib safe for future callers
@@ -59,7 +65,8 @@ export async function verifyDropOperator(
         if (
           created &&
           created.drop.toLowerCase() === lowerDrop &&
-          created.operator.toLowerCase() === lowerOperator
+          created.operator.toLowerCase() === lowerOperator &&
+          (!expectedRoot || created.merkleRoot.toLowerCase() === expectedRoot)
         ) {
           return null;
         }
@@ -77,8 +84,16 @@ export async function verifyDropOperator(
       },
       { drop: lowerDrop },
     );
-    const owned = logs.some((l) => l.operator.toLowerCase() === lowerOperator);
-    return owned ? null : "Drop not found on-chain for this operator";
+    const owned = logs.some(
+      (l) =>
+        l.operator.toLowerCase() === lowerOperator &&
+        (!expectedRoot || l.merkleRoot.toLowerCase() === expectedRoot),
+    );
+    return owned
+      ? null
+      : expectedRoot
+        ? "Drop not found on-chain for this operator and root"
+        : "Drop not found on-chain for this operator";
   } catch {
     return "Could not verify the drop on-chain — please retry";
   }
