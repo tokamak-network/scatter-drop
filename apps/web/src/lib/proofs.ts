@@ -224,12 +224,15 @@ function toRecipientRows(
  * (anyone must be able to look up their proof to claim).
  */
 export function useRecipients(campaign: Campaign | undefined, opts?: ChainOpt) {
-  const { data, isPending, isError } = useClaims(campaign, opts);
+  const { data, isPending, isLoading, isError } = useClaims(campaign, opts);
   const rows = useMemo(
     () => (data === undefined ? undefined : toRecipientRows(data)),
     [data],
   );
-  return { data: rows, isPending, isError };
+  // isLoading (false while disabled) alongside isPending: callers rendering
+  // before the campaign resolves must not gate a spinner on isPending, which
+  // stays true forever for a disabled query.
+  return { data: rows, isPending, isLoading, isError };
 }
 
 /**

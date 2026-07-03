@@ -18,12 +18,7 @@ import {
 } from "@tokamak-network/scatter-drop-sdk";
 import { fetchCampaignMetas, type CampaignMetaEntry } from "./campaignMeta";
 import { useDeployment, type ChainOpt } from "./contracts";
-import {
-  getForkBlock,
-  LOOKBACK,
-  scanDropCreated,
-  type DropCreatedArgs,
-} from "./dropScan";
+import { scanDropCreated, scanWindow, type DropCreatedArgs } from "./dropScan";
 import {
   getCampaign as getStubCampaign,
   listCampaigns as listStubCampaigns,
@@ -232,19 +227,22 @@ export function useCampaignStats(campaign?: Campaign, opts?: ChainOpt) {
   // Undefined for a chain wagmi has no transport for (unregistered network) —
   // `enabled` then keeps the query off instead of reading the wrong chain.
   const client = usePublicClient({ chainId });
+  // deployBlock floors the scan at the factory's deployment — without it the
+  // default LOOKBACK window (20k blocks) silently drops older history on
+  // long-lived networks.
+  const { data: dep } = useDeployment(opts);
 
   return useQuery({
     queryKey: ["campaignStats", chainId, campaign?.drop],
-    enabled: !!client && !!campaign?.drop && campaign.totalRaw !== undefined,
+    enabled: !!client && !!campaign?.drop && campaign.totalRaw !== undefined && dep !== undefined,
     staleTime: 15_000,
     queryFn: async (): Promise<CampaignStats | null> => {
       if (!client || !campaign?.totalRaw) return null;
       const decimals = campaign.decimals ?? 18;
       const total = campaign.totalRaw;
-      const latest = await client.getBlockNumber();
-      const forkBlock = await getForkBlock(client);
-      let fromBlock = forkBlock ?? (latest > LOOKBACK ? latest - LOOKBACK : 0n);
-      if (fromBlock > latest) fromBlock = latest;
+      const { fromBlock, toBlock } = await scanWindow(client, {
+        deployBlock: dep?.deployBlock,
+      });
 
       const [balance, logs] = await Promise.all([
         client.readContract({
@@ -257,7 +255,7 @@ export function useCampaignStats(campaign?: Campaign, opts?: ChainOpt) {
           address: campaign.drop,
           event: CLAIMED_EVENT,
           fromBlock,
-          toBlock: latest,
+          toBlock,
         }),
       ]);
 
@@ -272,6 +270,78 @@ export function useCampaignStats(campaign?: Campaign, opts?: ChainOpt) {
         remaining: `${formatAmount(balance, decimals)} ${campaign.tokenSymbol}`,
         pct,
       };
+    },
+  });
+}
+
+// Timestamp-resolution bounds for useClaimEvents: fetch block times only for
+// campaigns whose claims span a manageable number of blocks, in small batches.
+const MAX_TIMESTAMP_BLOCKS = 500;
+const TIMESTAMP_BATCH = 20;
+
+export type ClaimEvent = {
+  account: Address;
+  amount: bigint;
+  txHash: `0x${string}`;
+  /** Unix seconds of the claim's block; 0 = not resolved (too many blocks). */
+  timestamp: number;
+};
+
+/**
+ * Every Claimed event for a campaign with block timestamps — feeds the
+ * operator's distribution report (one row per claim: who, how much, when,
+ * which tx). Timestamps come from one getBlock per unique block.
+ */
+export function useClaimEvents(campaign?: Campaign, opts?: ChainOpt) {
+  const walletChainId = useChainId();
+  const chainId = opts?.chainId ?? walletChainId;
+  const client = usePublicClient({ chainId });
+  // deployBlock floors the scan (see useCampaignStats) — campaigns older than
+  // the LOOKBACK window would otherwise silently lose their claim history.
+  const { data: dep } = useDeployment(opts);
+
+  return useQuery({
+    queryKey: ["claimEvents", chainId, campaign?.drop],
+    enabled: !!client && !!campaign?.drop && dep !== undefined,
+    staleTime: 15_000,
+    queryFn: async (): Promise<ClaimEvent[]> => {
+      if (!client || !campaign) return [];
+      const { fromBlock, toBlock } = await scanWindow(client, {
+        deployBlock: dep?.deployBlock,
+      });
+      const logs = await client.getLogs({
+        address: campaign.drop,
+        event: CLAIMED_EVENT,
+        fromBlock,
+        toBlock,
+      });
+      // One getBlock per unique block, capped: claims usually batch into few
+      // blocks, but a worst-case 1-claim-per-block campaign would otherwise
+      // fan out thousands of RPC calls. Past the cap, timestamps are omitted
+      // (0 → rendered as "—") rather than hammering the provider.
+      const uniqueBlocks = [...new Set(logs.map((l) => l.blockNumber))];
+      const times = new Map<bigint, number>();
+      if (uniqueBlocks.length <= MAX_TIMESTAMP_BLOCKS) {
+        for (let i = 0; i < uniqueBlocks.length; i += TIMESTAMP_BATCH) {
+          const batch = uniqueBlocks.slice(i, i + TIMESTAMP_BATCH);
+          const blocks = await Promise.all(
+            batch.map((bn) => client.getBlock({ blockNumber: bn })),
+          );
+          blocks.forEach((b, j) => times.set(batch[j]!, Number(b.timestamp)));
+        }
+      }
+      return logs.map((l) => {
+        const args = l.args as { account?: Address; amount?: bigint };
+        // Fail fast on a malformed log — a fabricated "0x" account would
+        // silently corrupt downstream joins while type-checking as Address.
+        if (!args.account) throw new Error("Malformed Claimed log (no account)");
+        return {
+          account: args.account.toLowerCase() as Address,
+          amount: args.amount ?? 0n,
+          txHash: l.transactionHash,
+          timestamp: times.get(l.blockNumber) ?? 0,
+        };
+      });
     },
   });
 }
@@ -371,16 +441,17 @@ export function useAllowedTokens() {
     staleTime: 15_000,
     queryFn: async (): Promise<AllowedToken[]> => {
       if (!client || !dep?.dropFactory) return [];
-      const latest = await client.getBlockNumber();
-      const forkBlock = await getForkBlock(client);
-      let fromBlock = forkBlock ?? (latest > LOOKBACK ? latest - LOOKBACK : 0n);
-      if (fromBlock > latest) fromBlock = latest;
+      // deployBlock floors the scan — allow-list entries set before the
+      // LOOKBACK window would otherwise vanish from the list.
+      const { fromBlock, toBlock } = await scanWindow(client, {
+        deployBlock: dep.deployBlock,
+      });
 
       const logs = await client.getLogs({
         address: dep.dropFactory,
         event: ALLOWED_TOKEN_SET,
         fromBlock,
-        toBlock: latest,
+        toBlock,
       });
       // Logs are block-ordered, so the last entry per token is its current state.
       const state = new Map<string, boolean>();
