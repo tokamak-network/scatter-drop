@@ -30,6 +30,31 @@ export async function publishCampaignMeta(meta: {
 }
 
 /**
+ * Edit/backfill a campaign's name+description (operator-authenticated PATCH
+ * upsert). Returns the server's error message on failure, null on success —
+ * the edit UI surfaces it instead of best-effort swallowing.
+ */
+export async function editCampaignMeta(meta: {
+  chainId: number;
+  drop: string;
+  name: string;
+  description?: string;
+}): Promise<string | null> {
+  try {
+    const res = await fetch("/api/campaign-meta", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(meta),
+    });
+    if (res.ok) return null;
+    const data = (await res.json().catch(() => null)) as { error?: string } | null;
+    return data?.error ?? `Save failed (HTTP ${res.status})`;
+  } catch {
+    return "Save failed — network error";
+  }
+}
+
+/**
  * A chain's campaign metadata, keyed by lowercased drop address. Pass `drop`
  * to fetch just one campaign's entry (single-campaign pages don't need the
  * whole list).

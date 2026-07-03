@@ -15,6 +15,7 @@ import {
 import { TxButton } from "@/components/TxButton";
 import { useCampaign, useCampaignStats } from "@/lib/campaigns";
 import { useProofsMeta } from "@/lib/proofs";
+import { MetaEditor } from "./MetaEditor";
 import { ProofsPanel } from "./ProofsPanel";
 import type { Campaign } from "@/lib/stub";
 import { useMounted } from "@/lib/useMounted";
@@ -97,15 +98,9 @@ export default function ManageCampaignPage({
       </div>
 
       {tab === "Overview" && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Kpi label="Claim rate" value={`${campaign.claimedPct}%`} />
-          <Kpi label="Total pool" value={campaign.totalAmount} />
-          <Kpi
-            label="Window"
-            value={ended ? `Ended ${campaign.deadline}` : `Ends ${campaign.deadline}`}
-          />
-          <Kpi label="Type" value={campaign.identityRegistryLabel} />
-          <Kpi label="Status" value={campaign.status} />
+        <div className="space-y-4">
+          <Overview campaign={campaign} ended={ended} />
+          {isOperator && <MetaEditor campaign={campaign} />}
         </div>
       )}
 
@@ -147,6 +142,27 @@ export default function ManageCampaignPage({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Overview KPIs. Claim rate comes from live Claimed logs (stats.pct is the
+ * amount-distributed percentage) — campaign.claimedPct is a static 0 and
+ * would contradict the live Participants tab on the same page.
+ */
+function Overview({ campaign, ended }: { campaign: Campaign; ended: boolean }) {
+  const { data: stats } = useCampaignStats(campaign);
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <Kpi label="Claim rate" value={`${stats?.pct ?? campaign.claimedPct}%`} />
+      <Kpi label="Total pool" value={campaign.totalAmount} />
+      <Kpi
+        label="Window"
+        value={ended ? `Ended ${campaign.deadline}` : `Ends ${campaign.deadline}`}
+      />
+      <Kpi label="Type" value={campaign.identityRegistryLabel} />
+      <Kpi label="Status" value={campaign.status} />
     </div>
   );
 }
