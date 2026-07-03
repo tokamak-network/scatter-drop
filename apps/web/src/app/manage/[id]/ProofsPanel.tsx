@@ -31,7 +31,7 @@ export function ProofsPanel({
   const root = campaign.merkleRoot?.toLowerCase() as Hex | undefined;
   const chainId = useChainId();
   const client = usePublicClient({ chainId });
-  const { data: dep } = useDeployment();
+  const { data: dep, isLoading: depLoading } = useDeployment();
   const queryClient = useQueryClient();
   const { ensureSession } = useWalletSession(
     "Sign in to scatter.drop to manage your campaign's proofs.",
@@ -42,10 +42,14 @@ export function ProofsPanel({
   // Store status: published? how many recipients? pinned CID? isLoading, not
   // isPending — a no-root campaign disables the query, which then stays
   // isPending forever (stuck spinner).
-  const { data: meta, isLoading: metaLoading } = useProofsMeta(campaign);
+  const { data: meta, isLoading: metaLoading, isError: metaError } = useProofsMeta(campaign);
 
   // The currently anchored CID (latest ProofsPublished event), if any.
-  const { data: anchoredCid, isLoading: anchorLoading } = useQuery({
+  const {
+    data: anchoredCid,
+    isLoading: anchorLoading,
+    isError: anchorError,
+  } = useQuery({
     queryKey: ["proofsAnchor", chainId, campaign.drop],
     enabled: !!client && !!dep,
     staleTime: 30_000,
@@ -101,10 +105,18 @@ export function ProofsPanel({
         store is unavailable.
       </p>
 
-      {metaLoading || anchorLoading ? (
+      {/* depLoading: the anchor query is disabled until the deployment
+          resolves, and a disabled query isn't "loading" — without this the
+          panel would flash "not anchored" before the scan ever ran. */}
+      {metaLoading || anchorLoading || depLoading ? (
         <div className="flex items-center gap-2 text-xs text-slate-500">
           <Loader2 className="w-4 h-4 animate-spin" /> Checking proofs status…
         </div>
+      ) : metaError || anchorError ? (
+        // A fetch failure must not masquerade as "no recipient list stored".
+        <p className="text-xs text-amber-600">
+          Could not load proofs status — check the fork/RPC and retry.
+        </p>
       ) : !meta ? (
         <p className="text-xs text-amber-600">
           No recipient list is stored for this campaign — republish it from the
