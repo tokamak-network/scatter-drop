@@ -11,6 +11,7 @@ import {
   ArrowUpRight,
   Ban,
   CalendarClock,
+  CalendarPlus,
   ExternalLink,
   Loader2,
   RotateCcw,
@@ -23,8 +24,11 @@ import {
   fmtExpectedWindow,
   patchAnnouncement,
   useAnnouncement,
+  type Announcement,
 } from "@/lib/announcements";
+import { buildIcs } from "@/lib/calendar";
 import { fmtUnixDateTime, useCampaign } from "@/lib/campaigns";
+import { downloadFile } from "@/lib/download";
 import { useWalletSession } from "@/lib/useWalletSession";
 
 export default function AnnouncementPage() {
@@ -87,6 +91,7 @@ export default function AnnouncementPage() {
               <span className="flex items-center gap-1.5">
                 <User className="w-3.5 h-3.5" /> {a.operator}
               </span>
+              <AddToCalendar a={a} />
             </div>
             <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-line border-t border-slate-800/80 pt-4">
               {a.body}
@@ -157,6 +162,38 @@ export default function AnnouncementPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * "Add to calendar" (.ics download) for the announced claim window — the
+ * self-contained slice of "remind me" (push/email reminders need external
+ * notification infra and stay out of scope).
+ */
+function AddToCalendar({ a }: { a: Announcement }) {
+  const start = new Date(a.expectedStart);
+  if (Number.isNaN(start.getTime())) return null;
+  const end = a.expectedEnd ? new Date(a.expectedEnd) : undefined;
+  const exportIcs = () => {
+    const ics = buildIcs({
+      uid: a.id,
+      title: `${a.title} — claim window opens`,
+      description: `${a.body}\n\n${window.location.href}`,
+      start,
+      end: end && !Number.isNaN(end.getTime()) ? end : undefined,
+      url: window.location.href,
+    });
+    downloadFile(`drop-${a.id}.ics`, ics, "text/calendar;charset=utf-8");
+  };
+  return (
+    <button
+      type="button"
+      onClick={exportIcs}
+      className="flex items-center gap-1.5 text-emerald-600 hover:text-emerald-500 transition"
+      title="Download an .ics event for the expected claim window"
+    >
+      <CalendarPlus className="w-3.5 h-3.5" /> Add to calendar
+    </button>
   );
 }
 

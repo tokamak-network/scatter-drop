@@ -6,7 +6,7 @@ import { formatUnits } from "viem";
 import { Download, ListChecks, Loader2, Search } from "lucide-react";
 import type { Campaign } from "@/lib/stub";
 import { useRecipients, type RecipientRow } from "@/lib/proofs";
-import { downloadCsv } from "@/lib/downloadCsv";
+import { downloadCsv } from "@/lib/download";
 
 /**
  * The campaign's public distribution list (campaign detail, left column) — a

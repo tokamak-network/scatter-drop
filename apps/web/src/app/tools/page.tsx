@@ -10,7 +10,7 @@ import { StakingImport } from "@/components/StakingImport";
 import { useErc20Decimals, useErc20Symbol } from "@/lib/contracts";
 import { useAllowedTokens } from "@/lib/campaigns";
 import { isPositiveDecimal } from "@/lib/validation";
-import { downloadCsv } from "@/lib/downloadCsv";
+import { downloadCsv } from "@/lib/download";
 import { DRAFT_CSV_KEY } from "@/lib/draftCsv";
 
 type Row = Recipient;

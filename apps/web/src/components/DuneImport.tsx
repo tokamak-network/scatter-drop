@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Check, Copy, Download, Loader2, Play } from "lucide-react";
 import { toCsv } from "@/lib/reports";
-import { downloadCsv } from "@/lib/downloadCsv";
+import { downloadCsv } from "@/lib/download";
 
 /**
  * Dune import — the operator runs a holder-balances query on their own Dune
