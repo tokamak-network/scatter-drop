@@ -123,8 +123,12 @@ export async function scanLatestProofsCid(
   return last ? ((last.args as { cid?: string }).cid ?? null) : null;
 }
 
-/** Fork-floored [fromBlock, toBlock] window shared by the factory-log scans. */
-async function scanWindow(
+/**
+ * Fork-floored [fromBlock, toBlock] window for log scans. Address-agnostic —
+ * shared by the factory-log scans here and the drop-scoped read hooks in
+ * lib/campaigns (pass {} for the default LOOKBACK window).
+ */
+export async function scanWindow(
   client: PublicClient,
   source: { deployBlock?: bigint },
 ): Promise<{ fromBlock: bigint; toBlock: bigint }> {

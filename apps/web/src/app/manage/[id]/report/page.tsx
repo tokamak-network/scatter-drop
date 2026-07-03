@@ -1,26 +1,77 @@
-import { notFound } from "next/navigation";
-import Link from "next/link";
-import { getCampaign } from "@/lib/stub";
-import { distributionCsv, getDistributionReport } from "@/lib/reports";
-import { ReportActions } from "@/components/ReportActions";
+"use client";
 
-// SECURITY (M3): this distribution report is stub data today, so it's harmless.
-// When wired to real claim-event data it exposes the recipient list. This is a
-// Server Component, so server-fetched data ships in the RSC payload regardless
-// of any client-side gate — a ConnectGate is NOT sufficient. Gate it
-// server-side: fetch behind an authenticated API route / Server Action that
-// verifies a SIWE session (or signed challenge) for the campaign operator
-// (createDrop sender) before returning the recipient data.
-export default async function DistributionReportPage({
+import { use } from "react";
+import Link from "next/link";
+import { formatUnits } from "viem";
+import { Loader2 } from "lucide-react";
+import { ReportActions } from "@/components/ReportActions";
+import { fmtUnixDateTime, useCampaign, useClaimEvents } from "@/lib/campaigns";
+import { toCsv } from "@/lib/reports";
+import { useRecipients } from "@/lib/proofs";
+
+// The recipient list is public by design (the campaign page's Recipients
+// directory — anyone must be able to look up their proof to claim), and
+// Claimed events are public on-chain, so this report needs no auth gate; it's
+// a formatted join of two already-public sources. Personal data is limited to
+// address/amount/time/tx — no identity fields.
+export default function DistributionReportPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = await params;
-  const campaign = await getCampaign(id);
-  if (!campaign) notFound();
-  const rows = await getDistributionReport(id);
-  const csv = distributionCsv(rows);
+  const { id } = use(params);
+  const { data: campaign, isPending } = useCampaign(id);
+  const { data: recipients, isPending: recipientsPending } = useRecipients(campaign);
+  const { data: claims, isLoading: claimsLoading } = useClaimEvents(campaign);
+
+  if (isPending || recipientsPending || claimsLoading) {
+    return (
+      <div className="flex items-center justify-center p-12 text-slate-500">
+        <Loader2 className="w-6 h-6 animate-spin" />
+      </div>
+    );
+  }
+  if (!campaign) {
+    return (
+      <div className="print-doc">
+        <p className="muted">Campaign not found on the connected network.</p>
+        <Link href="/manage" className="muted">
+          ← Back to console
+        </Link>
+      </div>
+    );
+  }
+
+  const decimals = campaign.decimals ?? 18;
+  const fmt = (raw: bigint) =>
+    `${formatUnits(raw, decimals)} ${campaign.tokenSymbol}`;
+  const claimByAccount = new Map((claims ?? []).map((c) => [c.account, c]));
+
+  // One row per recipient (claimed or not); campaigns without a published
+  // list (recipients === null) still render from the events alone.
+  const rows = recipients
+    ? recipients.map((r) => {
+        const claim = claimByAccount.get(r.address);
+        return {
+          recipient: r.address,
+          amount: fmt(r.amount),
+          // timestamp 0 = claim exists but block time wasn't resolved
+          // (too many blocks) — the tx column still records the claim.
+          claimedAt: claim ? (claim.timestamp ? fmtUnixDateTime(claim.timestamp) : "claimed") : "—",
+          tx: claim?.txHash ?? "—",
+        };
+      })
+    : (claims ?? []).map((c) => ({
+        recipient: c.account,
+        amount: fmt(c.amount),
+        claimedAt: c.timestamp ? fmtUnixDateTime(c.timestamp) : "claimed",
+        tx: c.txHash,
+      }));
+
+  const csv = toCsv(
+    ["recipient", "amount", "claimed_at", "tx"],
+    rows.map((r) => [r.recipient, r.amount, r.claimedAt, r.tx]),
+  );
 
   return (
     <div className="print-doc">
@@ -37,6 +88,12 @@ export default async function DistributionReportPage({
 
       <ReportActions csv={csv} filename={`distribution-${id}.csv`} />
 
+      {recipients === null && (
+        <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>
+          The recipient list isn&apos;t published — showing on-chain claims only.
+        </p>
+      )}
+
       <table className="report" style={{ marginTop: 16 }}>
         <thead>
           <tr>
@@ -48,7 +105,7 @@ export default async function DistributionReportPage({
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.tx}>
+            <tr key={r.recipient}>
               <td style={{ fontFamily: "var(--font-mono)", fontSize: 12, wordBreak: "break-all" }}>
                 {r.recipient}
               </td>
@@ -63,8 +120,8 @@ export default async function DistributionReportPage({
       </table>
 
       <p className="muted" style={{ fontSize: 12, marginTop: 16 }}>
-        Personal data is limited to the customer CA&apos;s selective disclosure.
-        Stub data — live claim-event aggregation lands in M5.
+        Personal data is limited to the customer CA&apos;s selective disclosure —
+        this report contains only address, amount, time, and transaction hash.
       </p>
     </div>
   );
