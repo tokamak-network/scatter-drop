@@ -19,8 +19,8 @@ export const MAX_ANNOUNCEMENTS = 1_000;
 /**
  * Per-operator cap on open (non-canceled) announcements. Writes are SIWE
  * authenticated, so this bounds how much board space one wallet can occupy;
- * the global MAX_ANNOUNCEMENTS in the route stays as the backstop. Enforced
- * on POST and on PATCH reopen (a canceled→open transition takes a slot).
+ * the global MAX_ANNOUNCEMENTS above stays as the backstop. Enforced on POST
+ * and on PATCH reopen (a canceled→open transition takes a slot).
  */
 export const MAX_OPEN_PER_OPERATOR = 20;
 

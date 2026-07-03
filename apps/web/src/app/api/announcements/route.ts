@@ -51,8 +51,9 @@ export async function POST(req: NextRequest) {
   }
   const parsed = parseAnnouncement(body);
   if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
-  // Both caps re-checked and the row inserted in one transaction, so
-  // concurrent POSTs can't all pass the counts and overshoot (TOCTOU).
+  // Caps re-checked and the row inserted in one Serializable transaction —
+  // under Postgres's default Read Committed, concurrent POSTs could all read
+  // below-cap counts and overshoot (TOCTOU).
   const result = await prisma.$transaction(async (tx) => {
     // Open (non-canceled) rows only: counting canceled history would let the
     // ever-growing tombstones permanently brick the board once 1000 total
@@ -83,7 +84,7 @@ export async function POST(req: NextRequest) {
     }
     const row = await tx.announcement.create({ data: { ...parsed.value, operator } });
     return { status: 200, row } as const;
-  });
+  }, { isolationLevel: "Serializable" });
   if (result.status !== 200) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
