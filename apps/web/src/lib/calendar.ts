@@ -16,11 +16,28 @@ function icsUtc(d: Date): string {
 
 /**
  * Fold long content lines at 75 octets (RFC 5545 §3.1) — some parsers reject
- * unfolded long DESCRIPTIONs. Continuation lines start with a space.
+ * unfolded long DESCRIPTIONs. Counts UTF-8 octets, not characters (a Korean
+ * title is 3 bytes per syllable), and never splits inside a character.
+ * Continuation lines start with a space (which costs one octet).
  */
 function fold(line: string): string {
+  const encoder = new TextEncoder();
   const out: string[] = [];
-  for (let i = 0; i < line.length; i += 74) out.push(line.slice(i, i + 74));
+  let current = "";
+  let currentBytes = 0;
+  for (const ch of line) {
+    const chBytes = encoder.encode(ch).length;
+    // 74 for the first line, 73 for continuations (leading space = 1 octet).
+    const limit = out.length === 0 ? 74 : 73;
+    if (currentBytes + chBytes > limit) {
+      out.push(current);
+      current = "";
+      currentBytes = 0;
+    }
+    current += ch;
+    currentBytes += chBytes;
+  }
+  out.push(current);
   return out.join("\r\n ");
 }
 
@@ -46,7 +63,9 @@ export function buildIcs(event: {
     `DTEND:${icsUtc(end)}`,
     fold(`SUMMARY:${icsEscape(event.title)}`),
     ...(event.description ? [fold(`DESCRIPTION:${icsEscape(event.description)}`)] : []),
-    ...(event.url ? [fold(`URL:${icsEscape(event.url)}`)] : []),
+    // URL is a URI value type (§3.3.13) — no §3.3.11 backslash escaping, or
+    // commas/semicolons in query strings would corrupt the link.
+    ...(event.url ? [fold(`URL:${event.url}`)] : []),
     "END:VEVENT",
     "END:VCALENDAR",
   ];
