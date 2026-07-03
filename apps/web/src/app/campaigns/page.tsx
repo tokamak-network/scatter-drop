@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { zeroAddress } from "viem";
 import { AirdropType, airdropTypeLabel } from "@tokamak-network/scatter-drop-sdk";
 import {
   AlertCircle,
@@ -132,7 +133,8 @@ function shortAddr(a: string) {
 
 function CampaignCard({ c }: { c: Campaign }) {
   const ended = c.status === "ended";
-  const open = /^open/i.test(c.identityRegistryLabel);
+  // Address-based, like the detail page — the human label isn't load-bearing.
+  const open = c.identityRegistry === zeroAddress;
   const avatar = c.tokenSymbol.replace(/[^a-z0-9]/gi, "").slice(0, 3).toUpperCase() || "TKN";
 
   return (
@@ -205,7 +207,7 @@ function CampaignCard({ c }: { c: Campaign }) {
             Access
           </dt>
           <dd className="text-slate-200 truncate max-w-[60%] text-right">
-            {open ? "Open claim" : c.identityRegistryLabel}
+            {open ? "No identity gate" : c.identityRegistryLabel}
           </dd>
         </div>
       </dl>

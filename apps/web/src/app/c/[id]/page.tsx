@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { useAccount, useChainId, useChains } from "wagmi";
 import { zeroAddress } from "viem";
@@ -144,7 +144,7 @@ export default function CampaignDetailPage({
               <StatItem label="Type" value={airdropTypeLabel(campaign.type)} />
               <StatItem
                 label="Access"
-                value={open ? "Open claim" : "Identity-gated"}
+                value={open ? "No identity gate" : "Identity-gated"}
               />
               <StatItem label="Starts" value={startsAt} />
               <StatItem
@@ -203,9 +203,20 @@ export default function CampaignDetailPage({
   );
 }
 
-function days(seconds: number): string {
-  const d = Math.max(0, Math.ceil(seconds / 86400));
-  return `${d} day${d === 1 ? "" : "s"}`;
+/**
+ * Humanized duration at two-unit precision ("2d 4h", "1h 05m", "12m", "45s") —
+ * the old whole-day ceil showed "Starts in 1 day" for a window opening in an
+ * hour.
+ */
+function duration(seconds: number): string {
+  const s = Math.max(0, seconds);
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${String(m).padStart(2, "0")}m`;
+  if (m > 0) return `${m}m`;
+  return "<1m";
 }
 
 /** Claim-window timeline with elapsed/remaining. */
@@ -220,7 +231,13 @@ function TimelineCard({
   startLabel: string;
   endLabel: string;
 }) {
-  const nowS = Math.floor(Date.now() / 1000);
+  // Coarse tick so the minute-precision countdown doesn't freeze at whatever
+  // it said on the render it happened to be computed in.
+  const [nowS, setNowS] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    const t = setInterval(() => setNowS(Math.floor(Date.now() / 1000)), 15_000);
+    return () => clearInterval(t);
+  }, []);
   const start = Number(startUnix);
   const end = Number(endUnix);
   const hasWindow = start > 0 && end > start;
@@ -230,10 +247,10 @@ function TimelineCard({
 
   const status =
     start > nowS
-      ? `Starts in ${days(start - nowS)}`
+      ? `Starts in ${duration(start - nowS)}`
       : nowS > end
-        ? `Ended ${days(nowS - end)} ago`
-        : `${days(end - nowS)} left`;
+        ? `Ended ${duration(nowS - end)} ago`
+        : `${duration(end - nowS)} left`;
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
