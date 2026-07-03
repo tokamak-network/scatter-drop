@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useAccount } from "wagmi";
 import { airdropTypeLabel } from "@tokamak-network/scatter-drop-sdk";
-import { AlertCircle, BarChart3, ChevronRight, Loader2, Plus } from "lucide-react";
+import { AlertCircle, BarChart3, ChevronRight, Loader2, Megaphone, Plus } from "lucide-react";
 import { ConnectGate } from "@/components/ConnectGate";
 import { useManagedCampaigns } from "@/lib/campaigns";
 
@@ -22,12 +22,20 @@ export default function ManagePage() {
             Manage and track the campaigns you created.
           </p>
         </div>
-        <Link
-          href="/manage/new"
-          className="bg-emerald-500 hover:bg-emerald-400 text-white font-semibold px-4 py-2 rounded-lg text-xs transition flex items-center gap-1.5"
-        >
-          <Plus className="w-4 h-4" /> Create New Campaign
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/manage/announcements/new"
+            className="bg-slate-900 border border-slate-800 hover:border-sky-500/40 text-slate-200 font-semibold px-4 py-2 rounded-lg text-xs transition flex items-center gap-1.5"
+          >
+            <Megaphone className="w-4 h-4 text-sky-500" /> New Announcement
+          </Link>
+          <Link
+            href="/manage/new"
+            className="bg-emerald-500 hover:bg-emerald-400 text-white font-semibold px-4 py-2 rounded-lg text-xs transition flex items-center gap-1.5"
+          >
+            <Plus className="w-4 h-4" /> Create New Campaign
+          </Link>
+        </div>
       </div>
 
       <ConnectGate prompt="Connect a wallet to manage your campaigns.">

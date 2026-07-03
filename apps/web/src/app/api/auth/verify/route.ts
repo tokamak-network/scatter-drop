@@ -20,13 +20,13 @@ export async function POST(req: NextRequest) {
     const siwe = new SiweMessage(message);
     const { data } = await siwe.verify({ signature, nonce: session.nonce });
     const address = data.address.toLowerCase();
-    if (!(await isPlatformAdmin(address))) {
-      return NextResponse.json({ address, isAdmin: false, error: "Not a platform admin" }, { status: 403 });
-    }
+    // Any verified wallet gets a session — operator-facing writes (e.g.
+    // announcements) need a signed-in author. Admin-only routes still gate on
+    // requireAdmin(), so a non-admin session grants nothing extra there.
     session.address = address;
     session.nonce = undefined;
-    await session.save();
-    return NextResponse.json({ address, isAdmin: true });
+    const [, isAdmin] = await Promise.all([session.save(), isPlatformAdmin(address)]);
+    return NextResponse.json({ address, isAdmin });
   } catch {
     return NextResponse.json({ error: "SIWE verification failed" }, { status: 401 });
   }

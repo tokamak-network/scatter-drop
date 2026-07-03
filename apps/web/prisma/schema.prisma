@@ -59,3 +59,27 @@ model CampaignMeta {
 
   @@id([chainId, drop])
 }
+
+/// An operator-posted airdrop pre-announcement (the "Upcoming Drops" board).
+/// Lifecycle: UPCOMING → (drop linked) → LIVE → ENDED, plus CANCELED — but
+/// LIVE/ENDED are derived at read time from the linked drop's on-chain claim
+/// window, so only the copy, the expected window, and the link live here.
+/// Writes are SIWE-authenticated; `operator` is the verified poster wallet.
+model Announcement {
+  id            String    @id @default(cuid())
+  chainId       Int
+  title         String
+  body          String
+  tokenSymbol   String?
+  expectedStart DateTime
+  expectedEnd   DateTime?
+  links         String? // JSON: [{label, url}] — external channels (site, X, …)
+  drop          String? // lowercased drop address once the campaign is created
+  canceled      Boolean   @default(false)
+  operator      String // lowercased poster wallet (SIWE-verified)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // The board's hottest read: list by chain ordered by expected start.
+  @@index([chainId, expectedStart])
+}

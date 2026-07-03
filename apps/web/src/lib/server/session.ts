@@ -46,3 +46,13 @@ export async function requireAdmin(): Promise<string | null> {
   if (session.address && (await isPlatformAdmin(session.address))) return session.address;
   return null;
 }
+
+/**
+ * Any SIWE-signed-in wallet (lowercased), else null. For operator-facing
+ * writes (e.g. announcements) that need a verified author but not the
+ * platform-admin allow-list.
+ */
+export async function requireWallet(): Promise<string | null> {
+  const session = await getSession();
+  return session.address ?? null;
+}

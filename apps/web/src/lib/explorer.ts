@@ -22,3 +22,8 @@ export function explorerUrl(
 export function shortHash(value: string): string {
   return `${value.slice(0, 10)}…${value.slice(-4)}`;
 }
+
+/** 0x05fd…1f86-style shortening for inline address display (shorter prefix). */
+export function shortAddr(value: string): string {
+  return `${value.slice(0, 6)}…${value.slice(-4)}`;
+}

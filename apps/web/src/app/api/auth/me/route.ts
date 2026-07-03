@@ -6,5 +6,5 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const session = await getSession();
   const isAdmin = await isPlatformAdmin(session.address);
-  return NextResponse.json({ address: isAdmin ? session.address : null, isAdmin });
+  return NextResponse.json({ address: session.address ?? null, isAdmin });
 }
