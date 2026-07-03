@@ -67,7 +67,13 @@ export function RecipientsList({ campaign }: { campaign: Campaign }) {
         )}
       </div>
 
-      {isPending ? (
+      {!campaign.merkleRoot ? (
+        // No root (stub campaigns) → the query never runs; without this
+        // branch the section would sit on the loading spinner forever.
+        <p className="text-xs text-slate-500">
+          No recipient list is available for this campaign.
+        </p>
+      ) : isPending ? (
         <div className="flex items-center gap-2 text-xs text-slate-500">
           <Loader2 className="w-4 h-4 animate-spin" /> Loading recipient list…
         </div>

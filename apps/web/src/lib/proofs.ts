@@ -56,7 +56,11 @@ async function fetchClaims(root: Hex): Promise<Record<string, ClaimProof> | null
   const data = (await res.json()) as { claims?: Record<string, unknown> };
   const valid: Record<string, ClaimProof> = {};
   for (const [addr, c] of Object.entries(data.claims ?? {})) {
-    if (isValidClaim(c)) valid[addr] = c;
+    const key = addr.toLowerCase();
+    // The claim's account must match the key it's stored under — a mismatch
+    // would attribute the allocation to the wrong row and produce an
+    // "eligible" state that MerkleDrop (account == msg.sender) would revert.
+    if (isValidClaim(c) && c.account.toLowerCase() === key) valid[key] = c;
   }
   return valid;
 }
