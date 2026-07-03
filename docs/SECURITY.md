@@ -159,13 +159,16 @@ selector, `receive()` guard, ETH conservation, gas), `invariant/NativeDropInvari
       immutable `factory` field, event-only (no storage), and that the spoofable
       self-address case is inert for indexers keyed by real drop addresses.
 
-## 7. Post-W13 delta — re-review scope (native ETH + on-chain proofs)
+## 7. Post-W13 delta — re-review scope
 
-Two **additive** changes landed in the core after the W13 pass. Both were flagged
-"audit re-review". Neither modifies an existing path: the ERC20 distribution flow,
-fee accounting, gates, exact-receipt guard, `MIN_DURATION`, leaf encoding, and the
-fixed-treasury withdrawal invariant are all unchanged. A reviewer can therefore
-scope to the native-ETH path and `publishProofs` alone.
+The core changed after the W13 pass in **two batches**. Batch 1 (§7.1–7.2, merged
+2026-07-01) is additive: native-ETH airdrops and the on-chain proofs CID. Batch 2
+(§7.5, merged 2026-07-02) is **structural**: the factory became a UUPS proxy with
+clone-per-campaign drops, gained an owner pause, a one-transaction
+`approveAndCall → onApprove` create path, and reentrancy/ERC165 hardening. Fee
+accounting, gates, exact-receipt guard, `MIN_DURATION`, leaf encoding, and the
+fixed-treasury withdrawal invariant remain unchanged throughout; §7.4 gives the
+consolidated scope.
 
 ### 7.1 Native-ETH airdrops (#55 support `b283a21`, #56 hardening `23a411b`)
 
@@ -234,23 +237,85 @@ claimers can locate inclusion proofs without a trusted server.
 Outer-call gas from `contracts/test/GasSnapshot.t.sol`. Each op is measured in its
 own transaction (a fresh `setUp`) so cross-op EIP-2929 warm-access doesn't skew the
 ERC20-vs-native comparison. Single-leaf tree, empty proof; `optimizer_runs = 200`.
-Indicative, not a guarantee.
+Indicative, not a guarantee. **Re-measured on the batch-2 clone architecture**
+(§7.5): `createDrop` fell ~70% (EIP-1167 clone instead of full `MerkleDrop`
+deployment); per-op costs rose (clone-args calldata reads on every drop call, and
+pull-to-factory two-leg ERC20 funding).
 
 | Operation | ERC20 | Native ETH | Note |
 | --------- | ----: | ---------: | ---- |
-| `createDrop` (deploys a `MerkleDrop`) | 848,353 | 806,013 | native is cheaper — no ERC20 `transferFrom` pulls |
-| `claim` | 51,916 | 58,633 | native +~6.7k: `safeTransferETH` low-level call |
-| `sweep` | 26,803 | 34,591 | native +~7.8k: ETH send vs ERC20 transfer |
-| `publishProofs` (event-only) | 5,606 | — | no value transfer, no storage write |
+| `createDrop` (deploys a clone) | 257,707 | 219,765 | was 848k/806k pre-clones; native cheaper — no ERC20 pulls |
+| `claim` | 77,737 | 81,954 | native +~4.2k: `safeTransferETH` low-level call |
+| `sweep` | 52,574 | 57,862 | native +~5.3k: ETH send vs ERC20 transfer |
+| `publishProofs` (event-only) | 11,140 | — | no value transfer, no storage write |
 
-### 7.4 Re-review scope vs. W13
+### 7.4 Re-review scope vs. W13 (consolidated, both batches)
 
-- **New:** `DropFactory.publishProofs` (+ `ProofsPublished` event, 3 errors).
-- **Changed (native branch added; ERC20 path byte-for-byte unchanged):**
-  `DropFactory.createDrop` (payable + NATIVE funding), `DropFactory.withdrawFees`
-  (NATIVE branch), `MerkleDrop` constructor / `claim` / `sweep` / `receive`.
+- **New:** `DropFactory.publishProofs` (+ `ProofsPublished`, 3 errors);
+  `onApprove` one-tx create (+ `DropParams`, `encodeDropParams`);
+  `supportsInterface` (ERC165); `setApproveAndCallSupport` capability flag;
+  `setPaused` owner pause; `initialize` (UUPS proxy setup).
+- **Changed:** `DropFactory.createDrop` (payable + NATIVE funding; now routes
+  through shared `_createDrop` with pull-to-factory ERC20 funding; `nonReentrant`),
+  `DropFactory.withdrawFees` (NATIVE branch), `MerkleDrop` constructor / `claim` /
+  `sweep` / `receive` (native branch), drop deployment (EIP-1167
+  clone-with-immutable-args instead of `new MerkleDrop`).
 - **Unchanged:** fee accounting & vault conservation, allow-list, gates 1/2,
   exact-receipt, `MIN_DURATION`, leaf encoding, fixed-treasury withdrawal.
+
+### 7.5 Batch 2 — proxy architecture + TON one-tx path (2026-07-02, #67 #69 #72 #73 #75)
+
+**UUPS factory + clone-per-campaign drops (#67).** The factory is deployed behind
+an ERC1967 proxy (`Initializable` + Solady `UUPSUpgradeable`); campaigns are
+EIP-1167 clone-with-immutable-args copies of a single `MerkleDrop` logic contract
+(Solady `LibClone.clone(impl, args)` — per-drop config is baked into clone
+bytecode, read back via `LibClone.argsOnClone`, so drops stay non-upgradeable and
+immutable).
+The constructor locks the implementation (`_disableInitializers`-equivalent);
+`initialize` is `initializer`-guarded and sets registries, treasury, owner, and
+the default fee. An owner `setPaused` blocks **new** campaign creation only —
+existing drops are independent clones and keep working.
+
+**One-tx create for `approveAndCall` tokens (#69, ERC165 in #75).** Tokamak TON
+(SeigToken) restricts `transferFrom` to calls where the caller is `from`/`to`, and
+its `approveAndCall` ERC165-checks the spender before invoking `onApprove`:
+
+- `onApprove(owner, spender, amount, data)` — caller is the **token** (trusted
+  only insofar as it's allow-listed; re-checked in `_createDrop`), `spender` must
+  be this factory, `data` is `abi.encode(DropParams)`, and `amount` must equal
+  `totalAmount + fee` exactly (`IncorrectValue`).
+- ERC20 funding is **pull-to-factory then push-to-drop** (both legs
+  exact-receipt guarded), which is what makes restricted-`transferFrom` tokens
+  work; this replaced the direct operator→drop pull for *all* ERC20 drops.
+- `supportsInterface` answers `0x4273ca16` (`onApprove`) + ERC165; without it the
+  real TON reverts before `onApprove` and the one-tx path is unreachable.
+- `setApproveAndCallSupport(token, bool)` is an owner-curated capability flag the
+  frontend reads (`AacSupportSet` event) — advisory only, no funding-path effect.
+
+**Reentrancy (#73).** `createDrop` and `onApprove` are `nonReentrant`
+(factory-level guard, complementing the drop-level guards on `claim`/`sweep`);
+`OnApprove.t.sol` pins the guard selector on both paths, mutation-verified like
+§7.1.
+
+**Audit focus points**
+
+- *Upgradeability.* `_authorizeUpgrade` is owner-only; `initialize` cannot be
+  re-run (re-initialization guard test) and the implementation is locked. Storage
+  layout: `paused` and later vars are appended slots (no reordering) — verify
+  layout compatibility on any future upgrade.
+- *Clone args integrity.* Per-drop immutable args are read back with
+  `LibClone.argsOnClone` and decoded in `MerkleDrop`; a reviewer should confirm
+  the decode order matches the pack order at the `LibClone.clone` call site
+  (drift here silently corrupts every drop's config).
+- *onApprove trust.* Only allow-listed tokens reach `_createDrop`, and the fee is
+  computed on `msg.sender` (the token) — a hostile non-listed token calling
+  `onApprove` directly reverts on the allow-list check; a listed-but-malicious
+  token could at worst create drops funded by its own approvals.
+- *Files.* `DropFactory.sol` (proxy/init/pause, `onApprove`, `_createDrop`,
+  `supportsInterface`), `MerkleDrop.sol` (clone args). Tests: `OnApprove.t.sol`,
+  `DropFactory.t.sol` (init/pause/upgrade), `GasSnapshot.t.sol` (§7.3 numbers
+  re-measured on the clone architecture), `fork/` E2E (real TON `approveAndCall`
+  on a Sepolia fork).
 
 ## 8. Out of scope (v1)
 
