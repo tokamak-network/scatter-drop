@@ -173,6 +173,7 @@ function SwitchNetworkCard({
   hasDrop: boolean;
 }) {
   const chains = useChains();
+  const { isConnected } = useAccount();
   const { switchChain, isPending } = useSwitchChain();
   const target = chains.find((c) => c.id === targetChainId);
 
@@ -192,7 +193,9 @@ function SwitchNetworkCard({
         <button
           type="button"
           onClick={() => switchChain({ chainId: targetChainId })}
-          disabled={isPending}
+          // Switching needs a connected wallet (matches NetworkSelect's guard).
+          disabled={isPending || !isConnected}
+          title={isConnected ? undefined : "Connect a wallet first"}
           className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-amber-950 font-semibold px-4 py-2 rounded-lg text-xs transition disabled:opacity-60"
         >
           {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
