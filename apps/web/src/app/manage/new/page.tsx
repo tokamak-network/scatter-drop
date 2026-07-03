@@ -34,7 +34,7 @@ import type { SnapshotManifest } from "@/lib/useSnapshotJob";
 import { useAllowedTokens } from "@/lib/campaigns";
 import { findDropCreated } from "@/lib/dropScan";
 import { DRAFT_CSV_KEY } from "@/lib/draftCsv";
-import { downloadCsv } from "@/lib/downloadCsv";
+import { downloadCsv } from "@/lib/download";
 import { explorerUrl, shortHash } from "@/lib/explorer";
 import { patchAnnouncement, useAnnouncements } from "@/lib/announcements";
 import { publishCampaignMeta } from "@/lib/campaignMeta";

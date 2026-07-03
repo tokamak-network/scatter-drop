@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { Check, Copy, Download, Loader2, Play } from "lucide-react";
 import { isAddress, parseUnits } from "viem";
 import { toCsv } from "@/lib/reports";
-import { downloadCsv } from "@/lib/downloadCsv";
+import { downloadCsv } from "@/lib/download";
 import {
   snapshotStakes,
   DEPOSIT_MANAGER,

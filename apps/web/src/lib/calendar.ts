@@ -4,9 +4,13 @@
  * calendar dependency.
  */
 
-/** Escape per RFC 5545 §3.3.11 (backslash, semicolon, comma, newline). */
+/** Escape per RFC 5545 §3.3.11 (backslash, semicolon, comma, any newline). */
 function icsEscape(s: string): string {
-  return s.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+  return s
+    .replace(/\\/g, "\\\\")
+    .replace(/;/g, "\\;")
+    .replace(/,/g, "\\,")
+    .replace(/\r\n|\r|\n/g, "\\n");
 }
 
 /** Date → "YYYYMMDDTHHMMSSZ" (UTC basic format). */
@@ -64,8 +68,9 @@ export function buildIcs(event: {
     fold(`SUMMARY:${icsEscape(event.title)}`),
     ...(event.description ? [fold(`DESCRIPTION:${icsEscape(event.description)}`)] : []),
     // URL is a URI value type (§3.3.13) — no §3.3.11 backslash escaping, or
-    // commas/semicolons in query strings would corrupt the link.
-    ...(event.url ? [fold(`URL:${event.url}`)] : []),
+    // commas/semicolons in query strings would corrupt the link. Newlines
+    // stripped: they can't appear in a valid URI and would break the line.
+    ...(event.url ? [fold(`URL:${event.url.replace(/[\r\n]/g, "")}`)] : []),
     "END:VEVENT",
     "END:VCALENDAR",
   ];

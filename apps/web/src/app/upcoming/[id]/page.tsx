@@ -28,7 +28,7 @@ import {
 } from "@/lib/announcements";
 import { buildIcs } from "@/lib/calendar";
 import { fmtUnixDateTime, useCampaign } from "@/lib/campaigns";
-import { downloadFile } from "@/lib/downloadCsv";
+import { downloadFile } from "@/lib/download";
 import { useWalletSession } from "@/lib/useWalletSession";
 
 export default function AnnouncementPage() {
