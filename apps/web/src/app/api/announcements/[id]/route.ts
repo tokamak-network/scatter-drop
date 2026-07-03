@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
+import { MAX_ANNOUNCEMENTS, MAX_OPEN_PER_OPERATOR } from "@/lib/announcementLimits";
 import { verifyDropOperator } from "@/lib/server/dropVerify";
 import { requireWallet } from "@/lib/server/session";
 import {
@@ -66,6 +67,35 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     );
     if (dropErr) return NextResponse.json({ error: dropErr }, { status: 422 });
   }
-  const updated = await prisma.announcement.update({ where: { id }, data: parsed.value });
-  return NextResponse.json({ announcement: announcementDto(updated) });
+  // Reopening (canceled → open) takes a board slot back, so it must pass the
+  // same caps as POST — otherwise cancel + repost + reopen multiplies an
+  // operator's open rows past every limit. Checked atomically on the row's
+  // state inside the transaction (the pre-read above may be stale).
+  const result = await prisma.$transaction(async (tx) => {
+    if (parsed.value.canceled === false) {
+      const current = await tx.announcement.findUnique({ where: { id } });
+      if (!current) return { status: 404, error: "Not found" } as const;
+      if (current.canceled) {
+        const [open, globalOpen] = await Promise.all([
+          tx.announcement.count({ where: { operator: row.operator, canceled: false } }),
+          tx.announcement.count({ where: { canceled: false } }),
+        ]);
+        if (globalOpen >= MAX_ANNOUNCEMENTS) {
+          return { status: 507, error: "Announcement store is full" } as const;
+        }
+        if (open >= MAX_OPEN_PER_OPERATOR) {
+          return {
+            status: 429,
+            error: `You already have ${MAX_OPEN_PER_OPERATOR} open announcements — cancel one to reopen this`,
+          } as const;
+        }
+      }
+    }
+    const updated = await tx.announcement.update({ where: { id }, data: parsed.value });
+    return { status: 200, updated } as const;
+  });
+  if (result.status !== 200) {
+    return NextResponse.json({ error: result.error }, { status: result.status });
+  }
+  return NextResponse.json({ announcement: announcementDto(result.updated) });
 }
