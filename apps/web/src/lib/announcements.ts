@@ -162,10 +162,10 @@ export function createAnnouncement(draft: AnnouncementDraft) {
   return write("/api/announcements", "POST", draft);
 }
 
-/** Operator-only update: edit copy, link the created drop, or cancel. */
+/** Operator-only update: edit copy, link/unlink the created drop, or cancel. */
 export function patchAnnouncement(
   id: string,
-  patch: Partial<AnnouncementDraft> & { drop?: string; canceled?: boolean },
+  patch: Partial<AnnouncementDraft> & { drop?: string | null; canceled?: boolean },
 ) {
   return write(`/api/announcements/${id}`, "PATCH", patch);
 }

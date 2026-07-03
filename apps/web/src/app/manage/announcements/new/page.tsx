@@ -47,12 +47,19 @@ export default function NewAnnouncementPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const toIso = (v: string) => (v ? new Date(v).toISOString() : "");
+  // Browsers without a datetime-local picker fall back to free text, so an
+  // unparseable value must fail validation instead of throwing in toISOString.
+  const toIso = (v: string) => {
+    const ms = Date.parse(v);
+    return Number.isNaN(ms) ? "" : new Date(ms).toISOString();
+  };
+  const startMs = Date.parse(expectedStart);
+  const endMs = expectedEnd ? Date.parse(expectedEnd) : null;
   const valid =
     title.trim() !== "" &&
     body.trim() !== "" &&
-    expectedStart !== "" &&
-    (!expectedEnd || new Date(expectedEnd) > new Date(expectedStart)) &&
+    !Number.isNaN(startMs) &&
+    (endMs === null || endMs > startMs) &&
     links.every((l) => l.label.trim() && LINK_URL_RE.test(l.url));
 
   const setLink = (i: number, patch: Partial<AnnouncementLink>) =>

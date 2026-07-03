@@ -12,4 +12,4 @@ export const MAX_LINK_LABEL = 40;
 export const MAX_LINK_URL = 300;
 
 /** External links must be web URLs (no javascript:/data: schemes). */
-export const LINK_URL_RE = /^https?:\/\//;
+export const LINK_URL_RE = /^https?:\/\//i;

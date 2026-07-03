@@ -25,7 +25,10 @@ export async function POST(req: NextRequest) {
     // requireAdmin(), so a non-admin session grants nothing extra there.
     session.address = address;
     session.nonce = undefined;
-    const [, isAdmin] = await Promise.all([session.save(), isPlatformAdmin(address)]);
+    await session.save();
+    // Best-effort after the save: a transient admin-lookup failure must not
+    // surface as "verification failed" when the session was already persisted.
+    const isAdmin = await isPlatformAdmin(address).catch(() => false);
     return NextResponse.json({ address, isAdmin });
   } catch {
     return NextResponse.json({ error: "SIWE verification failed" }, { status: 401 });

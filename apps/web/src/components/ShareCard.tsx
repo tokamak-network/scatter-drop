@@ -39,10 +39,16 @@ export function ShareCard({
 
       <button
         type="button"
-        onClick={() => {
-          navigator.clipboard?.writeText(href());
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
+        onClick={async () => {
+          // Only report "copied" when the clipboard write actually succeeded
+          // (it can reject in non-secure contexts or without permission).
+          try {
+            await navigator.clipboard.writeText(href());
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          } catch {
+            /* leave the button in its default state */
+          }
         }}
         className="w-full flex items-center justify-center gap-2 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-100 text-sm font-semibold px-4 py-2.5 rounded-lg transition"
       >
