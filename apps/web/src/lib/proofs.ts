@@ -2,8 +2,12 @@
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { Address, Hex } from "viem";
-import type { ClaimProof } from "@tokamak-network/scatter-drop-sdk";
+import { useChainId, usePublicClient } from "wagmi";
+import type { Address, Hex, PublicClient } from "viem";
+import { verifyClaim, type ClaimProof } from "@tokamak-network/scatter-drop-sdk";
+import { useDeployment } from "./contracts";
+import type { WebDeployment } from "./deployment";
+import { scanLatestProofsCid } from "./dropScan";
 import { getStubEligibility, type Campaign, type Eligibility } from "./stub";
 
 type StoredClaims = Record<string, ClaimProof>;
@@ -26,62 +30,139 @@ function isValidClaim(c: unknown): c is ClaimProof {
 /**
  * Publish a campaign's per-recipient proofs to the store, keyed by merkleRoot.
  * Best-effort — a failure doesn't block campaign creation (proofs can be
- * re-published later). Called after `createDrop` confirms.
+ * re-published later). Called after `createDrop` confirms. Returns the IPFS
+ * CID when the server has pinning configured (null otherwise), so the wizard
+ * can offer the on-chain publishProofs(drop, cid) anchor tx.
  */
 export async function publishProofs(
   root: Hex,
   claims: Record<string, unknown>,
-): Promise<void> {
+): Promise<string | null> {
   try {
-    await fetch("/api/proofs", {
+    const res = await fetch("/api/proofs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ root, claims }),
     });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { cid?: string | null };
+    return data.cid ?? null;
   } catch {
-    /* best-effort */
+    return null; /* best-effort */
   }
 }
 
 /**
- * The validated claims map for a root, or `null` when the store has no proofs
- * for it (404 = the operator hasn't published the list).
+ * Validate a raw claims object into an address-keyed ClaimProof map. Each
+ * claim's account must match the key it's stored under — a mismatch would
+ * attribute the allocation to the wrong row and produce an "eligible" state
+ * that MerkleDrop (account == msg.sender) would revert.
  */
-async function fetchClaims(root: Hex): Promise<Record<string, ClaimProof> | null> {
-  const res = await fetch(`/api/proofs?root=${encodeURIComponent(root)}`, {
-    cache: "no-store",
-  });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error("Failed to load proofs");
-  const data = (await res.json()) as { claims?: Record<string, unknown> };
+function validateClaims(raw: Record<string, unknown>): Record<string, ClaimProof> {
   const valid: Record<string, ClaimProof> = {};
-  for (const [addr, c] of Object.entries(data.claims ?? {})) {
+  for (const [addr, c] of Object.entries(raw)) {
     const key = addr.toLowerCase();
-    // The claim's account must match the key it's stored under — a mismatch
-    // would attribute the allocation to the wrong row and produce an
-    // "eligible" state that MerkleDrop (account == msg.sender) would revert.
     if (isValidClaim(c) && c.account.toLowerCase() === key) valid[key] = c;
   }
   return valid;
 }
 
+// Public gateway for reading pinned proofs.json back; override per deployment.
+const IPFS_GATEWAY = process.env.NEXT_PUBLIC_IPFS_GATEWAY || "https://ipfs.io";
+
+/**
+ * Recover a campaign's claims from IPFS via its on-chain anchor: latest
+ * ProofsPublished(drop) event → CID → gateway fetch. The gateway is an
+ * untrusted third party (a plain HTTP fetch doesn't verify the bytes hash to
+ * the CID), so every claim is merkle-verified against the campaign's on-chain
+ * root before it's shown — the proofs are self-verifying, which is the whole
+ * point of a merkle list. Rows that don't verify are dropped.
+ */
+async function fetchClaimsFromIpfs(
+  client: PublicClient,
+  dep: WebDeployment,
+  drop: Address,
+  root: Hex,
+): Promise<Record<string, ClaimProof> | null> {
+  const cid = await scanLatestProofsCid(client, dep, drop);
+  if (!cid) return null;
+  const res = await fetch(`${IPFS_GATEWAY}/ipfs/${encodeURIComponent(cid)}`);
+  if (!res.ok) return null;
+  const data = (await res.json()) as { root?: string; claims?: Record<string, unknown> };
+  // Cheap early bail on an obviously-wrong file before hashing anything.
+  if (data.root?.toLowerCase() !== root) return null;
+  const valid = validateClaims(data.claims ?? {});
+  const verified: Record<string, ClaimProof> = {};
+  for (const [addr, claim] of Object.entries(valid)) {
+    if (verifyClaim(root, claim)) verified[addr] = claim;
+  }
+  return verified;
+}
+
+/**
+ * The validated claims map for a root, or `null` when no proofs are published
+ * anywhere (store 404 and no on-chain IPFS anchor).
+ */
+async function fetchClaims(
+  root: Hex,
+  fallback: { client?: PublicClient; dep?: WebDeployment | null; drop?: Address },
+): Promise<Record<string, ClaimProof> | null> {
+  // A 404 means "nothing published"; any other store failure (500, network)
+  // is an outage — try the anchor either way, but only report "not published"
+  // when that's actually what the store said.
+  let notPublished = false;
+  try {
+    const res = await fetch(`/api/proofs?root=${encodeURIComponent(root)}`, {
+      cache: "no-store",
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { claims?: Record<string, unknown> };
+      return validateClaims(data.claims ?? {});
+    }
+    notPublished = res.status === 404;
+  } catch {
+    /* store unreachable → try the anchor */
+  }
+  if (fallback.client && fallback.dep && fallback.drop) {
+    try {
+      const viaIpfs = await fetchClaimsFromIpfs(
+        fallback.client,
+        fallback.dep,
+        fallback.drop,
+        root,
+      );
+      if (viaIpfs) return viaIpfs;
+    } catch {
+      /* anchor unavailable too */
+    }
+  }
+  if (notPublished) return null;
+  throw new Error("Failed to load proofs");
+}
+
 /**
  * One proofs download per root — eligibility and the recipients directory
  * both observe this query (same key), so the largest payload on the claim
- * page (up to 50k claims) is fetched once, not once per consumer.
+ * page (up to 50k claims) is fetched once, not once per consumer. Falls back
+ * to the on-chain IPFS anchor when the app's store misses.
  */
-function useClaims(root: Hex | undefined) {
+function useClaims(campaign: Campaign | undefined) {
+  const root = campaign?.merkleRoot?.toLowerCase() as Hex | undefined;
+  const chainId = useChainId();
+  const client = usePublicClient({ chainId });
+  const { data: dep } = useDeployment();
   return useQuery({
     queryKey: ["proofs", root],
-    enabled: !!root,
+    enabled: !!root && dep !== undefined,
     staleTime: 60_000,
-    queryFn: () => fetchClaims(root!),
+    queryFn: () =>
+      fetchClaims(root!, { client: client ?? undefined, dep, drop: campaign?.drop }),
   });
 }
 
 export type RecipientRow = { address: Address; amount: bigint };
 
-/** Shared-query `select` — React Query memoizes this per cached data identity. */
+/** Claims map → amount-sorted display rows (memoized by useRecipients). */
 function toRecipientRows(
   claims: Record<string, ClaimProof> | null,
 ): RecipientRow[] | null {
@@ -101,14 +182,12 @@ function toRecipientRows(
  * (anyone must be able to look up their proof to claim).
  */
 export function useRecipients(campaign: Campaign | undefined) {
-  const root = campaign?.merkleRoot?.toLowerCase() as Hex | undefined;
-  return useQuery({
-    queryKey: ["proofs", root],
-    enabled: !!root,
-    staleTime: 60_000,
-    queryFn: () => fetchClaims(root!),
-    select: toRecipientRows,
-  });
+  const { data, isPending, isError } = useClaims(campaign);
+  const rows = useMemo(
+    () => (data === undefined ? undefined : toRecipientRows(data)),
+    [data],
+  );
+  return { data: rows, isPending, isError };
 }
 
 /**
@@ -120,7 +199,7 @@ export function useRecipients(campaign: Campaign | undefined) {
  */
 export function useEligibility(campaign: Campaign | undefined, address: Address | undefined) {
   const root = campaign?.merkleRoot?.toLowerCase() as Hex | undefined;
-  const claimsQ = useClaims(root);
+  const claimsQ = useClaims(campaign);
   // undefined while loading/on error; null = not published (404).
   const claims = claimsQ.data;
 

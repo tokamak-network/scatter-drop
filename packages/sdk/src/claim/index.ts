@@ -184,6 +184,26 @@ export function buildSetFlatFeeRequest(factory: Address, token: Address, amount:
 }
 
 /**
+ * Build `DropFactory.publishProofs(drop, cid)` — the drop's operator anchors
+ * the IPFS CID of its proofs.json on-chain (event-only; the latest
+ * ProofsPublished per drop is the current CID).
+ */
+export function buildPublishProofsRequest(
+  factory: Address,
+  drop: Address,
+  cid: string,
+): TxRequest {
+  return {
+    to: getAddress(factory),
+    data: encodeFunctionData({
+      abi: dropFactoryAbi,
+      functionName: "publishProofs",
+      args: [getAddress(drop), cid],
+    }),
+  };
+}
+
+/**
  * Build a `DropFactory.withdrawFees(token, amount)` transaction request
  * (admin-only; funds always go to the configured treasury).
  */

@@ -17,6 +17,7 @@ import {
   buildApproveRequest,
   buildCreateDropRequest,
   buildCreateDropOneTxRequest,
+  buildPublishProofsRequest,
   buildDrop,
   dropFactoryAbi,
   getZkX509,
@@ -35,7 +36,7 @@ import type { SnapshotManifest } from "@/lib/useSnapshotJob";
 import { useAllowedTokens } from "@/lib/campaigns";
 import { DRAFT_CSV_KEY } from "@/lib/draftCsv";
 import { downloadCsv } from "@/lib/downloadCsv";
-import { explorerUrl } from "@/lib/explorer";
+import { explorerUrl, shortHash } from "@/lib/explorer";
 import { patchAnnouncement, useAnnouncements } from "@/lib/announcements";
 import { publishCampaignMeta } from "@/lib/campaignMeta";
 import { publishProofs } from "@/lib/proofs";
@@ -284,12 +285,20 @@ export default function NewCampaignPage() {
     "Sign in to scatter.drop to manage your announcements.",
   );
 
+  // The created drop + the pinned proofs CID feed the optional on-chain
+  // publishProofs anchor tx offered after creation.
+  const [createdDrop, setCreatedDrop] = useState<Address | null>(null);
+  const [proofsCid, setProofsCid] = useState<string | null>(null);
+
   // After createDrop confirms: publish the recipient proofs (claimers look
   // their proof up by merkleRoot) and the wizard's name/description (not in
   // the on-chain event — without this the entered copy is silently lost).
   const onCampaignCreated = (receipt: TransactionReceipt) => {
-    if (activeManifest) void publishProofs(merkleRoot, activeManifest.claims);
+    if (activeManifest) {
+      void publishProofs(merkleRoot, activeManifest.claims).then(setProofsCid);
+    }
     const drop = dep && dropFromReceipt(receipt, dep.dropFactory);
+    if (drop) setCreatedDrop(drop);
     const trimmedName = name.trim();
     if (drop && trimmedName) {
       void publishCampaignMeta({
@@ -860,6 +869,26 @@ export default function NewCampaignPage() {
                         onConfirmed={onCampaignCreated}
                       />
                     </>
+                  )}
+                  {/* Optional anchor tx once the proofs are pinned: records the
+                      list's IPFS CID on-chain (ProofsPublished) so claimers can
+                      recover it even if this app's store is unavailable. Only
+                      appears when server-side pinning is configured. */}
+                  {createdDrop && proofsCid && factory && (
+                    <div className="space-y-1">
+                      <TxButton
+                        request={buildPublishProofsRequest(factory, createdDrop, proofsCid)}
+                        label="Publish proofs CID on-chain"
+                        disableWhenConfirmed
+                      />
+                      <p className="text-[11px] text-slate-500">
+                        Recipient list pinned to IPFS (
+                        <span className="font-mono" title={proofsCid}>
+                          {shortHash(proofsCid)}
+                        </span>
+                        ) — this transaction anchors the CID on-chain.
+                      </p>
+                    </div>
                   )}
                 </div>
                 {ready && !insufficient && (

@@ -43,6 +43,7 @@ model CampaignProofs {
   root      String   @id // lowercased 0x… merkleRoot
   claims    String   // JSON: { [lowercased address]: {index, account, amount, proof[]} }
   count     Int
+  cid       String?  // IPFS CID of the pinned proofs.json (when pinning is configured)
   createdAt DateTime @default(now())
 }
 
