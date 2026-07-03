@@ -227,16 +227,22 @@ export function useCampaignStats(campaign?: Campaign, opts?: ChainOpt) {
   // Undefined for a chain wagmi has no transport for (unregistered network) —
   // `enabled` then keeps the query off instead of reading the wrong chain.
   const client = usePublicClient({ chainId });
+  // deployBlock floors the scan at the factory's deployment — without it the
+  // default LOOKBACK window (20k blocks) silently drops older history on
+  // long-lived networks.
+  const { data: dep } = useDeployment(opts);
 
   return useQuery({
     queryKey: ["campaignStats", chainId, campaign?.drop],
-    enabled: !!client && !!campaign?.drop && campaign.totalRaw !== undefined,
+    enabled: !!client && !!campaign?.drop && campaign.totalRaw !== undefined && dep !== undefined,
     staleTime: 15_000,
     queryFn: async (): Promise<CampaignStats | null> => {
       if (!client || !campaign?.totalRaw) return null;
       const decimals = campaign.decimals ?? 18;
       const total = campaign.totalRaw;
-      const { fromBlock, toBlock } = await scanWindow(client, {});
+      const { fromBlock, toBlock } = await scanWindow(client, {
+        deployBlock: dep?.deployBlock,
+      });
 
       const [balance, logs] = await Promise.all([
         client.readContract({
@@ -290,14 +296,19 @@ export function useClaimEvents(campaign?: Campaign, opts?: ChainOpt) {
   const walletChainId = useChainId();
   const chainId = opts?.chainId ?? walletChainId;
   const client = usePublicClient({ chainId });
+  // deployBlock floors the scan (see useCampaignStats) — campaigns older than
+  // the LOOKBACK window would otherwise silently lose their claim history.
+  const { data: dep } = useDeployment(opts);
 
   return useQuery({
     queryKey: ["claimEvents", chainId, campaign?.drop],
-    enabled: !!client && !!campaign?.drop,
+    enabled: !!client && !!campaign?.drop && dep !== undefined,
     staleTime: 15_000,
     queryFn: async (): Promise<ClaimEvent[]> => {
       if (!client || !campaign) return [];
-      const { fromBlock, toBlock } = await scanWindow(client, {});
+      const { fromBlock, toBlock } = await scanWindow(client, {
+        deployBlock: dep?.deployBlock,
+      });
       const logs = await client.getLogs({
         address: campaign.drop,
         event: CLAIMED_EVENT,
@@ -427,7 +438,11 @@ export function useAllowedTokens() {
     staleTime: 15_000,
     queryFn: async (): Promise<AllowedToken[]> => {
       if (!client || !dep?.dropFactory) return [];
-      const { fromBlock, toBlock } = await scanWindow(client, {});
+      // deployBlock floors the scan — allow-list entries set before the
+      // LOOKBACK window would otherwise vanish from the list.
+      const { fromBlock, toBlock } = await scanWindow(client, {
+        deployBlock: dep.deployBlock,
+      });
 
       const logs = await client.getLogs({
         address: dep.dropFactory,

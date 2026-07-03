@@ -104,8 +104,10 @@ export default function DistributionReportPage({
           </tr>
         </thead>
         <tbody>
+          {/* recipient alone can repeat in the claims-only fallback (one
+              address can hold multiple leaf indices) — include the tx. */}
           {rows.map((r) => (
-            <tr key={r.recipient}>
+            <tr key={`${r.recipient}-${r.tx}`}>
               <td style={{ fontFamily: "var(--font-mono)", fontSize: 12, wordBreak: "break-all" }}>
                 {r.recipient}
               </td>
