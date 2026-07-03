@@ -28,12 +28,13 @@ export function RecipientsList({ campaign }: { campaign: Campaign }) {
     `${formatUnits(r.amount, decimals)} ${campaign.tokenSymbol}`;
 
   const me = address?.toLowerCase();
+  const trimmedQuery = query.trim().toLowerCase();
   const filtered = useMemo(
     () =>
-      rows && query
-        ? rows.filter((r) => r.address.includes(query.trim().toLowerCase()))
+      rows && trimmedQuery
+        ? rows.filter((r) => r.address.includes(trimmedQuery))
         : rows ?? [],
-    [rows, query],
+    [rows, trimmedQuery],
   );
   const shown = filtered.slice(0, DISPLAY_CAP);
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Address, Hex } from "viem";
 import type { ClaimProof } from "@tokamak-network/scatter-drop-sdk";
@@ -109,30 +110,43 @@ export function useRecipients(campaign: Campaign | undefined) {
 /**
  * Live eligibility for a campaign: look the connected wallet up in the published
  * proofs (by merkleRoot), falling back to the dev-fork demo stub when none are
- * published. Derived from the shared per-root claims query — no second download.
+ * published. Derived synchronously from the shared per-root claims query — no
+ * second download, and background claims refetches don't bounce the result
+ * through a pending state.
  */
 export function useEligibility(campaign: Campaign | undefined, address: Address | undefined) {
   const root = campaign?.merkleRoot?.toLowerCase() as Hex | undefined;
   const claimsQ = useClaims(root);
   // undefined while loading/on error; null = not published (404).
   const claims = claimsQ.data;
-  return useQuery({
-    // dataUpdatedAt keys the derivation to the claims snapshot it read, so a
-    // refetched claims map recomputes eligibility (from cache — no network).
-    queryKey: ["eligibility", root ?? campaign?.id, address, claimsQ.dataUpdatedAt],
-    enabled: !!campaign && !!address && (!root || !claimsQ.isPending),
-    queryFn: async (): Promise<Eligibility> => {
-      if (claims) {
-        const claim = claims[address!.toLowerCase()];
-        return claim
-          ? { eligible: true, alreadyClaimed: false, claim }
-          : { eligible: false, alreadyClaimed: false };
-      }
-      // No published proofs (404) or fetch error → dev-fork demo seed; unless
-      // the stub grants eligibility, surface "list not published" (404 only)
-      // instead of a false "not on the list".
-      const stub = await getStubEligibility(campaign!.id, address!);
-      return stub.eligible ? stub : { ...stub, notPublished: claims === null };
-    },
+
+  // The stub (dev-fork demo seed) only matters when there's no published list:
+  // no root at all, a 404, or a failed proofs fetch.
+  const stubEnabled =
+    !!campaign && !!address && (!root || claims === null || claimsQ.isError);
+  const stubQ = useQuery({
+    queryKey: ["eligibility-stub", campaign?.id, address],
+    enabled: stubEnabled,
+    queryFn: () => getStubEligibility(campaign!.id, address!),
   });
+
+  const data = useMemo((): Eligibility | undefined => {
+    if (!campaign || !address) return undefined;
+    if (claims) {
+      const claim = claims[address.toLowerCase()];
+      return claim
+        ? { eligible: true, alreadyClaimed: false, claim }
+        : { eligible: false, alreadyClaimed: false };
+    }
+    if (!stubQ.data) return undefined;
+    // Unless the stub grants eligibility, surface "list not published"
+    // (404 only) instead of a false "not on the list".
+    return stubQ.data.eligible
+      ? stubQ.data
+      : { ...stubQ.data, notPublished: claims === null };
+  }, [campaign, address, claims, stubQ.data]);
+
+  const isPending =
+    (!!root && claimsQ.isPending) || (stubEnabled && stubQ.isPending);
+  return { data, isPending, isError: stubEnabled ? stubQ.isError : claimsQ.isError };
 }
