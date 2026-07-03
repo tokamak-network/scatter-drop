@@ -312,8 +312,10 @@ its `approveAndCall` ERC165-checks the spender before invoking `onApprove`:
   computed on `msg.sender` (the token) — a hostile non-listed token calling
   `onApprove` directly reverts on the allow-list check. A listed-but-malicious
   token is a larger surface than "drops funded by its own approvals": the token
-  supplies the `owner` argument, so it can forge **arbitrary operator
-  attribution** (that operator gains `sweep` rights and board attribution), and
+  supplies the `owner` argument, so it can forge **operator attribution to any
+  gate-1-verified operator** (`_createDrop` still enforces
+  `_requireVerifiedOperator`, so not a fully arbitrary address — but the victim
+  operator gains `sweep` rights and board attribution without consenting), and
   the exact-receipt checks rely on the token's own `transferFrom`/`balanceOf`
   honesty. The trust boundary is the admin allow-list, not the `onApprove`
   plumbing.
