@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { LOWER_ADDR_RE, ROOT_RE } from "@/lib/server/apiInput";
+import { pinJson } from "@/lib/server/pinning";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -71,7 +72,17 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-  return NextResponse.json({ ok: true, count });
+  // Best-effort IPFS pin after the durable store: the CID lets the operator
+  // anchor the list on-chain (publishProofs) and lets clients recover it when
+  // this store is unavailable. A pinning failure must not fail the publish.
+  let cid: string | null = null;
+  try {
+    cid = await pinJson(`proofs-${root}.json`, { root, claims: norm });
+    if (cid) await prisma.campaignProofs.update({ where: { root }, data: { cid } });
+  } catch {
+    cid = null;
+  }
+  return NextResponse.json({ ok: true, count, cid });
 }
 
 export async function GET(req: NextRequest) {
@@ -83,8 +94,9 @@ export async function GET(req: NextRequest) {
   if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
   // The stored claims are JSON text we wrote ourselves — embed the string
   // directly instead of parse + re-stringify (up to MAX_CLAIMS entries on the
-  // eligibility hot path).
-  return new NextResponse(`{"claims":${row.claims}}`, {
-    headers: { "content-type": "application/json" },
-  });
+  // eligibility hot path). cid rides along for republish/anchor surfaces.
+  return new NextResponse(
+    `{"claims":${row.claims},"cid":${JSON.stringify(row.cid)}}`,
+    { headers: { "content-type": "application/json" } },
+  );
 }

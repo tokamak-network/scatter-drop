@@ -15,6 +15,7 @@ import { dropFactoryAbi } from "@tokamak-network/scatter-drop-sdk";
  */
 
 export const DROP_CREATED = getAbiItem({ abi: dropFactoryAbi, name: "DropCreated" });
+export const PROOFS_PUBLISHED = getAbiItem({ abi: dropFactoryAbi, name: "ProofsPublished" });
 
 // Fallback window when the source carries no deployBlock. The fork's local
 // blocks (where the factory + campaigns live) sit at the chain head, so a
@@ -90,6 +91,43 @@ export async function scanDropCreated(
   source: { dropFactory: Address; deployBlock?: bigint },
   filter?: { drop?: Address; operator?: Address },
 ): Promise<DropCreatedArgs[]> {
+  const { fromBlock, toBlock } = await scanWindow(client, source);
+  const logs = await client.getLogs({
+    address: source.dropFactory,
+    event: DROP_CREATED,
+    ...(filter ? { args: filter } : {}),
+    fromBlock,
+    toBlock,
+  });
+  return logs.map((l) => l.args as DropCreatedArgs);
+}
+
+/**
+ * The latest ProofsPublished CID for `drop` (the current proofs.json anchor),
+ * or null when the operator never published one. Same fork-floor rules.
+ */
+export async function scanLatestProofsCid(
+  client: PublicClient,
+  source: { dropFactory: Address; deployBlock?: bigint },
+  drop: Address,
+): Promise<string | null> {
+  const { fromBlock, toBlock } = await scanWindow(client, source);
+  const logs = await client.getLogs({
+    address: source.dropFactory,
+    event: PROOFS_PUBLISHED,
+    args: { drop },
+    fromBlock,
+    toBlock,
+  });
+  const last = logs.at(-1);
+  return last ? ((last.args as { cid?: string }).cid ?? null) : null;
+}
+
+/** Fork-floored [fromBlock, toBlock] window shared by the factory-log scans. */
+async function scanWindow(
+  client: PublicClient,
+  source: { deployBlock?: bigint },
+): Promise<{ fromBlock: bigint; toBlock: bigint }> {
   const [latest, forkBlock] = await Promise.all([
     client.getBlockNumber(),
     getForkBlock(client),
@@ -99,12 +137,5 @@ export async function scanDropCreated(
   if (forkBlock !== undefined && fromBlock < forkBlock) fromBlock = forkBlock;
   // A stale deployBlock (different fork run) could exceed head → fromBlock > toBlock.
   if (fromBlock > latest) fromBlock = latest;
-  const logs = await client.getLogs({
-    address: source.dropFactory,
-    event: DROP_CREATED,
-    ...(filter ? { args: filter } : {}),
-    fromBlock,
-    toBlock: latest,
-  });
-  return logs.map((l) => l.args as DropCreatedArgs);
+  return { fromBlock, toBlock: latest };
 }

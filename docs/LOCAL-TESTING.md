@@ -59,6 +59,10 @@ node apps/web/prisma/seed.mjs
 > `SESSION_SECRET`은 dev 폴백을 쓴다(프로덕션은 `apps/web/.env`에 ≥32자 필수).
 > `SIWE_DOMAIN`도 프로덕션 필수(예: `app.example.com`) — SIWE 서명을 이 도메인에 바인딩한다.
 > 로컬은 미설정 시 Host 헤더로 폴백(dev 편의).
+> `PINATA_JWT`(선택): 설정하면 proofs.json이 IPFS에 핀되고, 위자드에 CID 온체인 앵커
+> (`publishProofs`) 트랜잭션 버튼이 나타난다. 미설정(로컬 기본)이면 DB 스토어만 사용.
+> `NEXT_PUBLIC_IPFS_GATEWAY`(선택, 기본 `https://ipfs.io`): 스토어 미스 시 클레임 페이지가
+> 온체인 CID로 proofs.json을 읽어오는 게이트웨이.
 
 ## 2. (선택) 내 지갑을 게이트 통과시키기
 데모 고객(anvil #1)이 아닌 **내 지갑**으로 claim/create 하려면, 그 주소를 포크에서 검증됨 처리:

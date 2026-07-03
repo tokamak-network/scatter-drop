@@ -41,6 +41,7 @@ export {
   encodeClaim,
   buildClaimRequest,
   buildCreateDropRequest,
+  buildPublishProofsRequest,
   buildWithdrawFeesRequest,
   buildApproveRequest,
   encodeOnApproveData,

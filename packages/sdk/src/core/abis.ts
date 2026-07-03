@@ -223,6 +223,28 @@ export const dropFactoryAbi = [
     ],
     outputs: [],
   },
+  // Off-chain proofs.json anchoring: the operator records the IPFS CID of a
+  // drop's proofs on-chain (event-only — the latest ProofsPublished per drop
+  // is the current CID). Clients recover the recipient list from IPFS when
+  // the app's proofs store misses.
+  {
+    type: "function",
+    name: "publishProofs",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "drop", type: "address" },
+      { name: "cid", type: "string" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "event",
+    name: "ProofsPublished",
+    inputs: [
+      { name: "drop", type: "address", indexed: true },
+      { name: "cid", type: "string", indexed: false },
+    ],
+  },
   // On-chain encoder for onApprove's `data`; its tuple input gives DropParams an
   // ABI surface so abi-drift.test.ts pins the struct's field order/types.
   {
