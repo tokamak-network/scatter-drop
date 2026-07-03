@@ -236,9 +236,9 @@ export function DuneImport({ onRows }: { onRows: (rows: Recipient[]) => void }) 
           </li>
           <li>
             Create a new query at{" "}
-            <span className="font-mono text-slate-200">
-              dune.com/workspace/u/&lt;your-id&gt;/queries
-            </span>
+            <a href="https://dune.com/queries" target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline">
+              dune.com/queries
+            </a>
             .
           </li>
           <li>Paste the SQL below into the query editor, then replace the placeholders (listed under it).</li>
