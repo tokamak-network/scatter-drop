@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { IdentityGate } from "@/components/IdentityGate";
 import { useVerifiedUntil } from "@/lib/contracts";
-import { useCampaign } from "@/lib/campaigns";
+import { fmtUnixDateTime, useCampaign } from "@/lib/campaigns";
 import { ClaimPanel } from "./ClaimPanel";
 
 export default function CampaignDetailPage({
@@ -62,15 +62,20 @@ export default function CampaignDetailPage({
   const open = campaign.identityRegistry === zeroAddress;
   const startsAt =
     campaign.startTimeUnix > 0n
-      ? new Date(Number(campaign.startTimeUnix) * 1000).toISOString().slice(0, 10)
+      ? fmtUnixDateTime(campaign.startTimeUnix)
       : "At launch";
-  const gateState = !address
-    ? "unverified"
-    : verifiedUntil === undefined
-      ? "loading"
-      : isVerificationValid(verifiedUntil, now)
-        ? "verified"
-        : "unverified";
+  // Open campaigns (identityRegistry == 0) skip verification entirely — the
+  // registry read never runs, so without this branch the card would sit on
+  // "checking…" forever.
+  const gateState = open
+    ? "open"
+    : !address
+      ? "unverified"
+      : verifiedUntil === undefined
+        ? "loading"
+        : isVerificationValid(verifiedUntil, now)
+          ? "verified"
+          : "unverified";
 
   return (
     <div className="space-y-8 animate-fade-in">

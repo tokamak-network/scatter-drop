@@ -8,7 +8,7 @@ import {
   useWaitForTransactionReceipt,
 } from "wagmi";
 import type { Address, Hex } from "viem";
-import { explorerUrl } from "@/lib/explorer";
+import { explorerUrl, shortHash } from "@/lib/explorer";
 
 /**
  * Sends a prepared SDK calldata request ({to,data}) as a real transaction and
@@ -21,12 +21,19 @@ export function TxButton({
   disabled,
   primary,
   onConfirmed,
+  disableWhenConfirmed,
 }: {
   request?: { to: Address; data: Hex; value?: bigint } | null;
   label: string;
   disabled?: boolean;
   primary?: boolean;
   onConfirmed?: () => void;
+  /**
+   * One-shot actions (claim, createDrop): keep the button disabled after the
+   * tx confirms so it can't be re-sent. Leave unset for repeatable actions
+   * (fee settings, vault withdraw) that re-send from the same button.
+   */
+  disableWhenConfirmed?: boolean;
 }) {
   const { data: hash, sendTransaction, isPending, error } = useSendTransaction();
   const { data: receipt, isLoading: mining, isSuccess } =
@@ -71,7 +78,9 @@ export function TxButton({
     <div>
       <button
         className={primary ? "btn btn-primary" : "btn"}
-        disabled={disabled || busy || !request}
+        disabled={
+          disabled || busy || !request || (confirmed && disableWhenConfirmed)
+        }
         onClick={() =>
           request &&
           // Write on the wallet's active chain (matching the chain-aware reads).
@@ -106,18 +115,23 @@ export function TxButton({
                   ? "Reverted ✗"
                   : "Submitted"}
           </span>
-          {txUrl && (
-            <>
-              {" · "}
-              <a
-                href={txUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-emerald-600 hover:underline"
-              >
-                View transaction ↗
-              </a>
-            </>
+          {" · "}
+          {txUrl ? (
+            <a
+              href={txUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-emerald-600 hover:underline"
+              title={hash}
+            >
+              {shortHash(hash)} ↗
+            </a>
+          ) : (
+            // No explorer for this chain (e.g. local fork) — still surface
+            // the hash so the user can copy/inspect it.
+            <span className="font-mono" title={hash}>
+              {shortHash(hash)}
+            </span>
           )}
         </div>
       )}

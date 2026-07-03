@@ -709,9 +709,10 @@ export default function NewCampaignPage() {
                     // creates and funds the campaign in a single operator tx.
                     <TxButton
                       request={oneTxReq}
-                      label="Create in one transaction (approveAndCall)"
+                      label="Create campaign"
                       primary
                       disabled={!oneTxReq || insufficient}
+                      disableWhenConfirmed
                       onConfirmed={() => {
                         if (activeManifest) void publishProofs(merkleRoot, activeManifest.claims);
                       }}
@@ -729,6 +730,7 @@ export default function NewCampaignPage() {
                             label="1. Approve token (total + fee)"
                             primary
                             disabled={!approveTokenReq || insufficient}
+                            disableWhenConfirmed
                             onConfirmed={() => setJustApproved(true)}
                           />
                         ))}
@@ -737,6 +739,7 @@ export default function NewCampaignPage() {
                         label={isNative ? "Create campaign (pay in ETH)" : "2. Create campaign"}
                         primary={isNative || approved}
                         disabled={!createReq || insufficient || (!isNative && !approved)}
+                        disableWhenConfirmed
                         onConfirmed={() => {
                           // Publish the recipient proofs so claimers can look up their
                           // proof by the campaign's merkleRoot.

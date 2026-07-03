@@ -1,6 +1,6 @@
 import { CheckCircle2, Shield, XCircle } from "lucide-react";
 
-type GateState = "loading" | "verified" | "unverified";
+type GateState = "open" | "loading" | "verified" | "unverified";
 
 /**
  * zk-X509 customer identity gate card (campaign detail, left column).
@@ -21,7 +21,11 @@ export function IdentityGate({
           <Shield className="w-4 h-4 text-emerald-500" />
           zk-X509 Identity CA Gate
         </h3>
-        {state === "verified" ? (
+        {state === "open" ? (
+          <span className="text-xs font-mono font-bold text-emerald-600 bg-emerald-950/30 px-3 py-1 rounded-full border border-emerald-500/20 flex items-center gap-1.5">
+            <CheckCircle2 className="w-3.5 h-3.5" /> NO GATE
+          </span>
+        ) : state === "verified" ? (
           <span className="text-xs font-mono font-bold text-emerald-600 bg-emerald-950/30 px-3 py-1 rounded-full border border-emerald-500/20 flex items-center gap-1.5">
             <CheckCircle2 className="w-3.5 h-3.5" /> VERIFIED
           </span>
@@ -34,12 +38,21 @@ export function IdentityGate({
         )}
       </div>
 
-      <p className="text-xs text-slate-400 leading-relaxed">
-        This campaign is gated by the{" "}
-        <strong className="text-slate-200">{registryLabel}</strong> registry.
-        Recipients must hold a national-PKI digital signature verified in that
-        registry; ScatterDrop checks it with zero-knowledge proofs.
-      </p>
+      {state === "open" ? (
+        <p className="text-xs text-slate-400 leading-relaxed">
+          This campaign has{" "}
+          <strong className="text-slate-200">no identity gate</strong> — no
+          verification is required. Any wallet on the distribution list can
+          claim directly.
+        </p>
+      ) : (
+        <p className="text-xs text-slate-400 leading-relaxed">
+          This campaign is gated by the{" "}
+          <strong className="text-slate-200">{registryLabel}</strong> registry.
+          Recipients must hold a national-PKI digital signature verified in that
+          registry; ScatterDrop checks it with zero-knowledge proofs.
+        </p>
+      )}
 
       {state === "verified" ? (
         <div className="bg-emerald-950/20 border border-emerald-900/40 p-4 rounded-lg flex items-start gap-3">

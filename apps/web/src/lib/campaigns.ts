@@ -154,6 +154,19 @@ function formatAmount(raw: bigint, decimals: number): string {
 }
 
 /**
+ * Unix seconds → "YYYY-MM-DD HH:mm:ss" in the viewer's local timezone, so
+ * campaign start/end times show the exact second the claim window flips
+ * (matching the wizard's exact-time claim-window inputs).
+ */
+export function fmtUnixDateTime(unixSeconds: bigint | number): string {
+  const d = new Date(Number(unixSeconds) * 1000);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(
+    d.getHours(),
+  )}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+/**
  * A short, inviting one-liner derived from the on-chain type + token (no
  * off-chain metadata yet). Access (open vs gated) is shown separately on the
  * card, so the tagline focuses on what the drop is and why to click in.
@@ -198,9 +211,7 @@ function toCampaign(
     claimedPct: 0,
     // Guard against a uint64-max deadline overflowing JS's max date.
     deadline:
-      deadlineMs <= 8.64e15
-        ? new Date(deadlineMs).toISOString().slice(0, 10)
-        : "No deadline",
+      deadlineMs <= 8.64e15 ? fmtUnixDateTime(args.deadline) : "No deadline",
     startTimeUnix: args.startTime,
     deadlineUnix: args.deadline,
     identityRegistry: args.identityRegistry,

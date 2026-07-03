@@ -229,16 +229,16 @@ export function DuneImport({ onRows }: { onRows: (rows: Recipient[]) => void }) 
         <ol className="mt-1 space-y-1.5 px-4 text-[11px] text-slate-400 list-decimal list-inside">
           <li>
             Log in at{" "}
-            <a href="https://dune.com/" target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline">
+            <a href="https://dune.com/" target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:underline">
               dune.com
             </a>
             .
           </li>
           <li>
             Create a new query at{" "}
-            <span className="font-mono text-slate-200">
-              dune.com/workspace/u/&lt;your-id&gt;/queries
-            </span>
+            <a href="https://dune.com/queries" target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:underline">
+              dune.com/queries
+            </a>
             .
           </li>
           <li>Paste the SQL below into the query editor, then replace the placeholders (listed under it).</li>
