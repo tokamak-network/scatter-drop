@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useChainId, usePublicClient } from "wagmi";
 import type { Address, Hex, PublicClient } from "viem";
 import { verifyClaim, type ClaimProof } from "@tokamak-network/scatter-drop-sdk";
-import { useDeployment } from "./contracts";
+import { useDeployment, type ChainOpt } from "./contracts";
 import type { WebDeployment } from "./deployment";
 import { scanLatestProofsCid } from "./dropScan";
 import { getStubEligibility, type Campaign, type Eligibility } from "./stub";
@@ -161,13 +161,16 @@ async function fetchClaims(
  * page (up to 50k claims) is fetched once, not once per consumer. Falls back
  * to the on-chain IPFS anchor when the app's store misses.
  */
-function useClaims(campaign: Campaign | undefined) {
+function useClaims(campaign: Campaign | undefined, opts?: ChainOpt) {
   const root = campaign?.merkleRoot?.toLowerCase() as Hex | undefined;
-  const chainId = useChainId();
+  const walletChainId = useChainId();
+  const chainId = opts?.chainId ?? walletChainId;
   const client = usePublicClient({ chainId });
-  const { data: dep } = useDeployment();
+  const { data: dep } = useDeployment(opts);
   return useQuery({
-    queryKey: ["proofs", root],
+    // chainId in the key: the IPFS-anchor fallback reads that chain's factory
+    // logs, so cross-chain views must not share a cache entry.
+    queryKey: ["proofs", chainId, root],
     enabled: !!root && dep !== undefined,
     staleTime: 60_000,
     queryFn: () =>
@@ -196,8 +199,8 @@ function toRecipientRows(
  * the Recipients section — a merkle airdrop's list is public by design
  * (anyone must be able to look up their proof to claim).
  */
-export function useRecipients(campaign: Campaign | undefined) {
-  const { data, isPending, isError } = useClaims(campaign);
+export function useRecipients(campaign: Campaign | undefined, opts?: ChainOpt) {
+  const { data, isPending, isError } = useClaims(campaign, opts);
   const rows = useMemo(
     () => (data === undefined ? undefined : toRecipientRows(data)),
     [data],
