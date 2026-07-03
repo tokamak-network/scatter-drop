@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
+import { verifyDropOperator } from "@/lib/server/dropVerify";
 import { requireWallet } from "@/lib/server/session";
 import {
   announcementDto,
@@ -49,6 +50,15 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     parsed.value.expectedEnd !== undefined ? parsed.value.expectedEnd : row.expectedEnd,
   );
   if (windowErr) return NextResponse.json({ error: windowErr }, { status: 400 });
+  // Linking borrows the drop's LIVE badge + claim CTA, so prove on-chain that
+  // the drop really belongs to this announcement's operator (and, implicitly,
+  // to its chain — the lookup runs on the announcement's registered network).
+  // A no-op relink (same stored value) is skipped: it already passed once, and
+  // an idempotent retry must not fail on a transient RPC blip.
+  if (typeof parsed.value.drop === "string" && parsed.value.drop !== row.drop) {
+    const dropErr = await verifyDropOperator(row.chainId, parsed.value.drop, row.operator);
+    if (dropErr) return NextResponse.json({ error: dropErr }, { status: 422 });
+  }
   const updated = await prisma.announcement.update({ where: { id }, data: parsed.value });
   return NextResponse.json({ announcement: announcementDto(updated) });
 }

@@ -264,14 +264,19 @@ export default function NewCampaignPage() {
   const { data: myAnnouncements } = useAnnouncements(account, { enabled: !!account });
   const openAnnouncements = (myAnnouncements ?? []).filter((a) => !a.drop && !a.canceled);
   const [announcementId, setAnnouncementId] = useState("");
-  // Chain-scoped selections must not survive a network switch: an
-  // announcement link would tie a chain-A announcement to a chain-B drop,
-  // and a token/registry address means something else (or nothing) on the
-  // new chain. Chain-independent inputs (name, dates, CSV/snapshot recipient
+  // The announcement selection is derived, not reset: the list is
+  // chain-scoped, so a selection made on another network (or one canceled
+  // elsewhere) simply stops resolving — nothing stale can be linked (the
+  // server's dropVerify rejects it as the backstop).
+  const linkedAnnouncementId = openAnnouncements.some((a) => a.id === announcementId)
+    ? announcementId
+    : "";
+  // Chain-scoped address inputs must not survive a network switch — a
+  // token/registry address means something else (or nothing) on the new
+  // chain. Chain-independent inputs (name, dates, CSV/snapshot recipient
   // lists — cross-chain drops like "mainnet stakers, L2 payout" are a real
   // use case) are deliberately kept.
   useEffect(() => {
-    setAnnouncementId("");
     setToken("");
     setRegistry("");
   }, [chainId]);
@@ -296,9 +301,9 @@ export default function NewCampaignPage() {
     }
     // Best-effort, like the meta/proofs publishes — a failed link never blocks
     // the created campaign, and the operator can re-link from the board later.
-    if (drop && announcementId) {
+    if (drop && linkedAnnouncementId) {
       void ensureSession(account).then((session) => {
-        if (session) void patchAnnouncement(announcementId, { drop: drop.toLowerCase() });
+        if (session) void patchAnnouncement(linkedAnnouncementId, { drop: drop.toLowerCase() });
       });
     }
   };
@@ -767,7 +772,7 @@ export default function NewCampaignPage() {
                     </label>
                     <select
                       id="link-announcement"
-                      value={announcementId}
+                      value={linkedAnnouncementId}
                       onChange={(e) => {
                         setAnnouncementId(e.target.value);
                         // Sign in now so the post-creation link PATCH can't die
