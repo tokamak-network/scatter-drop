@@ -30,6 +30,22 @@ export function EmptyState({
   );
 }
 
+/** Centered icon + message box for list pages' loading/error/empty states. */
+export function EmptyBox({
+  children,
+  icon,
+}: {
+  children: ReactNode;
+  icon?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center p-12 bg-slate-950 border border-slate-800 rounded-xl text-center space-y-3">
+      {icon}
+      <p className="text-slate-400 text-sm max-w-sm">{children}</p>
+    </div>
+  );
+}
+
 export function Loading({ label = "Loading…" }: { label?: string }) {
   return (
     <div className="card muted" style={{ textAlign: "center" }}>

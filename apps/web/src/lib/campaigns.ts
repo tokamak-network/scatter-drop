@@ -155,16 +155,25 @@ function formatAmount(raw: bigint, decimals: number): string {
 }
 
 /**
+ * "YYYY-MM-DD HH:mm[:ss]" in the viewer's local timezone — the app's one
+ * datetime layout. `seconds` for exact on-chain times (claim windows flip on
+ * the second); omit it for fuzzy times like announced windows.
+ */
+export function fmtDateTime(d: Date, { seconds = true } = {}): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ` +
+    `${p(d.getHours())}:${p(d.getMinutes())}${seconds ? `:${p(d.getSeconds())}` : ""}`
+  );
+}
+
+/**
  * Unix seconds → "YYYY-MM-DD HH:mm:ss" in the viewer's local timezone, so
  * campaign start/end times show the exact second the claim window flips
  * (matching the wizard's exact-time claim-window inputs).
  */
 export function fmtUnixDateTime(unixSeconds: bigint | number): string {
-  const d = new Date(Number(unixSeconds) * 1000);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(
-    d.getHours(),
-  )}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  return fmtDateTime(new Date(Number(unixSeconds) * 1000));
 }
 
 /**

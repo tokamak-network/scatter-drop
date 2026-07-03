@@ -13,7 +13,11 @@ import {
   ShieldCheck,
   User,
 } from "lucide-react";
+import { AnnouncementCard } from "@/components/AnnouncementCard";
+import { EmptyBox } from "@/components/states";
+import { useAnnouncementsWithStatus } from "@/lib/announcements";
 import { useCampaigns } from "@/lib/campaigns";
+import { shortAddr } from "@/lib/explorer";
 import type { Campaign } from "@/lib/stub";
 
 type TypeTab = "ALL" | AirdropType;
@@ -51,6 +55,8 @@ export default function CampaignsPage() {
 
   return (
     <div className="space-y-8 animate-fade-in">
+      <UpcomingStrip />
+
       {/* Filters */}
       <div className="flex flex-col lg:flex-row gap-4 justify-between items-center bg-slate-900/50 p-4 rounded-xl border border-slate-800/60">
         <div className="relative w-full lg:max-w-md">
@@ -126,8 +132,35 @@ export default function CampaignsPage() {
   );
 }
 
-function shortAddr(a: string) {
-  return `${a.slice(0, 6)}…${a.slice(-4)}`;
+/**
+ * Announced-but-not-yet-live drops, teased above Explore. Renders nothing when
+ * there's nothing upcoming, so the board stays invisible until operators use it.
+ */
+function UpcomingStrip() {
+  const { items } = useAnnouncementsWithStatus();
+  const upcoming = items.filter(({ status }) => status === "UPCOMING");
+  if (upcoming.length === 0) return null;
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">
+          Upcoming drops
+        </h2>
+        <Link
+          href="/upcoming"
+          className="text-[11px] font-mono text-sky-500 hover:text-sky-400 transition flex items-center"
+        >
+          View all <ChevronRight className="w-3.5 h-3.5" />
+        </Link>
+      </div>
+      <div className="flex gap-4 overflow-x-auto pb-1">
+        {upcoming.slice(0, 6).map(({ a, status }) => (
+          <AnnouncementCard key={a.id} a={a} status={status} compact />
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function CampaignCard({ c }: { c: Campaign }) {
@@ -224,17 +257,3 @@ function CampaignCard({ c }: { c: Campaign }) {
   );
 }
 
-function EmptyBox({
-  children,
-  icon,
-}: {
-  children: React.ReactNode;
-  icon?: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col items-center justify-center p-12 bg-slate-950 border border-slate-800 rounded-xl text-center space-y-3">
-      {icon}
-      <p className="text-slate-400 text-sm max-w-sm">{children}</p>
-    </div>
-  );
-}

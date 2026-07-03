@@ -35,8 +35,10 @@ import { useAllowedTokens } from "@/lib/campaigns";
 import { DRAFT_CSV_KEY } from "@/lib/draftCsv";
 import { downloadCsv } from "@/lib/downloadCsv";
 import { explorerUrl } from "@/lib/explorer";
+import { patchAnnouncement, useAnnouncements } from "@/lib/announcements";
 import { publishCampaignMeta } from "@/lib/campaignMeta";
 import { publishProofs } from "@/lib/proofs";
+import { useWalletSession } from "@/lib/useWalletSession";
 import {
   deploymentIssue,
   useComputedFee,
@@ -255,6 +257,16 @@ export default function NewCampaignPage() {
     justApproved ||
     (allowance !== undefined && totalDeposit > 0n && (allowance as bigint) >= totalDeposit);
 
+  // Upcoming-board tie-in: the operator's still-open announcements can be
+  // linked to the campaign this wizard creates (flips the board entry from
+  // UPCOMING to the drop's live on-chain lifecycle).
+  const { data: myAnnouncements } = useAnnouncements(account, { enabled: !!account });
+  const openAnnouncements = (myAnnouncements ?? []).filter((a) => !a.drop && !a.canceled);
+  const [announcementId, setAnnouncementId] = useState("");
+  const { ensureSession } = useWalletSession(
+    "Sign in to scatter.drop to manage your announcements.",
+  );
+
   // After createDrop confirms: publish the recipient proofs (claimers look
   // their proof up by merkleRoot) and the wizard's name/description (not in
   // the on-chain event — without this the entered copy is silently lost).
@@ -268,6 +280,13 @@ export default function NewCampaignPage() {
         drop,
         name: trimmedName,
         description: description.trim(),
+      });
+    }
+    // Best-effort, like the meta/proofs publishes — a failed link never blocks
+    // the created campaign, and the operator can re-link from the board later.
+    if (drop && announcementId) {
+      void ensureSession(account).then((session) => {
+        if (session) void patchAnnouncement(announcementId, { drop: drop.toLowerCase() });
       });
     }
   };
@@ -721,6 +740,39 @@ export default function NewCampaignPage() {
                     {fee !== undefined ? fmtAmount(totalDeposit) : "…"}
                   </dd>
                 </dl>
+
+                {openAnnouncements.length > 0 && (
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="link-announcement"
+                      className="block text-[11px] font-mono uppercase tracking-wider text-slate-400"
+                    >
+                      Link an Upcoming announcement (optional)
+                    </label>
+                    <select
+                      id="link-announcement"
+                      value={announcementId}
+                      onChange={(e) => {
+                        setAnnouncementId(e.target.value);
+                        // Sign in now so the post-creation link PATCH can't die
+                        // on a missing session mid-confirmation.
+                        if (e.target.value) void ensureSession(account);
+                      }}
+                      className="w-full bg-slate-950 border border-slate-800 focus:border-slate-700 text-slate-100 px-3 py-2 text-sm rounded-lg outline-none transition"
+                    >
+                      <option value="">— none —</option>
+                      {openAnnouncements.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.title}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-slate-500 leading-snug">
+                      The board entry then follows this campaign&apos;s on-chain claim
+                      window (UPCOMING → LIVE → ENDED).
+                    </p>
+                  </div>
+                )}
 
                 <p className="text-xs text-slate-500 font-mono">
                   {isNative
