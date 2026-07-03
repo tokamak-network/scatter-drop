@@ -1,4 +1,10 @@
-import { getAbiItem, type Address, type PublicClient } from "viem";
+import {
+  decodeEventLog,
+  getAbiItem,
+  type Address,
+  type Log,
+  type PublicClient,
+} from "viem";
 import { dropFactoryAbi } from "@tokamak-network/scatter-drop-sdk";
 
 /**
@@ -27,6 +33,31 @@ export type DropCreatedArgs = {
   deadline: bigint;
   fee: bigint;
 };
+
+/**
+ * The DropCreated args from `logs` (e.g. a creation receipt's), considering
+ * only logs emitted by `factory` — another contract in the same tx could emit
+ * a signature-compatible event. Returns the first match, or null.
+ */
+export function findDropCreated(
+  logs: readonly Log[],
+  factory: Address,
+): DropCreatedArgs | null {
+  for (const log of logs) {
+    if (log.address.toLowerCase() !== factory.toLowerCase()) continue;
+    try {
+      const ev = decodeEventLog({
+        abi: dropFactoryAbi,
+        data: log.data,
+        topics: log.topics,
+      });
+      if (ev.eventName === "DropCreated") return ev.args as unknown as DropCreatedArgs;
+    } catch {
+      /* not a DropCreated log — keep scanning */
+    }
+  }
+  return null;
+}
 
 /**
  * Ask anvil for the block it forked at. Blocks at or below it are served by the

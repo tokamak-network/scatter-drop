@@ -162,10 +162,18 @@ export function createAnnouncement(draft: AnnouncementDraft) {
   return write("/api/announcements", "POST", draft);
 }
 
-/** Operator-only update: edit copy, link/unlink the created drop, or cancel. */
+/**
+ * Operator-only update: edit copy, link/unlink the created drop, or cancel.
+ * Pass `txHash` (the drop's creation tx) with a link so the server can verify
+ * ownership via one receipt read instead of a log scan.
+ */
 export function patchAnnouncement(
   id: string,
-  patch: Partial<AnnouncementDraft> & { drop?: string | null; canceled?: boolean },
+  patch: Partial<AnnouncementDraft> & {
+    drop?: string | null;
+    canceled?: boolean;
+    txHash?: string;
+  },
 ) {
   return write(`/api/announcements/${id}`, "PATCH", patch);
 }

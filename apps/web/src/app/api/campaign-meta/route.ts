@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { isChainId, LOWER_ADDR_RE } from "@/lib/server/apiInput";
+import { verifyDropOperator } from "@/lib/server/dropVerify";
+import { requireWallet } from "@/lib/server/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,20 +14,21 @@ export const dynamic = "force-dynamic";
  * without this store they were silently dropped and every campaign rendered
  * as "<SYMBOL> airdrop".
  *
- * Create-only and unauthenticated, mirroring /api/proofs: the first write for
- * a drop wins (posted by the wizard right after createDrop confirms). Note
- * the trust model this buys is only "no overwrites" — a third party who wins
- * the race can still squat a new drop's name. The deeper fix (verify the
- * poster against the on-chain DropCreated operator, e.g. via a SIWE-style
- * signature) is deferred while this remains a dev-stage store.
+ * Create-only, and writes are operator-authenticated: the poster's SIWE
+ * wallet must be the drop's on-chain DropCreated operator (verifyDropOperator,
+ * fail-closed) — otherwise a third party racing the wizard could squat a new
+ * drop's public name/description. Reads stay public.
  */
 
 const MAX_NAME = 80;
 const MAX_DESCRIPTION = 400;
-// DoS bound for the unauthenticated store, like MAX_ROOTS in /api/proofs.
+// DoS bound on total rows — writes are authenticated now, but the store is
+// still finite (like MAX_ROOTS in /api/proofs).
 const MAX_METAS = 1_000;
 
 export async function POST(req: NextRequest) {
+  const wallet = await requireWallet();
+  if (!wallet) return NextResponse.json({ error: "Sign-in required" }, { status: 401 });
   let body: unknown;
   try {
     body = await req.json();
@@ -37,6 +40,7 @@ export async function POST(req: NextRequest) {
     drop?: unknown;
     name?: unknown;
     description?: unknown;
+    txHash?: unknown;
   };
   const chainId = isChainId(b.chainId) ? b.chainId : null;
   const drop = typeof b.drop === "string" ? b.drop.toLowerCase() : null;
@@ -55,6 +59,12 @@ export async function POST(req: NextRequest) {
   if ((await prisma.campaignMeta.count()) >= MAX_METAS) {
     return NextResponse.json({ error: "Metadata store is full" }, { status: 507 });
   }
+  // The name/description render as the drop's public identity, so only its
+  // on-chain operator may set them. txHash (the creation tx, sent by the
+  // wizard) is the O(1) receipt path; without it the verifier falls back to a
+  // bounded DropCreated scan.
+  const dropErr = await verifyDropOperator(chainId, drop, wallet, b.txHash);
+  if (dropErr) return NextResponse.json({ error: dropErr }, { status: 422 });
   try {
     await prisma.campaignMeta.create({
       data: { chainId, drop, name, description: description || null },

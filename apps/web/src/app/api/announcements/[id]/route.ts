@@ -56,7 +56,14 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   // A no-op relink (same stored value) is skipped: it already passed once, and
   // an idempotent retry must not fail on a transient RPC blip.
   if (typeof parsed.value.drop === "string" && parsed.value.drop !== row.drop) {
-    const dropErr = await verifyDropOperator(row.chainId, parsed.value.drop, row.operator);
+    // Optional creation-tx hash → O(1) receipt check inside the verifier
+    // (normalization/validation happen there).
+    const dropErr = await verifyDropOperator(
+      row.chainId,
+      parsed.value.drop,
+      row.operator,
+      (body as { txHash?: unknown }).txHash,
+    );
     if (dropErr) return NextResponse.json({ error: dropErr }, { status: 422 });
   }
   const updated = await prisma.announcement.update({ where: { id }, data: parsed.value });

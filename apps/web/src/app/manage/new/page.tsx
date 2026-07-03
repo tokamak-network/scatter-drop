@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useAccount, useBalance, useChainId, useChains } from "wagmi";
 import {
-  decodeEventLog,
   formatUnits,
   isAddress,
   zeroAddress,
@@ -18,7 +17,6 @@ import {
   buildCreateDropRequest,
   buildCreateDropOneTxRequest,
   buildDrop,
-  dropFactoryAbi,
   getZkX509,
   NATIVE_ETH,
   parseCsv,
@@ -33,6 +31,7 @@ import { SnapshotBuilder } from "@/components/SnapshotBuilder";
 import { TxButton } from "@/components/TxButton";
 import type { SnapshotManifest } from "@/lib/useSnapshotJob";
 import { useAllowedTokens } from "@/lib/campaigns";
+import { findDropCreated } from "@/lib/dropScan";
 import { DRAFT_CSV_KEY } from "@/lib/draftCsv";
 import { downloadCsv } from "@/lib/downloadCsv";
 import { explorerUrl } from "@/lib/explorer";
@@ -54,31 +53,6 @@ import {
   useSupportsApproveAndCall,
   useTokenTier,
 } from "@/lib/contracts";
-
-/**
- * The new campaign's address, read from the receipt's DropCreated log. Only
- * logs emitted by `factory` are considered — another contract in the same tx
- * could emit a signature-compatible event.
- */
-function dropFromReceipt(
-  receipt: TransactionReceipt,
-  factory: Address,
-): Address | null {
-  for (const log of receipt.logs) {
-    if (log.address.toLowerCase() !== factory.toLowerCase()) continue;
-    try {
-      const ev = decodeEventLog({
-        abi: dropFactoryAbi,
-        data: log.data,
-        topics: log.topics,
-      });
-      if (ev.eventName === "DropCreated") return (ev.args as { drop: Address }).drop;
-    } catch {
-      /* not a DropCreated log — keep scanning */
-    }
-  }
-  return null;
-}
 
 const SAMPLE_CSV =
   "0x70997970C51812dc3A010C7d01b50e0d17dc79C8,1000\n0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC,500";
@@ -287,25 +261,33 @@ export default function NewCampaignPage() {
   // After createDrop confirms: publish the recipient proofs (claimers look
   // their proof up by merkleRoot) and the wizard's name/description (not in
   // the on-chain event — without this the entered copy is silently lost).
+  // Meta + announcement writes are operator-authenticated, so establish the
+  // SIWE session once and share it; both sends carry the creation txHash so
+  // the server verifies ownership with a single receipt read. All best-effort
+  // — a failure never blocks the created campaign.
   const onCampaignCreated = (receipt: TransactionReceipt) => {
     if (activeManifest) void publishProofs(merkleRoot, activeManifest.claims);
-    const drop = dep && dropFromReceipt(receipt, dep.dropFactory);
+    const drop = dep && findDropCreated(receipt.logs, dep.dropFactory)?.drop;
     const trimmedName = name.trim();
-    if (drop && trimmedName) {
-      void publishCampaignMeta({
-        chainId,
-        drop,
-        name: trimmedName,
-        description: description.trim(),
-      });
-    }
-    // Best-effort, like the meta/proofs publishes — a failed link never blocks
-    // the created campaign, and the operator can re-link from the board later.
-    if (drop && linkedAnnouncementId) {
-      void ensureSession(account).then((session) => {
-        if (session) void patchAnnouncement(linkedAnnouncementId, { drop: drop.toLowerCase() });
-      });
-    }
+    if (!drop || (!trimmedName && !linkedAnnouncementId)) return;
+    void ensureSession(account).then((session) => {
+      if (!session) return;
+      if (trimmedName) {
+        void publishCampaignMeta({
+          chainId,
+          drop,
+          name: trimmedName,
+          description: description.trim(),
+          txHash: receipt.transactionHash,
+        });
+      }
+      if (linkedAnnouncementId) {
+        void patchAnnouncement(linkedAnnouncementId, {
+          drop: drop.toLowerCase(),
+          txHash: receipt.transactionHash,
+        });
+      }
+    });
   };
 
   const fmtWhen = (s: string) => (s ? s.replace("T", " ") : "");
