@@ -62,8 +62,8 @@ async function fetchEligibility(
           : { eligible: false, alreadyClaimed: false };
       }
       // 404 = no proofs published for this root → fall through to the stub,
-      // and if the stub doesn't know the campaign either, surface "list not
-      // published" instead of a false "not on the list".
+      // and unless the stub grants eligibility (dev-fork demo seed), surface
+      // "list not published" instead of a false "not on the list".
       if (res.status === 404) notPublished = true;
     } catch {
       /* fall through to stub */

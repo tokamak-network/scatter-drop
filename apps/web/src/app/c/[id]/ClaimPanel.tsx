@@ -48,7 +48,7 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
   const ended = now > campaign.deadlineUnix;
   const windowOpen = !notStarted && !ended;
   const amount = elig?.claim
-    ? `${formatUnits(BigInt(elig.claim.amount), 18)} ${campaign.tokenSymbol}`
+    ? `${formatUnits(BigInt(elig.claim.amount), campaign.decimals ?? 18)} ${campaign.tokenSymbol}`
     : null;
 
   // Stay in a loading state until the async checks resolve, so we don't flash

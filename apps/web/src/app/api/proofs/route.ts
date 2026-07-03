@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { LOWER_ADDR_RE, ROOT_RE } from "@/lib/server/apiInput";
 
@@ -52,14 +53,23 @@ export async function POST(req: NextRequest) {
     if (LOWER_ADDR_RE.test(key)) norm[key] = v;
   }
   const count = Object.keys(norm).length;
+  // All keys were junk → nothing claimable; storing it would only let junk
+  // rows fill the MAX_ROOTS cap.
+  if (count === 0) {
+    return NextResponse.json({ error: "No valid claims" }, { status: 400 });
+  }
   try {
     await prisma.campaignProofs.create({
       data: { root, claims: JSON.stringify(norm), count },
     });
-  } catch {
+  } catch (err) {
     // Unique violation — proofs are immutable (tied to the root), so a second
-    // publish for the same root is rejected rather than overwriting.
-    return NextResponse.json({ error: "Proofs already published for this root" }, { status: 409 });
+    // publish for the same root is rejected rather than overwriting. Anything
+    // else is a real DB failure, not a conflict.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return NextResponse.json({ error: "Proofs already published for this root" }, { status: 409 });
+    }
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
   return NextResponse.json({ ok: true, count });
 }

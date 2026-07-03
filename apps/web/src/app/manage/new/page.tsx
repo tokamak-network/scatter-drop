@@ -52,9 +52,17 @@ import {
   useTokenTier,
 } from "@/lib/contracts";
 
-/** The new campaign's address, read from the receipt's DropCreated log. */
-function dropFromReceipt(receipt: TransactionReceipt): Address | null {
+/**
+ * The new campaign's address, read from the receipt's DropCreated log. Only
+ * logs emitted by `factory` are considered — another contract in the same tx
+ * could emit a signature-compatible event.
+ */
+function dropFromReceipt(
+  receipt: TransactionReceipt,
+  factory: Address,
+): Address | null {
   for (const log of receipt.logs) {
+    if (log.address.toLowerCase() !== factory.toLowerCase()) continue;
     try {
       const ev = decodeEventLog({
         abi: dropFactoryAbi,
@@ -63,7 +71,7 @@ function dropFromReceipt(receipt: TransactionReceipt): Address | null {
       });
       if (ev.eventName === "DropCreated") return (ev.args as { drop: Address }).drop;
     } catch {
-      /* not a factory event — keep scanning */
+      /* not a DropCreated log — keep scanning */
     }
   }
   return null;
@@ -252,9 +260,15 @@ export default function NewCampaignPage() {
   // the on-chain event — without this the entered copy is silently lost).
   const onCampaignCreated = (receipt: TransactionReceipt) => {
     if (activeManifest) void publishProofs(merkleRoot, activeManifest.claims);
-    const drop = dropFromReceipt(receipt);
-    if (drop && name.trim()) {
-      void publishCampaignMeta({ chainId, drop, name, description });
+    const drop = dep && dropFromReceipt(receipt, dep.dropFactory);
+    const trimmedName = name.trim();
+    if (drop && trimmedName) {
+      void publishCampaignMeta({
+        chainId,
+        drop,
+        name: trimmedName,
+        description: description.trim(),
+      });
     }
   };
 

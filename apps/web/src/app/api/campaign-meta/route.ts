@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { isChainId, LOWER_ADDR_RE } from "@/lib/server/apiInput";
 
@@ -58,9 +59,13 @@ export async function POST(req: NextRequest) {
     await prisma.campaignMeta.create({
       data: { chainId, drop, name, description: description || null },
     });
-  } catch {
+  } catch (err) {
     // Unique violation → the campaign already has metadata; first write wins.
-    return NextResponse.json({ error: "Metadata already set for this drop" }, { status: 409 });
+    // Anything else is a real DB failure, not a conflict.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return NextResponse.json({ error: "Metadata already set for this drop" }, { status: 409 });
+    }
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
   return NextResponse.json({ ok: true });
 }

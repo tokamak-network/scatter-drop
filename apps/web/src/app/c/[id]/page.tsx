@@ -304,6 +304,7 @@ function AddressField({
             href={href}
             target="_blank"
             rel="noopener noreferrer"
+            aria-label={`View ${label} on the block explorer`}
             title={`View ${label} on the block explorer`}
             className="text-emerald-600 hover:underline shrink-0"
           >
