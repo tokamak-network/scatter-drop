@@ -138,7 +138,9 @@ export async function scanLatestProofsCid(
 
 function latestCid(logs: { args: unknown }[]): string | null {
   const last = logs.at(-1);
-  return last ? ((last.args as { cid?: string }).cid ?? null) : null;
+  if (!last || typeof last.args !== "object" || last.args === null) return null;
+  const cid = (last.args as { cid?: unknown }).cid;
+  return typeof cid === "string" ? cid : null;
 }
 
 // Chunk size for range-capped fallbacks — well under common provider caps
