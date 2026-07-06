@@ -10,6 +10,7 @@ import {
   useSwitchChain,
 } from "wagmi";
 import { Shield, User } from "lucide-react";
+import { inkBtnClass } from "@/components/pop";
 import { useIsAdmin } from "@/lib/contracts";
 import { useMounted } from "@/lib/useMounted";
 
@@ -44,32 +45,36 @@ export function Nav() {
   const injector = connectors[0];
 
   // A connected wallet is "on a supported network" when its chain is registered.
-  const activeChain = chains.find((c) => c.id === chainId);
+  // Resolved only after mount: the wallet reconnects post-hydration, so the
+  // server render and first client render must agree (same guard as the
+  // boards' NetworkFilter).
+  const activeChain = chains.find((c) => c.id === (mounted ? chainId : undefined));
   const onSupported = !connected || activeChain !== undefined;
   const chainLabel = activeChain?.name ?? chains[0]?.name ?? "network";
 
   return (
     <>
       {/* Header */}
-      <header className="border-b border-slate-900 bg-slate-950/80 backdrop-blur-md sticky top-0 z-40 px-4 py-4 md:px-8">
+      <header className="bg-white border-b-2 border-ink sticky top-0 z-40 px-4 py-4 md:px-8">
         <div className="max-w-7xl mx-auto flex justify-between items-center gap-4">
           <Link href="/" className="flex items-center gap-2.5 cursor-pointer select-none">
-            <div className="w-7 h-7 rounded-lg bg-emerald-500 flex items-center justify-center font-bold text-white shadow-md shadow-emerald-500/10">
+            <div className="w-7 h-7 rounded-xl border-2 border-ink bg-pop-mint flex items-center justify-center font-chunk text-ink">
               S
             </div>
-            <span className="font-display font-bold text-lg tracking-tight text-slate-50">
-              scatter<span className="text-emerald-400">.drop</span>
+            <span className="font-display font-bold text-lg tracking-tight text-ink">
+              scatter
+              <span className="bg-pop-mint px-1 rounded-md">.drop</span>
             </span>
           </Link>
 
-          <nav className="hidden md:flex items-center gap-6 text-xs font-mono font-medium text-slate-300">
+          <nav className="hidden md:flex items-center gap-6 text-xs font-mono font-medium text-ink/60">
             {LINKS.map((l) => (
               <Link
                 key={l.href}
                 href={l.href}
-                className={`hover:text-slate-50 transition ${
+                className={`hover:text-ink transition ${
                   isActive(pathname, l.match)
-                    ? "text-emerald-400 border-b-2 border-emerald-500 pb-0.5"
+                    ? "text-ink font-bold border-b-2 border-pop-mint pb-0.5"
                     : ""
                 }`}
               >
@@ -79,12 +84,12 @@ export function Nav() {
             <Link
               href="/admin"
               title={isAdmin ? "Platform admin" : "Platform admin (owner only)"}
-              className={`hover:text-slate-50 transition flex items-center gap-1.5 ${
+              className={`hover:text-ink transition flex items-center gap-1.5 ${
                 isActive(pathname, ["/admin"])
-                  ? "text-amber-500 border-b-2 border-amber-500 pb-0.5 font-bold"
+                  ? "text-ink border-b-2 border-amber-400 pb-0.5 font-bold"
                   : isAdmin
-                    ? "text-amber-500"
-                    : "text-slate-400"
+                    ? "text-amber-600"
+                    : "text-ink/40"
               }`}
             >
               <Shield className="w-3.5 h-3.5 text-amber-500" /> Admin
@@ -94,15 +99,15 @@ export function Nav() {
           <div className="flex items-center gap-3 font-mono text-xs">
             {/* Network chip — left of the wallet button, reflects the connected chain */}
             {onSupported ? (
-              <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-400">
+              <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border-2 border-ink/15 bg-pop-cream px-2.5 py-1 text-[11px] text-ink/60">
                 <span
-                  className={`w-2 h-2 rounded-full ${connected ? "bg-emerald-400 animate-pulse" : "bg-slate-500"}`}
+                  className={`w-2 h-2 rounded-full ${connected ? "bg-pop-mint animate-pulse" : "bg-ink/30"}`}
                 />
                 {connected ? "Connected: " : "Target chain: "}
-                <strong className="text-slate-200">{chainLabel}</strong>
+                <strong className="text-ink">{chainLabel}</strong>
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500 px-2.5 py-1 text-[11px] text-amber-950">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-pop-yellow border-2 border-ink px-2.5 py-1 text-[11px] text-ink font-semibold">
                 Unsupported network.
                 {chains[0] && (
                   <button
@@ -117,18 +122,18 @@ export function Nav() {
             {connected ? (
               <button
                 onClick={() => disconnect()}
-                className="bg-slate-800 border border-slate-700 hover:border-slate-600 px-3 py-1.5 rounded-lg text-slate-100 transition flex items-center gap-2 cursor-pointer"
+                className="bg-white border-2 border-ink/20 hover:border-ink px-3 py-1.5 rounded-full text-ink transition flex items-center gap-2 cursor-pointer"
                 title="Click to disconnect"
               >
-                <User className="w-3.5 h-3.5 text-slate-300" />
+                <User className="w-3.5 h-3.5 text-ink/60" />
                 <span>{short(address)}</span>
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span className="w-1.5 h-1.5 rounded-full bg-pop-mint" />
               </button>
             ) : (
               <button
                 onClick={() => injector && connect({ connector: injector })}
                 disabled={!injector || isPending}
-                className="bg-emerald-500 hover:bg-emerald-400 text-white font-bold px-4 py-2 rounded-lg transition cursor-pointer disabled:opacity-60"
+                className={`${inkBtnClass("md")} cursor-pointer disabled:opacity-60`}
               >
                 {isPending ? "Connecting…" : "Connect Wallet"}
               </button>
@@ -138,13 +143,13 @@ export function Nav() {
       </header>
 
       {/* Mobile nav */}
-      <div className="md:hidden border-b border-slate-900/60 bg-slate-950 px-4 py-2 flex justify-around gap-2 text-[11px] font-mono font-medium text-slate-400">
+      <div className="md:hidden bg-white border-b-2 border-ink/10 px-4 py-2 flex justify-around gap-2 text-[11px] font-mono font-medium text-ink/50">
         {LINKS.map((l) => (
           <Link
             key={l.href}
             href={l.href}
-            className={`px-2 py-1 rounded ${
-              isActive(pathname, l.match) ? "text-emerald-400 bg-slate-900/40" : ""
+            className={`px-2 py-1 rounded-full ${
+              isActive(pathname, l.match) ? "text-ink font-bold bg-pop-mint/50" : ""
             }`}
           >
             {l.label}
@@ -152,10 +157,10 @@ export function Nav() {
         ))}
         <Link
           href="/admin"
-          className={`px-2 py-1 rounded flex items-center gap-1 ${
+          className={`px-2 py-1 rounded-full flex items-center gap-1 ${
             isActive(pathname, ["/admin"])
-              ? "text-amber-400 bg-slate-900/40"
-              : "text-amber-500/80"
+              ? "text-ink font-bold bg-amber-200/60"
+              : "text-amber-600/80"
           }`}
         >
           Admin

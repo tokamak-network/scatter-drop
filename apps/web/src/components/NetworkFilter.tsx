@@ -1,8 +1,20 @@
 "use client";
 
-import { useChains } from "wagmi";
+import { useState } from "react";
+import { useChainId, useChains } from "wagmi";
 import { NetworkPills } from "@/components/NetworkSelect";
 import { useMounted } from "@/lib/useMounted";
+
+/**
+ * Chain shown by a board's NetworkFilter: follows the wallet's chain until
+ * the user picks one. Keeps the fallback semantics in one place (and out of
+ * pop.ts, which must stay hook-free so server components can import it).
+ */
+export function usePickedChain(): [number, (chainId: number) => void] {
+  const walletChainId = useChainId();
+  const [picked, setPicked] = useState<number>();
+  return [picked ?? walletChainId, setPicked];
+}
 
 /**
  * Registered-network filter pills for the boards (Explore / Upcoming) —

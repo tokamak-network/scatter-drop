@@ -15,7 +15,7 @@ import {
   User,
 } from "lucide-react";
 import { AnnouncementCard } from "@/components/AnnouncementCard";
-import { NetworkFilter } from "@/components/NetworkFilter";
+import { NetworkFilter, usePickedChain } from "@/components/NetworkFilter";
 import {
   inkBtnClass,
   pillClass,
@@ -23,7 +23,6 @@ import {
   POP_CHIP,
   POP_PANEL,
   popInputClass,
-  usePickedChain,
   whiteBtnClass,
 } from "@/components/pop";
 import { PopHero } from "@/components/PopHero";
@@ -71,7 +70,7 @@ export default function CampaignsPage() {
     <div className="space-y-8 animate-fade-in">
       <PopHero
         title="What's dropping?"
-        subtitle="Live airdrops and announced drops — check your eligibility and claim your share."
+        subtitle="Live drops and announcements — check your eligibility and claim your share."
       />
 
       <UpcomingStrip chainId={chainId} />
