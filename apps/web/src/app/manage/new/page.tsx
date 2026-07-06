@@ -24,14 +24,24 @@ import {
   TokenTier,
   type DropManifest,
 } from "@tokamak-network/scatter-drop-sdk";
-import { ArrowLeft, ArrowRight, Check, Download, Upload } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUpRight, Check, Download, Loader2, Upload } from "lucide-react";
 import Link from "next/link";
 import { ConnectGate } from "@/components/ConnectGate";
+import { CopyButton } from "@/components/CopyButton";
 import { NetworkSelect } from "@/components/NetworkSelect";
+import {
+  inkBtnClass,
+  POP_HEADING,
+  POP_LABEL,
+  POP_PANEL,
+  popInputClass,
+  whiteBtnClass,
+} from "@/components/pop";
 import { SnapshotBuilder } from "@/components/SnapshotBuilder";
 import { TxButton } from "@/components/TxButton";
+import { TxHashLink } from "@/components/TxHashLink";
 import type { SnapshotManifest } from "@/lib/useSnapshotJob";
-import { useAllowedTokens } from "@/lib/campaigns";
+import { anchorRequired, useAllowedTokens } from "@/lib/campaigns";
 import { findDropCreated } from "@/lib/dropScan";
 import { DRAFT_CSV_KEY } from "@/lib/draftCsv";
 import { downloadCsv } from "@/lib/download";
@@ -71,6 +81,9 @@ function downloadSampleCsv() {
 }
 
 const STEPS = ["Operator", "Basics", "Eligibility", "Recipients", "Create"];
+
+/** The wizard's shared field skin (inputs, selects, textareas). */
+const wizInputCls = popInputClass("px-3 py-2 rounded-xl");
 
 const TYPES = [
   AirdropType.CSV,
@@ -195,7 +208,9 @@ export default function NewCampaignPage() {
       setParsed(parseRecipients(csv, decimals));
     }, 400);
     return () => clearTimeout(t);
-  }, [csv, decimals]);
+    // tokenValid only matters on the decimals===undefined early return; the
+    // ref guard makes re-runs no-ops, so satisfying the linter is free.
+  }, [csv, decimals, tokenValid]);
   const { manifest, error: csvError } = parsed;
 
   // Prefill from the /tools CSV builder ("Use in a campaign") once on mount.
@@ -302,10 +317,14 @@ export default function NewCampaignPage() {
     "Sign in to scatter.drop to manage your announcements.",
   );
 
-  // The created drop + the pinned proofs CID feed the optional on-chain
-  // publishProofs anchor tx offered after creation.
+  // Post-creation state driving the success panel: the drop, its creation tx,
+  // the pinned proofs CID (null after settle = pin unavailable — server
+  // pinning not configured or failed), and whether the anchor tx confirmed.
   const [createdDrop, setCreatedDrop] = useState<Address | null>(null);
+  const [createdTx, setCreatedTx] = useState<Hex | null>(null);
   const [proofsCid, setProofsCid] = useState<string | null>(null);
+  const [pinSettled, setPinSettled] = useState(false);
+  const [anchored, setAnchored] = useState(false);
 
   // After createDrop confirms: publish the recipient proofs (claimers look
   // their proof up by merkleRoot) and the wizard's name/description (not in
@@ -315,10 +334,15 @@ export default function NewCampaignPage() {
   // the server verifies ownership with a single receipt read. All best-effort
   // — a failure never blocks the created campaign.
   const onCampaignCreated = (receipt: TransactionReceipt) => {
+    setCreatedTx(receipt.transactionHash);
     if (activeManifest) {
       // The returned CID (when server-side pinning is configured) feeds the
-      // optional on-chain anchor tx below.
-      void publishProofs(merkleRoot, activeManifest.claims).then(setProofsCid);
+      // anchor tx in the success checklist.
+      void publishProofs(merkleRoot, activeManifest.claims)
+        .then(setProofsCid)
+        .finally(() => setPinSettled(true));
+    } else {
+      setPinSettled(true);
     }
     const drop = dep && findDropCreated(receipt.logs, dep.dropFactory)?.drop;
     if (drop) setCreatedDrop(drop);
@@ -372,7 +396,7 @@ export default function NewCampaignPage() {
     // the CSV structure or inject rows.
     const safeUnit = unit.replace(/[^ -~]/g, "").trim() || "tokens";
     downloadCsv(
-      `${name.trim() || "airdrop"}-recipients.csv`,
+      `${name.trim() || "drop"}-recipients.csv`,
       `# amounts in ${safeUnit} - token units with decimals applied (not wei/base units)\naddress,amount\n${body}\n`,
     );
   };
@@ -458,13 +482,13 @@ export default function NewCampaignPage() {
     <div className="space-y-6 animate-fade-in max-w-3xl">
       <Link
         href="/manage"
-        className="inline-flex items-center gap-2 text-slate-400 hover:text-slate-100 transition text-sm font-mono"
+        className="inline-flex items-center gap-2 text-ink/60 hover:text-ink transition text-sm font-bold"
       >
-        <ArrowLeft className="w-4 h-4" /> BACK TO CONSOLE
+        <ArrowLeft className="w-4 h-4" /> Back to console
       </Link>
 
-      <h1 className="text-2xl font-bold text-slate-100 tracking-tight">
-        New Campaign
+      <h1 className="font-chunk uppercase text-2xl md:text-3xl tracking-tight text-ink">
+        New campaign
       </h1>
 
       {/* Target network — the campaign deploys on the wallet's active chain,
@@ -476,15 +500,15 @@ export default function NewCampaignPage() {
         {STEPS.map((label, i) => (
           <div key={label} className="flex items-center gap-2 flex-1">
             <div
-              className={`flex items-center gap-2 text-xs font-mono ${i <= step ? "text-emerald-600" : "text-slate-500"}`}
+              className={`flex items-center gap-2 text-xs font-mono font-bold ${i <= step ? "text-ink" : "text-ink/40"}`}
             >
               <span
-                className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold ${
+                className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold border-2 ${
                   i < step
-                    ? "bg-emerald-500 text-white"
+                    ? "bg-pop-mint text-ink border-ink"
                     : i === step
-                      ? "bg-emerald-500/20 text-emerald-600 border border-emerald-500"
-                      : "bg-slate-800 text-slate-500"
+                      ? "bg-pop-yellow text-ink border-ink"
+                      : "bg-white text-ink/40 border-ink/20"
                 }`}
               >
                 {i < step ? <Check className="w-3 h-3" /> : i + 1}
@@ -493,7 +517,7 @@ export default function NewCampaignPage() {
             </div>
             {i < STEPS.length - 1 && (
               <div
-                className={`h-px flex-1 ${i < step ? "bg-emerald-500" : "bg-slate-800"}`}
+                className={`h-0.5 flex-1 rounded ${i < step ? "bg-ink" : "bg-ink/15"}`}
               />
             )}
           </div>
@@ -502,15 +526,15 @@ export default function NewCampaignPage() {
 
       <ConnectGate prompt="Step 0 — operator identity verification is required to create a campaign. Connect your wallet to begin.">
         {depIssue || !factory ? (
-          <p className="text-slate-400 text-sm">{depIssue ?? "No deployment."}</p>
+          <p className="text-ink/60 text-sm">{depIssue ?? "No deployment."}</p>
         ) : (
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-5">
+          <div className={`bg-white p-6 space-y-5 ${POP_PANEL}`}>
             {step === 0 && (
               <div className="space-y-3">
-                <h2 className="text-lg font-bold text-slate-200">
+                <h2 className="text-lg font-bold text-ink">
                   Operator identity gate
                 </h2>
-                <p className="text-sm text-slate-400 leading-relaxed">
+                <p className="text-sm text-ink/70 leading-relaxed">
                   Creating a campaign requires your wallet to be verified in the
                   operator registry (operatorRegistry.verifiedUntil(you) ≥ now),
                   enforced on-chain at createDrop. Verify via zk-X509 if needed.
@@ -520,12 +544,12 @@ export default function NewCampaignPage() {
 
             {step === 1 && (
               <div className="space-y-4">
-                <h2 className="text-lg font-bold text-slate-200">
+                <h2 className="text-lg font-bold text-ink">
                   Basics &amp; eligibility gate
                 </h2>
                 <Field label="Campaign name">
                   <input
-                    className="input"
+                    className={wizInputCls}
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Acme Loyalty Drop"
@@ -533,7 +557,7 @@ export default function NewCampaignPage() {
                 </Field>
                 <Field label="Description">
                   <input
-                    className="input"
+                    className={wizInputCls}
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder="Reward for verified customers"
@@ -543,7 +567,7 @@ export default function NewCampaignPage() {
                   {allowedTokens && allowedTokens.length > 0 ? (
                     <>
                       <select
-                        className="input"
+                        className={wizInputCls}
                         value={token}
                         onChange={(e) => setToken(e.target.value)}
                       >
@@ -555,12 +579,12 @@ export default function NewCampaignPage() {
                         ))}
                       </select>
                       {token && (
-                        <p className="text-[11px] text-slate-500 font-mono mt-1 break-all">
+                        <p className="text-[11px] text-ink/50 font-mono mt-1 break-all">
                           {token}
                         </p>
                       )}
                       {isNative && (
-                        <span className="text-[11px] text-slate-500">
+                        <span className="text-[11px] text-ink/50">
                           Native ETH — funded via your wallet (msg.value), no token
                           approval needed.
                         </span>
@@ -575,7 +599,7 @@ export default function NewCampaignPage() {
                 </Field>
 
                 <Field label="Customer identity gate (W24)">
-                  <label className="flex items-center gap-2 text-sm text-slate-300">
+                  <label className="flex items-center gap-2 text-sm text-ink/80">
                     <input
                       type="checkbox"
                       checked={identityRequired}
@@ -583,7 +607,7 @@ export default function NewCampaignPage() {
                     />
                     Require customers to be identity-verified to claim
                   </label>
-                  <span className="text-[11px] text-slate-500">
+                  <span className="text-[11px] text-ink/50">
                     {identityRequired
                       ? "Claims require a valid zk-X509 verification at claim time."
                       : "No identity gate — anyone on the recipient list can claim without identity verification."}
@@ -593,7 +617,7 @@ export default function NewCampaignPage() {
                 {identityRequired && (
                   <Field label="Customer CA registry *">
                     <select
-                      className="input"
+                      className={wizInputCls}
                       value={registryAddr ?? ""}
                       onChange={(e) => setRegistry(e.target.value as Address)}
                     >
@@ -615,7 +639,7 @@ export default function NewCampaignPage() {
 
             {step === 2 && (
               <div className="space-y-4">
-                <h2 className="text-lg font-bold text-slate-200">
+                <h2 className="text-lg font-bold text-ink">
                   List source
                 </h2>
                 <div className="grid gap-2">
@@ -624,8 +648,8 @@ export default function NewCampaignPage() {
                       key={t}
                       className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer text-sm ${
                         type === t
-                          ? "border-emerald-500 bg-emerald-500/5"
-                          : "border-slate-800 bg-slate-950"
+                          ? "border-ink bg-pop-yellow/40"
+                          : "border-ink/15 bg-white hover:border-ink/40"
                       }`}
                     >
                       <input
@@ -637,17 +661,17 @@ export default function NewCampaignPage() {
                     </label>
                   ))}
                 </div>
-                <p className="text-xs text-slate-500 font-mono">
+                <p className="text-xs text-ink/50 font-mono">
                   Eligibility is one Merkle list; the type is how the list is
                   built (CSV, on-chain snapshot, …). The platform fee is charged
-                  on the airdrop token and shown at the final step.
+                  on the distribution token and shown at the final step.
                 </p>
               </div>
             )}
 
             {step === 3 && (
               <div className="space-y-4">
-                <h2 className="text-lg font-bold text-slate-200">
+                <h2 className="text-lg font-bold text-ink">
                   Recipients &amp; window
                 </h2>
                 {isSnapshot ? (
@@ -657,7 +681,7 @@ export default function NewCampaignPage() {
                 ) : (
                   <Field label="Recipients CSV (address,amount per line)">
                     <textarea
-                      className="input font-mono text-xs"
+                      className={`${wizInputCls} font-mono text-xs`}
                       rows={6}
                       value={csv}
                       onChange={(e) => setCsv(e.target.value)}
@@ -665,14 +689,14 @@ export default function NewCampaignPage() {
                     />
                     <div className="flex items-center justify-between">
                       <span
-                        className={`text-xs ${csvError ? "text-red-500" : "text-slate-500"}`}
+                        className={`text-xs ${csvError ? "text-rose-500" : "text-ink/50"}`}
                       >
                         {csvError
                           ? csvError
                           : manifest
                             ? `${recipientCount} recipients · total ${fmtAmount(totalAmount)} (auto)`
                             : csv.trim() && decimals === undefined
-                              ? "Select the airdrop token first — amounts are validated against its decimals"
+                              ? "Select the distribution token first — amounts are validated against its decimals"
                               : `Paste address,amount per line (amount in ${unit}, e.g. 120 or 1.5)`}
                       </span>
                       <div className="flex items-center gap-3">
@@ -686,14 +710,14 @@ export default function NewCampaignPage() {
                         <button
                           type="button"
                           onClick={() => csvFileRef.current?.click()}
-                          className="text-[11px] text-emerald-600 inline-flex items-center gap-1 hover:underline"
+                          className="text-[11px] font-bold text-ink/70 inline-flex items-center gap-1 hover:text-ink hover:underline"
                         >
                           <Upload className="w-3 h-3" /> Upload CSV
                         </button>
                         <button
                           type="button"
                           onClick={downloadSampleCsv}
-                          className="text-[11px] text-emerald-600 inline-flex items-center gap-1 hover:underline"
+                          className="text-[11px] font-bold text-ink/70 inline-flex items-center gap-1 hover:text-ink hover:underline"
                         >
                           <Download className="w-3 h-3" /> Sample CSV
                         </button>
@@ -704,7 +728,7 @@ export default function NewCampaignPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Start (optional, to the second)">
                     <input
-                      className="input"
+                      className={wizInputCls}
                       type="datetime-local"
                       step="1"
                       value={startDate}
@@ -713,7 +737,7 @@ export default function NewCampaignPage() {
                   </Field>
                   <Field label="Deadline * (to the second)">
                     <input
-                      className="input"
+                      className={wizInputCls}
                       type="datetime-local"
                       step="1"
                       value={deadline}
@@ -724,21 +748,21 @@ export default function NewCampaignPage() {
               </div>
             )}
 
-            {step === 4 && (
+            {step === 4 && !createdDrop && (
               <div className="space-y-4">
-                <h2 className="text-lg font-bold text-slate-200">
+                <h2 className="text-lg font-bold text-ink">
                   Review &amp; create
                 </h2>
                 <dl className="def-grid text-sm">
-                  <dt className="muted">Name</dt>
+                  <dt className="text-ink/50">Name</dt>
                   <dd>{name}</dd>
                   {description.trim() && (
                     <>
-                      <dt className="muted">Description</dt>
+                      <dt className="text-ink/50">Description</dt>
                       <dd className="whitespace-pre-wrap">{description}</dd>
                     </>
                   )}
-                  <dt className="muted">Airdrop token</dt>
+                  <dt className="text-ink/50">Distribution token</dt>
                   <dd>
                     {isNative ? (
                       "Native ETH"
@@ -750,43 +774,43 @@ export default function NewCampaignPage() {
                             href={explorerAddr(token)}
                             target="_blank"
                             rel="noreferrer"
-                            className="font-mono text-xs break-all text-emerald-600 hover:underline"
+                            className="font-mono text-xs break-all text-ink underline hover:text-ink/70"
                           >
                             {token} ↗
                           </a>
                         ) : (
-                          <span className="font-mono text-xs break-all text-slate-400">{token}</span>
+                          <span className="font-mono text-xs break-all text-ink/60">{token}</span>
                         )}
                       </>
                     )}
                   </dd>
-                  <dt className="muted">Type</dt>
+                  <dt className="text-ink/50">Type</dt>
                   <dd>{airdropTypeLabel(type)}</dd>
-                  <dt className="muted">Recipients</dt>
+                  <dt className="text-ink/50">Recipients</dt>
                   <dd>{recipientCount}</dd>
-                  <dt className="muted">Total (Σ)</dt>
+                  <dt className="text-ink/50">Total (Σ)</dt>
                   <dd>{fmtAmount(totalAmount)}</dd>
-                  <dt className="muted">Claim window</dt>
+                  <dt className="text-ink/50">Claim window</dt>
                   <dd>
                     {startDate ? fmtWhen(startDate) : "immediately on create"} →{" "}
                     {deadline ? fmtWhen(deadline) : "—"}
-                    <span className="text-xs text-slate-500"> ({tzLabel})</span>
+                    <span className="text-xs text-ink/50"> ({tzLabel})</span>
                   </dd>
-                  <dt className="muted">Identity gate</dt>
+                  <dt className="text-ink/50">Identity gate</dt>
                   <dd>{identityRequired ? "Required (zk-X509)" : "No identity gate"}</dd>
-                  <dt className="muted">Merkle root</dt>
+                  <dt className="text-ink/50">Merkle root</dt>
                   <dd className="font-mono text-xs break-all">{merkleRoot}</dd>
-                  <dt className="muted">Distribution (pool)</dt>
+                  <dt className="text-ink/50">Distribution (pool)</dt>
                   <dd>{fmtAmount(totalAmount)}</dd>
-                  <dt className="muted">Platform fee</dt>
+                  <dt className="text-ink/50">Platform fee</dt>
                   <dd>
                     {fee !== undefined ? fmtAmount(fee) : "…"}
                     {feeRateLabel && (
-                      <span className="ml-1.5 text-xs text-slate-500">({feeRateLabel})</span>
+                      <span className="ml-1.5 text-xs text-ink/50">({feeRateLabel})</span>
                     )}
                   </dd>
-                  <dt className="muted">Total deposit</dt>
-                  <dd className="font-semibold text-slate-100">
+                  <dt className="text-ink/50">Total deposit</dt>
+                  <dd className="font-semibold text-ink">
                     {fee !== undefined ? fmtAmount(totalDeposit) : "…"}
                   </dd>
                 </dl>
@@ -795,7 +819,7 @@ export default function NewCampaignPage() {
                   <div className="space-y-1.5">
                     <label
                       htmlFor="link-announcement"
-                      className="block text-[11px] font-mono uppercase tracking-wider text-slate-400"
+                      className={POP_LABEL}
                     >
                       Link an Upcoming announcement (optional)
                     </label>
@@ -808,7 +832,7 @@ export default function NewCampaignPage() {
                         // on a missing session mid-confirmation.
                         if (e.target.value) void ensureSession(account);
                       }}
-                      className="w-full bg-slate-950 border border-slate-800 focus:border-slate-700 text-slate-100 px-3 py-2 text-sm rounded-lg outline-none transition"
+                      className={wizInputCls}
                     >
                       <option value="">— none —</option>
                       {openAnnouncements.map((a) => (
@@ -817,36 +841,36 @@ export default function NewCampaignPage() {
                         </option>
                       ))}
                     </select>
-                    <p className="text-[10px] text-slate-500 leading-snug">
+                    <p className="text-[10px] text-ink/50 leading-snug">
                       The board entry then follows this campaign&apos;s on-chain claim
                       window (UPCOMING → LIVE → ENDED).
                     </p>
                   </div>
                 )}
 
-                <p className="text-xs text-slate-500 font-mono">
+                <p className="text-xs text-ink/50 font-mono">
                   {isNative
                     ? "On-top fee: your wallet sends total + fee in ETH (msg.value). The pool gets the full distribution; the platform vault gets the fee. No approval needed."
-                    : "On-top fee: you deposit total + fee in the airdrop token (one approval). The pool gets the full distribution; the platform vault gets the fee. Then createDrop deploys the campaign."}
+                    : "On-top fee: you deposit total + fee in the distribution token (one approval). The pool gets the full distribution; the platform vault gets the fee. Then createDrop deploys the campaign."}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={downloadRecipients}
                     disabled={!activeManifest || decimals === undefined}
-                    className="btn text-xs disabled:opacity-50"
+                    className={`text-xs disabled:opacity-50 ${whiteBtnClass("md")}`}
                   >
                     ↓ Download recipients CSV
                   </button>
                 </div>
                 {insufficient && (
-                  <p className="text-xs text-red-500">
+                  <p className="text-xs text-rose-500">
                     Insufficient balance: your wallet needs {fmtAmount(totalDeposit)} to fund this
                     drop (total + fee), but holds {fmtAmount(walletBalance as bigint)}.
                   </p>
                 )}
                 {singleTx && (
-                  <p className="text-[11px] text-emerald-600">
+                  <p className="text-[11px] font-bold text-emerald-600">
                     This token supports <span className="font-mono">approveAndCall</span> — it will be
                     created in a single transaction.
                   </p>
@@ -867,8 +891,8 @@ export default function NewCampaignPage() {
                     <>
                       {!isNative &&
                         (approved ? (
-                          <div className="btn text-emerald-600 border-emerald-500/40 cursor-default">
-                            1. Token approved ✓
+                          <div className="inline-flex items-center gap-1.5 w-fit text-xs font-bold text-ink bg-pop-mint border-2 border-ink rounded-full px-3 py-1.5">
+                            <Check className="w-3.5 h-3.5" /> 1. Token approved
                           </div>
                         ) : (
                           <TxButton
@@ -890,29 +914,9 @@ export default function NewCampaignPage() {
                       />
                     </>
                   )}
-                  {/* Optional anchor tx once the proofs are pinned: records the
-                      list's IPFS CID on-chain (ProofsPublished) so claimers can
-                      recover it even if this app's store is unavailable. Only
-                      appears when server-side pinning is configured. */}
-                  {createdDrop && proofsCid && factory && (
-                    <div className="space-y-1">
-                      <TxButton
-                        request={buildPublishProofsRequest(factory, createdDrop, proofsCid)}
-                        label="Publish proofs CID on-chain"
-                        disableWhenConfirmed
-                      />
-                      <p className="text-[11px] text-slate-500">
-                        Recipient list pinned to IPFS (
-                        <span className="font-mono" title={proofsCid}>
-                          {shortHash(proofsCid)}
-                        </span>
-                        ) — this transaction anchors the CID on-chain.
-                      </p>
-                    </div>
-                  )}
                 </div>
                 {ready && !insufficient && (
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-ink/60">
                     {singleTx ? (
                       <>
                         Next: one transaction — <span className="font-mono">approveAndCall</span>{" "}
@@ -926,7 +930,7 @@ export default function NewCampaignPage() {
                   </p>
                 )}
                 {isPaused ? (
-                  <p className="text-xs text-red-500">
+                  <p className="text-xs text-rose-500">
                     The platform is paused — new campaigns can&apos;t be created right now. Try again
                     later or contact the admin.
                   </p>
@@ -941,25 +945,135 @@ export default function NewCampaignPage() {
               </div>
             )}
 
-            {/* Nav */}
-            <div className="flex justify-between pt-4 border-t border-slate-800">
-              <button
-                className="btn"
-                disabled={step === 0}
-                onClick={() => setStep((s) => Math.max(0, s - 1))}
-              >
-                Back
-              </button>
-              {step < STEPS.length - 1 && (
+            {/* Success moment — replaces the review once the campaign is
+                on-chain, so "did it work?" is never ambiguous. For CSV drops
+                the on-chain anchor is a REQUIRED follow-up step (the list has
+                no other serverless recovery path); the CID only exists after
+                the pin, so create + anchor can't be one atomic tx — this is
+                deliberately a two-signature checklist. */}
+            {step === 4 && createdDrop && (
+              <div className="space-y-5">
+                <div className="flex items-center gap-3">
+                  <span className="w-9 h-9 shrink-0 rounded-full bg-pop-mint border-2 border-ink flex items-center justify-center">
+                    <Check className="w-5 h-5 text-ink" />
+                  </span>
+                  <h2 className="font-chunk uppercase text-xl tracking-tight text-ink">
+                    Campaign created
+                  </h2>
+                </div>
+
+                <dl className="def-grid text-sm">
+                  <dt className="text-ink/50">Campaign</dt>
+                  <dd className="font-mono text-xs break-all flex items-center gap-1.5">
+                    {createdDrop}
+                    <CopyButton value={createdDrop} label="Copy campaign address" />
+                  </dd>
+                  {createdTx && (
+                    <>
+                      <dt className="text-ink/50">Creation tx</dt>
+                      <dd className="font-mono text-xs flex items-center gap-1.5">
+                        <TxHashLink hash={createdTx} />
+                        <CopyButton value={createdTx} label="Copy transaction hash" />
+                      </dd>
+                    </>
+                  )}
+                </dl>
+
+                {activeManifest && (
+                  <div className="rounded-2xl border-2 border-ink/15 p-4 space-y-3">
+                    <h3 className={POP_HEADING}>
+                      {anchorRequired(type)
+                        ? "Finish setup — anchor required"
+                        : "Recipient list durability"}
+                    </h3>
+                    <ChecklistRow state="done">Campaign created</ChecklistRow>
+                    {!pinSettled ? (
+                      <ChecklistRow state="pending">Pinning recipient list to IPFS…</ChecklistRow>
+                    ) : proofsCid ? (
+                      <ChecklistRow state="done">
+                        Recipient list pinned to IPFS (
+                        <span className="font-mono" title={proofsCid}>
+                          {shortHash(proofsCid)}
+                        </span>
+                        )
+                      </ChecklistRow>
+                    ) : (
+                      <ChecklistRow state="warn">
+                        Pinning is unavailable (not configured or failed) — pin and
+                        anchor the list later from the campaign&apos;s Proofs tab.
+                      </ChecklistRow>
+                    )}
+                    {proofsCid && factory && (
+                      anchored ? (
+                        <ChecklistRow state="done">Recipient list anchored on-chain</ChecklistRow>
+                      ) : (
+                        <div className="space-y-2">
+                          <ChecklistRow state="todo">
+                            Anchor the list&apos;s CID on-chain
+                            {anchorRequired(type) ? " (required)" : " (recommended)"}
+                          </ChecklistRow>
+                          <TxButton
+                            request={buildPublishProofsRequest(factory, createdDrop, proofsCid)}
+                            label="Anchor recipient list on-chain"
+                            primary={anchorRequired(type)}
+                            disableWhenConfirmed
+                            onConfirmed={() => setAnchored(true)}
+                          />
+                          {anchorRequired(type) && (
+                            <p className="text-xs font-medium text-amber-600">
+                              Don&apos;t leave before anchoring: for CSV drops the
+                              anchor is the only serverless way claimers can recover
+                              the recipient list. You can re-pin and re-anchor an
+                              updated list any time before the claim window opens.
+                            </p>
+                          )}
+                        </div>
+                      )
+                    )}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    href={`/manage/${createdDrop}`}
+                    className={`text-xs flex items-center gap-1.5 ${inkBtnClass("lg")}`}
+                  >
+                    Manage campaign
+                  </Link>
+                  <Link
+                    href={`/c/${createdDrop}`}
+                    className={`text-xs flex items-center gap-1.5 ${whiteBtnClass("lg")}`}
+                  >
+                    View claim page <ArrowUpRight className="w-3.5 h-3.5" />
+                  </Link>
+                </div>
+              </div>
+            )}
+
+            {/* Nav — hidden once the campaign exists (going "Back" into the
+                form after creation would only invite a duplicate). */}
+            {!createdDrop && (
+              <div className="flex justify-between pt-4 border-t-2 border-ink/10">
                 <button
-                  className="btn btn-primary"
-                  disabled={!canNext}
-                  onClick={() => setStep((s) => s + 1)}
+                  type="button"
+                  className={`text-xs disabled:opacity-50 ${whiteBtnClass("lg")}`}
+                  disabled={step === 0}
+                  onClick={() => setStep((s) => Math.max(0, s - 1))}
                 >
-                  Next <ArrowRight className="w-4 h-4" />
+                  Back
                 </button>
-              )}
-            </div>
+                {step < STEPS.length - 1 && (
+                  <button
+                    type="button"
+                    className={`text-xs flex items-center gap-1 disabled:opacity-50 ${inkBtnClass("lg")}`}
+                    disabled={!canNext}
+                    onClick={() => setStep((s) => s + 1)}
+                  >
+                    Next <ArrowRight className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
       </ConnectGate>
@@ -976,8 +1090,46 @@ function Field({
 }) {
   return (
     <label className="block space-y-1">
-      <span className="label">{label}</span>
+      <span className={POP_LABEL}>{label}</span>
       {children}
     </label>
+  );
+}
+
+/** One line of the post-creation durability checklist. */
+function ChecklistRow({
+  state,
+  children,
+}: {
+  state: "done" | "pending" | "todo" | "warn";
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={`flex items-start gap-2 text-sm ${
+        state === "warn" ? "font-medium text-amber-600" : "text-ink/80"
+      }`}
+    >
+      <span
+        className={`mt-0.5 w-5 h-5 shrink-0 rounded-full border-2 flex items-center justify-center ${
+          state === "done"
+            ? "bg-pop-mint border-ink text-ink"
+            : state === "pending"
+              ? "bg-white border-ink/30 text-ink/50"
+              : state === "warn"
+                ? "bg-white border-amber-500 text-amber-600"
+                : "bg-pop-yellow border-ink text-ink"
+        }`}
+      >
+        {state === "done" ? (
+          <Check className="w-3 h-3" />
+        ) : state === "pending" ? (
+          <Loader2 className="w-3 h-3 animate-spin" />
+        ) : (
+          <span className="text-[10px] font-bold">!</span>
+        )}
+      </span>
+      <span>{children}</span>
+    </div>
   );
 }

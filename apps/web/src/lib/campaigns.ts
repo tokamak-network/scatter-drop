@@ -111,6 +111,16 @@ export function fmtUnixDateTime(unixSeconds: bigint | number): string {
 }
 
 /**
+ * True when the campaign type REQUIRES its recipient list anchored on-chain
+ * (ProofsPublished CID): a CSV list has no on-chain source to reproduce it
+ * from, so the anchor is the only serverless recovery path. Snapshot/gated
+ * lists can be rebuilt from their on-chain inputs — anchor recommended only.
+ */
+export function anchorRequired(type: AirdropType): boolean {
+  return type === AirdropType.CSV;
+}
+
+/**
  * A short, inviting one-liner derived from the on-chain type + token (no
  * off-chain metadata yet). Access (open vs gated) is shown separately on the
  * card, so the tagline focuses on what the drop is and why to click in.

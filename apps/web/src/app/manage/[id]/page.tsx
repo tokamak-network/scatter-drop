@@ -5,14 +5,14 @@ import Link from "next/link";
 import { useAccount } from "wagmi";
 import { encodeFunctionData, type Hex } from "viem";
 import { merkleDropAbi } from "@tokamak-network/scatter-drop-sdk";
-import { AlertCircle, ArrowLeft, Download, Users } from "lucide-react";
+import { AlertCircle, ArrowLeft, Download, TriangleAlert, Users } from "lucide-react";
 import { CopyButton } from "@/components/CopyButton";
 import { pillClass, POP_HEADING, POP_PANEL, whiteBtnClass } from "@/components/pop";
 import { EmptyBox, PageSpinner } from "@/components/states";
 import { TxButton } from "@/components/TxButton";
 import { TxHashLink } from "@/components/TxHashLink";
-import { useCampaign, useCampaignStats } from "@/lib/campaigns";
-import { useProofsMeta } from "@/lib/proofs";
+import { anchorRequired, useCampaign, useCampaignStats } from "@/lib/campaigns";
+import { useProofsAnchorCid, useProofsMeta } from "@/lib/proofs";
 import { MetaEditor } from "./MetaEditor";
 import { ProofsPanel } from "./ProofsPanel";
 import type { Campaign } from "@/lib/stub";
@@ -91,6 +91,7 @@ export default function ManageCampaignPage({
 
       {tab === "Overview" && (
         <div className="space-y-4">
+          <AnchorNag campaign={campaign} onGoToProofs={() => setTab("Proofs")} />
           <Overview campaign={campaign} ended={ended} />
           {isOperator && <MetaEditor campaign={campaign} />}
         </div>
@@ -147,6 +148,42 @@ function CreationTx({ hash }: { hash: Hex }) {
       Created in tx <TxHashLink hash={hash} />
       <CopyButton value={hash} label="Copy transaction hash" />
     </p>
+  );
+}
+
+/**
+ * Persistent nag for CSV campaigns whose recipient list has no on-chain
+ * anchor — the anchor is the only serverless recovery path for a CSV list,
+ * so it's REQUIRED before the claim window opens. Renders nothing while the
+ * anchor scan is unresolved (or errored) so it can't false-alarm, and for
+ * non-CSV types (their lists are reproducible from their on-chain source).
+ */
+function AnchorNag({
+  campaign,
+  onGoToProofs,
+}: {
+  campaign: Campaign;
+  onGoToProofs: () => void;
+}) {
+  const { data: anchoredCid, isSuccess } = useProofsAnchorCid(campaign);
+  if (!anchorRequired(campaign.type) || !isSuccess || anchoredCid) return null;
+  return (
+    <div className="rounded-2xl border-2 border-amber-500 bg-amber-50 p-4 flex items-start gap-2.5">
+      <TriangleAlert className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+      <p className="text-xs font-medium text-amber-700 leading-relaxed">
+        Recipient list not anchored on-chain — required for CSV campaigns, or
+        claimers can&apos;t recover the list without this app&apos;s server.{" "}
+        <button
+          type="button"
+          onClick={onGoToProofs}
+          className="underline font-bold hover:text-amber-900 transition"
+        >
+          Anchor it in the Proofs tab
+        </button>{" "}
+        before the claim window opens (you can re-pin and re-anchor an updated
+        list until then).
+      </p>
+    </div>
   );
 }
 
