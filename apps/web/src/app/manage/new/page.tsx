@@ -373,7 +373,7 @@ export default function NewCampaignPage() {
     const safeUnit = unit.replace(/[^ -~]/g, "").trim() || "tokens";
     downloadCsv(
       `${name.trim() || "airdrop"}-recipients.csv`,
-      `# amounts in ${safeUnit} — token units with decimals applied (not wei/base units)\naddress,amount\n${body}\n`,
+      `# amounts in ${safeUnit} - token units with decimals applied (not wei/base units)\naddress,amount\n${body}\n`,
     );
   };
 

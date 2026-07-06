@@ -277,7 +277,7 @@ export default function ToolsPage() {
     // ASCII: an exotic on-chain symbol must not break the CSV structure.
     const safeUnit = unit.replace(/[^ -~]/g, "").trim() || "tokens";
     // No commas in the note — spreadsheet apps would split it into columns.
-    const note = `# amounts in ${safeUnit} — token units with decimals applied (not wei/base units)${
+    const note = `# amounts in ${safeUnit} - token units with decimals applied (not wei/base units)${
       withBalance ? "; balance column = source balances in base units" : ""
     }`;
     return [note, header, ...lines].join("\n");
