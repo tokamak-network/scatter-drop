@@ -29,7 +29,7 @@ const inputCls = popInputClass("px-3 py-2 rounded-xl");
 const labelCls = POP_LABEL;
 
 /**
- * Post an "Upcoming Drops" announcement. The first submit prompts a SIWE
+ * Post an announcement to the Announcements board. The first submit prompts a SIWE
  * signature — announcements are public, so posts must come from a verified
  * wallet (that wallet later links the created campaign in the wizard).
  */
@@ -141,7 +141,7 @@ export default function NewAnnouncementPage() {
           <Megaphone className="w-6 h-6 text-ink" /> New announcement
         </h1>
         <p className="text-xs text-ink/60 font-medium mt-1">
-          Tease your drop on the Upcoming board before it goes on-chain. You can
+          Tease your drop on the Announcements board before it goes on-chain. You can
           link the live campaign later from the creation wizard.
         </p>
       </div>
@@ -160,7 +160,7 @@ export default function NewAnnouncementPage() {
         >
           {chainId !== walletChainId && (
             <span className="text-[11px] font-medium text-amber-600">
-              Differs from your wallet&apos;s network — the Upcoming board shows
+              Differs from your wallet&apos;s network — the Announcements board shows
               the wallet&apos;s chain, so switch there to see the post listed.{" "}
               <button
                 type="button"

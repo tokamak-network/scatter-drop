@@ -16,7 +16,7 @@ import { useMounted } from "@/lib/useMounted";
 
 const LINKS = [
   { href: "/campaigns", label: "Explore", match: ["/campaigns", "/c"] },
-  { href: "/upcoming", label: "Upcoming", match: ["/upcoming"] },
+  { href: "/upcoming", label: "Announcements", match: ["/upcoming"] },
   { href: "/claim", label: "My Claims", match: ["/claim"] },
   { href: "/manage", label: "Manage", match: ["/manage"] },
   { href: "/tools", label: "Tools", match: ["/tools"] },

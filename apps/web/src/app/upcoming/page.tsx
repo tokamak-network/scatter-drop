@@ -14,7 +14,7 @@ type StatusTab = "ALL" | AnnouncementStatus;
 
 const TABS: StatusTab[] = ["ALL", "UPCOMING", "LIVE", "ENDED", "CANCELED"];
 
-/** The "Upcoming Drops" board — operator-posted airdrop pre-announcements. */
+/** The Announcements board — operator-posted drop pre-announcements. */
 export default function UpcomingPage() {
   const [chainId, setPickedChainId] = usePickedChain();
   const { items, isPending, isError } = useAnnouncementsWithStatus(undefined, { chainId });
@@ -25,7 +25,7 @@ export default function UpcomingPage() {
   return (
     <div className="space-y-6 animate-fade-in">
       <PopHero
-        title="Coming soon"
+        title="Announcements"
         subtitle="Airdrops announced by their operators — before they go on-chain."
         action={
           <Link
