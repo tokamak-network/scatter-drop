@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAccount, useChainId, useChains, useSwitchChain } from "wagmi";
+import type { Chain } from "viem";
 import {
   AlertCircle,
   ArrowLeft,
@@ -29,6 +30,7 @@ import {
 import { buildIcs } from "@/lib/calendar";
 import { fmtUnixDateTime, useCampaign } from "@/lib/campaigns";
 import { downloadFile } from "@/lib/download";
+import { explorerUrl, shortAddr } from "@/lib/explorer";
 import { useWalletSession } from "@/lib/useWalletSession";
 
 export default function AnnouncementPage() {
@@ -38,6 +40,7 @@ export default function AnnouncementPage() {
   // — a shared link opened from any network still shows the true live status.
   // The wallet chain only decides whether the claim CTA needs a switch prompt.
   const chainId = useChainId();
+  const chains = useChains();
   const wrongChain = !!a && a.chainId !== chainId;
   const { data: campaign } = useCampaign(a?.drop ?? "", { chainId: a?.chainId });
 
@@ -77,11 +80,17 @@ export default function AnnouncementPage() {
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
             <div className="flex items-center justify-between gap-3">
               <AnnouncementStatusChip status={status} />
-              {a.tokenSymbol && (
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded border uppercase tracking-wide bg-slate-950 text-slate-400 border-slate-800">
-                  {a.tokenSymbol}
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {a.tokenSymbol && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded border uppercase tracking-wide bg-slate-950 text-slate-400 border-slate-800">
+                    {a.tokenSymbol}
+                  </span>
+                )}
+                <TokenAddressChip
+                  tokenAddress={a.tokenAddress}
+                  chain={chains.find((c) => c.id === a.chainId)}
+                />
+              </div>
             </div>
             <h1 className="text-xl font-bold text-slate-50 leading-tight">{a.title}</h1>
             <div className="flex flex-wrap gap-x-6 gap-y-2 text-[11px] text-slate-400 font-mono">
@@ -194,6 +203,39 @@ function AddToCalendar({ a }: { a: Announcement }) {
     >
       <CalendarPlus className="w-3.5 h-3.5" /> Add to calendar
     </button>
+  );
+}
+
+/**
+ * The announced token's contract address, linked to the announcement chain's
+ * block explorer when it has one (plain chip otherwise). Renders nothing when
+ * the operator didn't provide an address.
+ */
+function TokenAddressChip({
+  tokenAddress,
+  chain,
+}: {
+  tokenAddress: string | null;
+  chain: Chain | undefined;
+}) {
+  if (!tokenAddress) return null;
+  const chipCls =
+    "text-[10px] font-mono px-2 py-0.5 rounded border bg-slate-950 text-slate-400 border-slate-800";
+  const href = explorerUrl(chain, "address", tokenAddress);
+  return href ? (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={tokenAddress}
+      className={`${chipCls} hover:border-slate-600 hover:text-slate-200 transition`}
+    >
+      {shortAddr(tokenAddress)}
+    </a>
+  ) : (
+    <span title={tokenAddress} className={chipCls}>
+      {shortAddr(tokenAddress)}
+    </span>
   );
 }
 

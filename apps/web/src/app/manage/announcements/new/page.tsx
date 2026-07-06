@@ -4,8 +4,10 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAccount, useChainId } from "wagmi";
+import { isAddress } from "viem";
 import { ArrowLeft, Loader2, Megaphone, Plus, Trash2 } from "lucide-react";
 import { ConnectGate } from "@/components/ConnectGate";
+import { NetworkSelect } from "@/components/NetworkSelect";
 import {
   createAnnouncement,
   type AnnouncementLink,
@@ -40,6 +42,7 @@ export default function NewAnnouncementPage() {
 
   const [title, setTitle] = useState("");
   const [tokenSymbol, setTokenSymbol] = useState("");
+  const [tokenAddress, setTokenAddress] = useState("");
   const [body, setBody] = useState("");
   const [expectedStart, setExpectedStart] = useState("");
   const [expectedEnd, setExpectedEnd] = useState("");
@@ -55,9 +58,14 @@ export default function NewAnnouncementPage() {
   };
   const startMs = Date.parse(expectedStart);
   const endMs = expectedEnd ? Date.parse(expectedEnd) : null;
+  // Optional field, but when present it must be a real address — the server
+  // rejects anything else, so catch it before the SIWE prompt.
+  const trimmedTokenAddress = tokenAddress.trim();
+  const tokenAddressValid = trimmedTokenAddress === "" || isAddress(trimmedTokenAddress);
   const valid =
     title.trim() !== "" &&
     body.trim() !== "" &&
+    tokenAddressValid &&
     !Number.isNaN(startMs) &&
     (endMs === null || endMs > startMs) &&
     links.every((l) => l.label.trim() && LINK_URL_RE.test(l.url));
@@ -77,6 +85,7 @@ export default function NewAnnouncementPage() {
         title: title.trim(),
         body: body.trim(),
         tokenSymbol: tokenSymbol.trim() || undefined,
+        tokenAddress: trimmedTokenAddress || undefined,
         expectedStart: toIso(expectedStart),
         expectedEnd: expectedEnd ? toIso(expectedEnd) : undefined,
         links: links.length ? links : undefined,
@@ -108,6 +117,10 @@ export default function NewAnnouncementPage() {
       </div>
 
       <ConnectGate prompt="Connect the wallet that will operate the drop.">
+        {/* The announcement is posted on the wallet's active chain (the board
+            filters by it too) — surface that and let the operator switch. */}
+        <NetworkSelect />
+
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-5">
           <div>
             <label htmlFor="ann-title" className={labelCls}>
@@ -137,6 +150,30 @@ export default function NewAnnouncementPage() {
                 onChange={(e) => setTokenSymbol(e.target.value)}
               />
             </div>
+            <div className="sm:col-span-2">
+              <label htmlFor="ann-token-address" className={labelCls}>
+                Token address
+              </label>
+              <input
+                id="ann-token-address"
+                className={`${inputCls} font-mono ${
+                  tokenAddressValid ? "" : "border-rose-500/60 focus:border-rose-500/60"
+                }`}
+                // No maxLength: it would truncate pasted addresses that carry
+                // leading whitespace BEFORE the trim; isAddress gates submit.
+                placeholder="0x… (the airdropped ERC-20, if already deployed)"
+                value={tokenAddress}
+                onChange={(e) => setTokenAddress(e.target.value)}
+              />
+              {!tokenAddressValid && (
+                <p className="text-[11px] text-rose-400 mt-1">
+                  Not a valid address — leave empty if the token isn&apos;t deployed yet.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label htmlFor="ann-start" className={labelCls}>
                 Expected start *

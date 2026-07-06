@@ -72,6 +72,7 @@ model Announcement {
   title         String
   body          String
   tokenSymbol   String?
+  tokenAddress  String? // lowercased ERC-20 address of the airdropped token
   expectedStart DateTime
   expectedEnd   DateTime?
   links         String? // JSON: [{label, url}] — external channels (site, X, …)
