@@ -45,7 +45,10 @@ export function Nav() {
   const injector = connectors[0];
 
   // A connected wallet is "on a supported network" when its chain is registered.
-  const activeChain = chains.find((c) => c.id === chainId);
+  // Resolved only after mount: the wallet reconnects post-hydration, so the
+  // server render and first client render must agree (same guard as the
+  // boards' NetworkFilter).
+  const activeChain = chains.find((c) => c.id === (mounted ? chainId : undefined));
   const onSupported = !connected || activeChain !== undefined;
   const chainLabel = activeChain?.name ?? chains[0]?.name ?? "network";
 
