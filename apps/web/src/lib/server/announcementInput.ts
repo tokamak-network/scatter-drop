@@ -22,6 +22,7 @@ export type AnnouncementInput = {
   title: string;
   body: string;
   tokenSymbol: string | null;
+  tokenAddress: string | null; // lowercased ERC-20 address of the airdropped token
   expectedStart: Date;
   expectedEnd: Date | null;
   links: string | null; // JSON-serialized AnnouncementLink[]
@@ -100,6 +101,11 @@ export function parseAnnouncementPatch(body: unknown): Result<AnnouncementPatch>
     if (s.length > MAX_SYMBOL) return { error: `tokenSymbol too long (max ${MAX_SYMBOL} chars)` };
     patch.tokenSymbol = s || null;
   }
+  if (b.tokenAddress !== undefined) {
+    const s = typeof b.tokenAddress === "string" ? b.tokenAddress.trim().toLowerCase() : "";
+    if (s && !LOWER_ADDR_RE.test(s)) return { error: "Invalid tokenAddress" };
+    patch.tokenAddress = s || null;
+  }
   if (b.expectedStart !== undefined) {
     const d = parseDate(b.expectedStart);
     if (!d) return { error: "Invalid expectedStart" };
@@ -148,6 +154,7 @@ export function parseAnnouncement(body: unknown): Result<AnnouncementInput> {
     title: b.title,
     body: b.body,
     tokenSymbol: b.tokenSymbol,
+    tokenAddress: b.tokenAddress,
     expectedStart: b.expectedStart,
     expectedEnd: b.expectedEnd,
     links: b.links,
@@ -164,6 +171,7 @@ export function parseAnnouncement(body: unknown): Result<AnnouncementInput> {
       title: v.title,
       body: v.body,
       tokenSymbol: v.tokenSymbol ?? null,
+      tokenAddress: v.tokenAddress ?? null,
       expectedStart: v.expectedStart,
       expectedEnd,
       links: v.links ?? null,

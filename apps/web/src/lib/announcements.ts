@@ -27,6 +27,8 @@ export interface Announcement {
   title: string;
   body: string;
   tokenSymbol: string | null;
+  /** Lowercased ERC-20 address of the airdropped token, when announced. */
+  tokenAddress: string | null;
   /** ISO datetimes (the API serializes Dates). */
   expectedStart: string;
   expectedEnd: string | null;
@@ -133,6 +135,7 @@ export interface AnnouncementDraft {
   title: string;
   body: string;
   tokenSymbol?: string;
+  tokenAddress?: string;
   expectedStart: string;
   expectedEnd?: string | null;
   links?: AnnouncementLink[];
