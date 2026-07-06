@@ -1,8 +1,3 @@
-"use client";
-
-import { useState } from "react";
-import { useChainId } from "wagmi";
-
 /**
  * Playful design-system primitives (the "pop" look): single home for the
  * class recipes every page composes, so the app-wide rollout doesn't
@@ -34,13 +29,3 @@ export const POP_PANEL = "rounded-2xl border-2 border-ink pop-shadow-sm";
 
 /** Clickable card shell — the sticker look plus hover lift. Tone composes on top. */
 export const POP_CARD = "border-2 border-ink rounded-3xl pop-shadow hover:-translate-y-0.5 transition-transform";
-
-/**
- * Chain shown by a board's NetworkFilter: follows the wallet's chain until
- * the user picks one. Keeps the fallback semantics in one place.
- */
-export function usePickedChain(): [number, (chainId: number) => void] {
-  const walletChainId = useChainId();
-  const [picked, setPicked] = useState<number>();
-  return [picked ?? walletChainId, setPicked];
-}
