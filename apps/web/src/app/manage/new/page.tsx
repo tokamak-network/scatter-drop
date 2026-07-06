@@ -87,7 +87,31 @@ const wizInputCls = popInputClass("px-3 py-2 rounded-xl");
 // ONCHAIN_SNAPSHOT is deliberately absent: a balance snapshot is gameable by
 // moving funds between wallets during the claim window, so it's retired as a
 // creatable source (the on-chain enum and existing campaigns are untouched).
-const TYPES = [AirdropType.CSV, AirdropType.ONCHAIN_GATED, AirdropType.SOCIAL];
+//
+// `blurb` explains the type in the picker; `forcesIdentity` marks the type
+// whose claim path is meaningless without a zk-X509 gate (ONCHAIN_GATED), so
+// the wizard pins the identity gate ON for it.
+const TYPES: {
+  value: AirdropType;
+  blurb: string;
+  forcesIdentity?: boolean;
+}[] = [
+  {
+    value: AirdropType.CSV,
+    blurb: "A fixed allow-list of addresses and amounts. Anyone on the list can claim.",
+  },
+  {
+    value: AirdropType.ONCHAIN_GATED,
+    blurb:
+      "The list decides WHO is eligible; a national-PKI (zk-X509) check at claim time decides they're a real, verified person. Claiming needs both a Merkle proof and identity verification.",
+    forcesIdentity: true,
+  },
+  {
+    value: AirdropType.SOCIAL,
+    blurb:
+      "Reward completed quests/tasks. Import the winners exported from your quest platform (Galxe/Zealy CSV); pair with an identity gate to keep it Sybil-resistant.",
+  },
+];
 
 /**
  * Parse the recipients CSV using the SDK `parseCsv` (single source of truth) and
@@ -141,6 +165,19 @@ export default function NewCampaignPage() {
   const [deadline, setDeadline] = useState("");
   // W24: identity gate is optional. Off → open claim (identityRegistry = 0).
   const [identityRequired, setIdentityRequired] = useState(true);
+
+  // ONCHAIN_GATED's whole premise is a verified-person check, so the identity
+  // gate is mandatory for it. Rather than sync `identityRequired` through an
+  // effect (which would stick the operator's toggle ON even after they leave
+  // the gated type), derive the effective value: forced types are always
+  // gated, everyone else keeps the operator's own choice (SOCIAL defaults ON
+  // for Sybil-resistance).
+  //
+  // But a network with no zk-X509 registries can't gate at all — there's no
+  // registry to point identityRegistry at — so force the gate OFF there
+  // rather than leave the operator stuck on a required-but-unsatisfiable gate.
+  const identityForced = TYPES.find((t) => t.value === type)?.forcesIdentity ?? false;
+  const identityRequiredEff = !!registries && (identityForced || identityRequired);
 
   const registryAddr = (registry || registries?.usersRegistry) as
     | Address
@@ -441,7 +478,7 @@ export default function NewCampaignPage() {
   const windowValid =
     deadlineUnix > nowSec && (startUnix === 0 || deadlineUnix > startUnix);
   // Identity gate satisfied: either off (open claim) or a registry is chosen.
-  const identityOk = !identityRequired || !!registryAddr;
+  const identityOk = !identityRequiredEff || !!registryAddr;
   const feeValid = fee !== undefined;
   // Service pause: while the platform is paused, createDrop reverts on-chain, so
   // block creation in the UI too (with a clear reason).
@@ -478,7 +515,7 @@ export default function NewCampaignPage() {
     totalAmount,
     startTime: BigInt(startUnix),
     deadline: BigInt(deadlineUnix),
-    identityRegistry: identityRequired && registryAddr ? registryAddr : zeroAddress,
+    identityRegistry: identityRequiredEff && registryAddr ? registryAddr : zeroAddress,
     // For native ETH, the builder sets msg.value = totalAmount + fee.
     fee: fee ?? 0n,
   };
@@ -618,22 +655,29 @@ export default function NewCampaignPage() {
                 </Field>
 
                 <Field label="Customer identity gate (W24)">
-                  <label className="flex items-center gap-2 text-sm text-ink/80">
+                  <label
+                    className={`flex items-center gap-2 text-sm text-ink/80 ${
+                      identityForced ? "opacity-70" : ""
+                    }`}
+                  >
                     <input
                       type="checkbox"
-                      checked={identityRequired}
+                      checked={identityRequiredEff}
+                      disabled={identityForced}
                       onChange={(e) => setIdentityRequired(e.target.checked)}
                     />
                     Require customers to be identity-verified to claim
                   </label>
                   <span className="text-[11px] text-ink/50">
-                    {identityRequired
-                      ? "Claims require a valid zk-X509 verification at claim time."
-                      : "No identity gate — anyone on the recipient list can claim without identity verification."}
+                    {identityForced
+                      ? `${airdropTypeLabel(type)} campaigns are always identity-gated — the type is meaningless without a verified-person check.`
+                      : identityRequired
+                        ? "Claims require a valid zk-X509 verification at claim time."
+                        : "No identity gate — anyone on the recipient list can claim without identity verification."}
                   </span>
                 </Field>
 
-                {identityRequired && (
+                {identityRequiredEff && (
                   <Field label="Customer CA registry *">
                     <select
                       className={wizInputCls}
@@ -651,6 +695,16 @@ export default function NewCampaignPage() {
                         </option>
                       )}
                     </select>
+                    {/* GatePreview (K2, components/GatePreview.tsx): paste an
+                        address → useVerifiedUntil shows ✓/✗ so the operator can
+                        sanity-check the chosen registry against a known wallet.
+                        Placeholder until that component lands. */}
+                    {registryAddr && (
+                      <p className="text-[11px] text-ink/50 mt-1">
+                        Registry {registryAddr.slice(0, 6)}…{registryAddr.slice(-4)} — a
+                        verification preview will appear here.
+                      </p>
+                    )}
                   </Field>
                 )}
               </div>
@@ -664,28 +718,35 @@ export default function NewCampaignPage() {
                 <div className="grid gap-2">
                   {TYPES.map((t) => (
                     <label
-                      key={t}
-                      className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer text-sm ${
-                        type === t
+                      key={t.value}
+                      className={`flex items-start gap-2.5 p-3 rounded-lg border cursor-pointer text-sm ${
+                        type === t.value
                           ? "border-ink bg-pop-yellow/40"
                           : "border-ink/15 bg-white hover:border-ink/40"
                       }`}
                     >
                       <input
                         type="radio"
-                        checked={type === t}
-                        onChange={() => setType(t)}
+                        name="airdrop-type"
+                        className="mt-0.5"
+                        checked={type === t.value}
+                        onChange={() => setType(t.value)}
                       />
-                      {airdropTypeLabel(t)}
+                      <span className="space-y-0.5">
+                        <span className="block font-semibold text-ink">
+                          {airdropTypeLabel(t.value)}
+                        </span>
+                        <span className="block text-[11px] text-ink/60 leading-relaxed">
+                          {t.blurb}
+                        </span>
+                      </span>
                     </label>
                   ))}
                 </div>
                 <p className="text-xs text-ink/50 font-mono">
-                  Recipients always come from the CSV list on the next step;
-                  the type labels how eligibility was decided (fixed list,
-                  identity-gated claims, completed tasks). The platform fee is
-                  charged on the distribution token and shown at the final
-                  step.
+                  Recipients come from the list on the next step; the type sets
+                  how eligibility is decided. The platform fee is charged on the
+                  distribution token and shown at the final step.
                 </p>
               </div>
             )}
@@ -695,6 +756,24 @@ export default function NewCampaignPage() {
                 <h2 className="text-lg font-bold text-ink">
                   Recipients &amp; window
                 </h2>
+                {type === AirdropType.ONCHAIN_GATED && (
+                  <p className="text-xs font-medium text-ink/70 bg-pop-sky/30 border-2 border-ink/10 rounded-xl px-3 py-2 leading-relaxed">
+                    This list decides <strong>who</strong> is eligible. At claim
+                    time each address must <strong>also</strong> pass the zk-X509
+                    identity check — a Merkle proof alone won&apos;t claim.
+                  </p>
+                )}
+                {type === AirdropType.SOCIAL && (
+                  <p className="text-xs font-medium text-ink/70 bg-pop-mint/30 border-2 border-ink/10 rounded-xl px-3 py-2 leading-relaxed">
+                    From your quest platform (Galxe/Zealy) winners list — for now
+                    enter one <span className="font-mono">address,amount</span> per
+                    line below (assign the reward each winner gets). {identityRequiredEff
+                      ? "The identity gate keeps it Sybil-resistant."
+                      : "Consider keeping the identity gate on for Sybil-resistance."}{" "}
+                    A dedicated importer that takes an address-only winners list and
+                    assigns amounts is coming to this step.
+                  </p>
+                )}
                 <Field label="Recipients CSV (address,amount per line)">
                   <textarea
                     className={`${wizInputCls} font-mono text-xs`}
@@ -812,7 +891,7 @@ export default function NewCampaignPage() {
                     <span className="text-xs text-ink/50"> ({tzLabel})</span>
                   </dd>
                   <dt className="text-ink/50">Identity gate</dt>
-                  <dd>{identityRequired ? "Required (zk-X509)" : "No identity gate"}</dd>
+                  <dd>{identityRequiredEff ? "Required (zk-X509)" : "No identity gate"}</dd>
                   <dt className="text-ink/50">Merkle root</dt>
                   <dd className="font-mono text-xs break-all">{merkleRoot}</dd>
                   <dt className="text-ink/50">Distribution (pool)</dt>
