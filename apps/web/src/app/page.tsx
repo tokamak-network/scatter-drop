@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { inkBtnClass, POP_PANEL } from "@/components/pop";
+import { inkBtnClass, outlineBtnClass, POP_PANEL } from "@/components/pop";
 import {
   ShieldCheck,
   Fingerprint,
@@ -106,20 +106,7 @@ export default function HomePage() {
           Every claim ties to one real, verified identity — and the platform
           never holds or hands out your tokens. Non-custodial, open or gated.
         </p>
-        <div className="mt-8 flex flex-wrap gap-3 justify-center">
-          <Link
-            href="/campaigns"
-            className={`inline-flex items-center gap-2 text-sm ${inkBtnClass("lg")}`}
-          >
-            Explore campaigns <ArrowRight className="w-4 h-4" />
-          </Link>
-          <Link
-            href="/manage/new"
-            className="inline-flex items-center gap-2 bg-white border-2 border-ink hover:bg-pop-cream text-ink font-bold px-5 py-2.5 rounded-full text-sm transition"
-          >
-            Create a campaign
-          </Link>
-        </div>
+        <CtaButtons className="mt-8" />
       </section>
 
       {/* Why */}
@@ -249,21 +236,28 @@ export default function HomePage() {
           Explore live campaigns to see it in action, or spin up your own in
           minutes — your campaign, your contract, your tokens.
         </p>
-        <div className="mt-6 flex flex-wrap gap-3 justify-center">
-          <Link
-            href="/campaigns"
-            className={`inline-flex items-center gap-2 text-sm ${inkBtnClass("lg")}`}
-          >
-            Explore campaigns <ArrowRight className="w-4 h-4" />
-          </Link>
-          <Link
-            href="/manage/new"
-            className="inline-flex items-center gap-2 bg-white border-2 border-ink hover:bg-pop-cream text-ink font-bold px-5 py-2.5 rounded-full text-sm transition"
-          >
-            Create a campaign
-          </Link>
-        </div>
+        <CtaButtons className="mt-6" />
       </section>
+    </div>
+  );
+}
+
+/** The landing's primary CTA pair — identical in the hero and the closing panel. */
+function CtaButtons({ className = "" }: { className?: string }) {
+  return (
+    <div className={`${className} flex flex-wrap gap-3 justify-center`}>
+      <Link
+        href="/campaigns"
+        className={`inline-flex items-center gap-2 text-sm ${inkBtnClass("lg")}`}
+      >
+        Explore campaigns <ArrowRight className="w-4 h-4" />
+      </Link>
+      <Link
+        href="/manage/new"
+        className={`inline-flex items-center gap-2 text-sm ${outlineBtnClass("lg")}`}
+      >
+        Create a campaign
+      </Link>
     </div>
   );
 }

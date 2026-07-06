@@ -15,10 +15,16 @@ export function pillClass(active: boolean, activeBg: string, extra = ""): string
   }`;
 }
 
+const BTN_PAD = { sm: "px-3 py-1", md: "px-3 py-1.5", lg: "px-5 py-2.5" } as const;
+
 /** Solid-ink primary CTA pill (button/link/span). Size only changes padding. */
-export function inkBtnClass(size: "sm" | "md" | "lg" = "md"): string {
-  const pad = size === "sm" ? "px-3 py-1" : size === "md" ? "px-3 py-1.5" : "px-5 py-2.5";
-  return `${pad} font-bold text-white bg-ink hover:bg-ink/80 rounded-full transition`;
+export function inkBtnClass(size: keyof typeof BTN_PAD = "md"): string {
+  return `${BTN_PAD[size]} font-bold text-white bg-ink hover:bg-ink/80 rounded-full transition`;
+}
+
+/** White-outline secondary CTA pill — the counterpart to inkBtnClass. */
+export function outlineBtnClass(size: keyof typeof BTN_PAD = "md"): string {
+  return `${BTN_PAD[size]} font-bold text-ink bg-white border-2 border-ink hover:bg-pop-cream rounded-full transition`;
 }
 
 /** Tiny status/type chip core — skin (colors) composes on top, e.g. STATUS_STYLES. */

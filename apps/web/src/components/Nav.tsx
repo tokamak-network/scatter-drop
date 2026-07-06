@@ -10,6 +10,7 @@ import {
   useSwitchChain,
 } from "wagmi";
 import { Shield, User } from "lucide-react";
+import { inkBtnClass } from "@/components/pop";
 import { useIsAdmin } from "@/lib/contracts";
 import { useMounted } from "@/lib/useMounted";
 
@@ -129,7 +130,7 @@ export function Nav() {
               <button
                 onClick={() => injector && connect({ connector: injector })}
                 disabled={!injector || isPending}
-                className="bg-ink hover:bg-ink/80 text-white font-bold px-4 py-2 rounded-full transition cursor-pointer disabled:opacity-60"
+                className={`${inkBtnClass("md")} cursor-pointer disabled:opacity-60`}
               >
                 {isPending ? "Connecting…" : "Connect Wallet"}
               </button>
