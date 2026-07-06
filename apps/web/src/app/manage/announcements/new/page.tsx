@@ -155,7 +155,14 @@ export default function NewAnnouncementPage() {
           {chainId !== walletChainId && (
             <span className="text-[11px] text-amber-500">
               Differs from your wallet&apos;s network — the Upcoming board shows
-              the wallet&apos;s chain, so switch there to see the post listed.
+              the wallet&apos;s chain, so switch there to see the post listed.{" "}
+              <button
+                type="button"
+                onClick={() => setSelectedChainId(null)}
+                className="underline hover:text-amber-400 transition"
+              >
+                Use wallet network
+              </button>
             </span>
           )}
         </NetworkPills>
