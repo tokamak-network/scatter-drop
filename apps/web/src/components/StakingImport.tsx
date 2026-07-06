@@ -13,7 +13,7 @@ import {
   MIN_BATCH,
   MAX_BATCH,
 } from "@/lib/stake";
-import type { Recipient } from "@/components/DuneImport";
+import type { Recipient } from "@/lib/recipients";
 
 /**
  * Tokamak staking snapshot — a two-step flow, because a staked balance can't be

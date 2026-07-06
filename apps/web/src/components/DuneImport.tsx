@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Check, Copy, Download, Loader2, Play } from "lucide-react";
 import { toCsv } from "@/lib/reports";
 import { downloadCsv } from "@/lib/download";
+import type { Recipient } from "@/lib/recipients";
 
 /**
  * Dune import — the operator runs a holder-balances query on their own Dune
@@ -131,8 +132,6 @@ const STANDARDS: {
     ],
   },
 ];
-
-export type Recipient = { address: string; amount: string };
 
 type FetchResult = { rows: Recipient[]; truncated: boolean };
 
