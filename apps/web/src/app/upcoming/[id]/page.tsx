@@ -233,10 +233,12 @@ function AddToCalendar({ a }: { a: Announcement }) {
 
   return (
     <div ref={menuRef} className="relative">
+      {/* Simple disclosure popover, not an ARIA menu — the items are plain
+          links/buttons reached by normal tabbing, so menu roles (which imply
+          author-managed arrow-key focus) would overpromise to screen readers. */}
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        aria-haspopup="menu"
         aria-expanded={open}
         className="flex items-center gap-1.5 text-emerald-600 hover:text-emerald-500 transition"
         title="Add the expected claim window to your calendar"
@@ -244,13 +246,8 @@ function AddToCalendar({ a }: { a: Announcement }) {
         <CalendarPlus className="w-3.5 h-3.5" /> Add to calendar
       </button>
       {event && (
-        <div
-          role="menu"
-          aria-label="Add to calendar"
-          className="absolute left-0 top-full mt-1.5 z-20 min-w-44 bg-slate-900 border border-slate-800 rounded-lg shadow-xl py-1"
-        >
+        <div className="absolute left-0 top-full mt-1.5 z-20 min-w-44 bg-slate-900 border border-slate-800 rounded-lg shadow-xl py-1">
           <a
-            role="menuitem"
             href={googleCalendarUrl(event)}
             target="_blank"
             rel="noopener noreferrer"
@@ -260,7 +257,6 @@ function AddToCalendar({ a }: { a: Announcement }) {
             Google Calendar
           </a>
           <a
-            role="menuitem"
             href={outlookCalendarUrl(event)}
             target="_blank"
             rel="noopener noreferrer"
@@ -271,7 +267,6 @@ function AddToCalendar({ a }: { a: Announcement }) {
           </a>
           <button
             type="button"
-            role="menuitem"
             onClick={() => {
               downloadFile(`drop-${a.id}.ics`, buildIcs(event), "text/calendar;charset=utf-8");
               setOpen(false);

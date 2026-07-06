@@ -81,6 +81,7 @@ export function googleCalendarUrl(event: CalendarEvent): string {
 /** "Add event" compose URL for Outlook.com (personal accounts). */
 export function outlookCalendarUrl(event: CalendarEvent): string {
   const params = new URLSearchParams({
+    path: "/calendar/action/compose",
     rru: "addevent",
     subject: event.title,
     startdt: event.start.toISOString(),
@@ -92,6 +93,7 @@ export function outlookCalendarUrl(event: CalendarEvent): string {
 
 export function buildIcs(event: CalendarEvent): string {
   const end = eventEnd(event);
+  const details = eventDetails(event);
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
@@ -102,7 +104,9 @@ export function buildIcs(event: CalendarEvent): string {
     `DTSTART:${icsUtc(event.start)}`,
     `DTEND:${icsUtc(end)}`,
     fold(`SUMMARY:${icsEscape(event.title)}`),
-    ...(event.description ? [fold(`DESCRIPTION:${icsEscape(event.description)}`)] : []),
+    // Same description + event-URL text the web-calendar builders send —
+    // clients that ignore the URL property still surface the link.
+    ...(details ? [fold(`DESCRIPTION:${icsEscape(details)}`)] : []),
     // URL is a URI value type (§3.3.13) — no §3.3.11 backslash escaping, or
     // commas/semicolons in query strings would corrupt the link. Newlines
     // stripped: they can't appear in a valid URI and would break the line.
