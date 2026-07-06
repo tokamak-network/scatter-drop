@@ -7,6 +7,25 @@
 export const MAX_TITLE = 80;
 export const MAX_BODY = 2000;
 export const MAX_SYMBOL = 20;
+
+/**
+ * Neutralize a display token symbol from an untrusted source (a token
+ * contract's symbol(), or a direct API POST). NFKC folds compatibility
+ * look-alikes to a canonical form, then control, bidi-override, and
+ * zero-width characters are stripped so a symbol can't visually impersonate a
+ * reputable ticker (an RTL override, or a zero-width joiner splicing "USDC").
+ * Not an XSS defense — React already escapes — but a brand-spoofing one.
+ * Shared by the server validator and the form's live-symbol autofill so both
+ * apply the same rule. Returns "" when nothing printable survives.
+ */
+export function sanitizeSymbol(raw: string): string {
+  return raw
+    .normalize("NFKC")
+    // \p{Cc} = C0/C1 controls, \p{Cf} = every format char (bidi overrides,
+    // zero-width joiners, word joiner, soft hyphen, BOM, …).
+    .replace(/[\p{Cc}\p{Cf}]/gu, "")
+    .trim();
+}
 export const MAX_LINKS = 5;
 export const MAX_LINK_LABEL = 40;
 export const MAX_LINK_URL = 300;

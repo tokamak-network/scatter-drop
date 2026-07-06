@@ -248,16 +248,31 @@ function TokenFeeConfig({ factory }: { factory: Address }) {
   const { data: flat, refetch: refFlat } = useFlatFee(factory, t);
   const { data: decimals } = useErc20Decimals(t);
   const { data: supportsAac, refetch: refAac } = useSupportsApproveAndCall(factory, t);
-  const dp = decimals ?? 18;
+  // A flat fee is quoted in the token's own units, so it MUST scale by the
+  // token's real decimals — never a guess. A `decimals ?? 18` fallback would
+  // build e.g. 1e18 base units for a 6-decimal token (a 10^12 overcharge) that
+  // on-chain setFlatFee stores without complaint. Gate the whole flat path on
+  // decimals actually being read.
+  const decimalsReady = decimals !== undefined;
 
   const [bpsInput, setBpsInput] = useState("");
   const [flatInput, setFlatInput] = useState("");
-  // Parse once, safely: derive validity from a successful parse so the inline
-  // request builder never calls parseUnits with an out-of-range value (crash).
+  // A fee value is token-specific (bps meaning aside, a flat amount scales by
+  // THIS token's decimals). Clear both when the token changes so a value typed
+  // for the previous token can't be submitted against the new one — especially
+  // while the flat input is disabled during the new token's decimals load.
+  useEffect(() => {
+    setBpsInput("");
+    setFlatInput("");
+  }, [token]);
+
+  // Parse once, safely, and only once decimals are known: derive validity from
+  // a successful parse so the inline request builder never calls parseUnits
+  // with an out-of-range value (crash) or the wrong scale.
   let flatAmount: bigint | null = null;
-  if (isPositiveDecimal(flatInput, dp)) {
+  if (decimalsReady && isPositiveDecimal(flatInput, decimals)) {
     try {
-      flatAmount = parseUnits(flatInput, dp);
+      flatAmount = parseUnits(flatInput, decimals);
     } catch {
       flatAmount = null;
     }
@@ -283,7 +298,7 @@ function TokenFeeConfig({ factory }: { factory: Address }) {
                 ? "…"
                 : modeNum === FeeMode.PERCENT
                   ? `PERCENT (${bps === undefined ? "…" : `${Number(bps)} bps`})`
-                  : `FLAT (${flat === undefined ? "…" : formatUnits(flat, dp)})`}
+                  : `FLAT (${flat === undefined || !decimalsReady ? "…" : formatUnits(flat, decimals)})`}
             </span>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -319,26 +334,35 @@ function TokenFeeConfig({ factory }: { factory: Address }) {
               }}
             />
           </div>
-          <div className="flex gap-2">
-            <input
-              className="input"
-              value={flatInput}
-              onChange={(e) => setFlatInput(e.target.value)}
-              placeholder={`flat fee (token units, ${dp} dp)`}
-            />
-            <TxButton
-              request={
-                flatAmount !== null
-                  ? buildSetFlatFeeRequest(factory, t, flatAmount)
-                  : null
-              }
-              label="Set flat fee"
-              disabled={!flatValid}
-              onConfirmed={() => {
-                setFlatInput("");
-                void refFlat();
-              }}
-            />
+          <div className="space-y-1">
+            <div className="flex gap-2">
+              <input
+                className="input"
+                value={flatInput}
+                onChange={(e) => setFlatInput(e.target.value)}
+                placeholder={
+                  decimalsReady
+                    ? `flat fee (token units, ${decimals} dp)`
+                    : "reading token decimals…"
+                }
+                disabled={!decimalsReady}
+              />
+              <TxButton
+                request={flatAmount !== null ? buildSetFlatFeeRequest(factory, t, flatAmount) : null}
+                label="Set flat fee"
+                disabled={!flatValid}
+                onConfirmed={() => {
+                  setFlatInput("");
+                  void refFlat();
+                }}
+              />
+            </div>
+            {!decimalsReady && (
+              <p className="text-[11px] text-amber-600">
+                Reading the token&apos;s decimals — a flat fee can&apos;t be set until
+                they resolve, so the amount is scaled correctly (not a guessed 18).
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-mono text-ink/60">

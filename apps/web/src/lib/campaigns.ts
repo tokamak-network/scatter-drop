@@ -16,6 +16,7 @@ import {
   getZkX509,
   NATIVE_ETH,
 } from "@tokamak-network/scatter-drop-sdk";
+import { sanitizeSymbol } from "./announcementLimits";
 import { fetchCampaignMetas, type CampaignMetaEntry } from "./campaignMeta";
 import { useDeployment, type ChainOpt } from "./contracts";
 import { scanDropCreated, scanWindow, type DropCreatedArgs } from "./dropScan";
@@ -75,9 +76,19 @@ async function loadTokenMeta(
  * User-facing symbol alias. Drops settle in WETH (an ERC-20, since the contracts
  * are ERC-20-only), but users think in ETH — so show "ETH" in the app. The real
  * token address stays visible on the detail page for disclosure.
+ *
+ * Also the chokepoint where every campaign-surface token symbol (cards, claim
+ * page, receipts, reports) is sanitized: a token's on-chain symbol() is
+ * untrusted, so strip bidi/zero-width brand-spoofing chars here, same as the
+ * announcement board does at its input boundary.
  */
 function displaySymbol(symbol: string): string {
-  return symbol === "WETH" ? "ETH" : symbol;
+  const clean = sanitizeSymbol(symbol);
+  // A symbol that was entirely control/format chars sanitizes to "" — fall
+  // back to the same neutral placeholder loadTokenMeta uses on a failed read,
+  // so no surface renders " airdrop" / an empty claim label.
+  if (!clean) return "TOKEN";
+  return clean === "WETH" ? "ETH" : clean;
 }
 
 /** Amount scaled by decimals, with thousands separators (max 4 dp). */

@@ -22,6 +22,7 @@ import {
   MAX_LINKS,
   MAX_SYMBOL,
   MAX_TITLE,
+  sanitizeSymbol,
 } from "@/lib/announcementLimits";
 import { useWalletSession } from "@/lib/useWalletSession";
 
@@ -79,6 +80,10 @@ export default function NewAnnouncementPage() {
   const lookupToken = hasTokenAddress ? (trimmedTokenAddress as Address) : undefined;
   const { data: tokenName, isPending: namePending } = useErc20Name(lookupToken, chainId);
   const { data: liveSymbol, isPending: symbolPending } = useErc20Symbol(lookupToken, chainId);
+  // Sanitized once, shared by the preview and the POST payload (a token's
+  // on-chain symbol/name is untrusted — see sanitizeSymbol).
+  const cleanTokenName = tokenName ? sanitizeSymbol(tokenName) : "";
+  const cleanSymbol = liveSymbol ? sanitizeSymbol(liveSymbol) : "";
 
   // Block submit while a lookup is in flight — posting mid-resolution would
   // race the symbol to undefined even though the address will resolve.
@@ -107,14 +112,13 @@ export default function NewAnnouncementPage() {
         chainId,
         title: title.trim(),
         body: body.trim(),
-        // The resolved on-chain symbol (trimmed/capped like manual entry used
-        // to be); no address or no symbol() on the contract → omitted. Gated
-        // on hasTokenAddress: the query cache keeps the previous address's
-        // symbol alive after the field is cleared.
-        tokenSymbol:
-          hasTokenAddress && liveSymbol
-            ? liveSymbol.trim().slice(0, MAX_SYMBOL) || undefined
-            : undefined,
+        // The resolved on-chain symbol (sanitized/capped, same rule the server
+        // applies); no address or a symbol that sanitizes to nothing → omitted.
+        // Gated on hasTokenAddress: the query cache keeps the previous
+        // address's symbol alive after the field is cleared.
+        tokenSymbol: hasTokenAddress
+          ? cleanSymbol.slice(0, MAX_SYMBOL) || undefined
+          : undefined,
         tokenAddress: trimmedTokenAddress || undefined,
         expectedStart: toIso(expectedStart),
         expectedEnd: expectedEnd ? toIso(expectedEnd) : undefined,
@@ -214,11 +218,14 @@ export default function NewAnnouncementPage() {
                   <Loader2 className="w-3 h-3 animate-spin" /> Resolving token…
                 </p>
               ) : tokenName || liveSymbol ? (
-                // Tolerate partial ERC-20s — either read alone still
-                // confirms a token lives at the address. The symbol shown
-                // here is what the announcement will carry.
+                // Tolerate partial ERC-20s — either read alone still confirms
+                // a token lives at the address. Sanitize both so the preview
+                // matches what gets stored; a value that sanitizes to "" is
+                // dropped rather than shown as "✓ ()".
                 <p className="text-[11px] font-bold text-emerald-600 mt-1">
-                  ✓ {[tokenName, liveSymbol && `(${liveSymbol})`].filter(Boolean).join(" ")}
+                  ✓ {[cleanTokenName, cleanSymbol && `(${cleanSymbol})`]
+                    .filter(Boolean)
+                    .join(" ")}
                 </p>
               ) : (
                 <p className="text-[11px] font-medium text-amber-600 mt-1">
