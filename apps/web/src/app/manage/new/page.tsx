@@ -170,10 +170,14 @@ export default function NewCampaignPage() {
   // gate is mandatory for it. Rather than sync `identityRequired` through an
   // effect (which would stick the operator's toggle ON even after they leave
   // the gated type), derive the effective value: forced types are always
-  // gated, everyone else keeps the operator's own choice. Other types keep it
-  // operator-controlled (SOCIAL defaults ON for Sybil-resistance).
+  // gated, everyone else keeps the operator's own choice (SOCIAL defaults ON
+  // for Sybil-resistance).
+  //
+  // But a network with no zk-X509 registries can't gate at all — there's no
+  // registry to point identityRegistry at — so force the gate OFF there
+  // rather than leave the operator stuck on a required-but-unsatisfiable gate.
   const identityForced = TYPES.find((t) => t.value === type)?.forcesIdentity ?? false;
-  const identityRequiredEff = identityForced || identityRequired;
+  const identityRequiredEff = !!registries && (identityForced || identityRequired);
 
   const registryAddr = (registry || registries?.usersRegistry) as
     | Address
