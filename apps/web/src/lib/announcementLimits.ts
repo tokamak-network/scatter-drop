@@ -21,7 +21,9 @@ export const MAX_SYMBOL = 20;
 export function sanitizeSymbol(raw: string): string {
   return raw
     .normalize("NFKC")
-    .replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, "")
+    // \p{Cc} = C0/C1 controls, \p{Cf} = every format char (bidi overrides,
+    // zero-width joiners, word joiner, soft hyphen, BOM, …).
+    .replace(/[\p{Cc}\p{Cf}]/gu, "")
     .trim();
 }
 export const MAX_LINKS = 5;

@@ -84,6 +84,10 @@ async function loadTokenMeta(
  */
 function displaySymbol(symbol: string): string {
   const clean = sanitizeSymbol(symbol);
+  // A symbol that was entirely control/format chars sanitizes to "" — fall
+  // back to the same neutral placeholder loadTokenMeta uses on a failed read,
+  // so no surface renders " airdrop" / an empty claim label.
+  if (!clean) return "TOKEN";
   return clean === "WETH" ? "ETH" : clean;
 }
 

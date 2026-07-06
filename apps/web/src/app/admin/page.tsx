@@ -257,6 +257,15 @@ function TokenFeeConfig({ factory }: { factory: Address }) {
 
   const [bpsInput, setBpsInput] = useState("");
   const [flatInput, setFlatInput] = useState("");
+  // A fee value is token-specific (bps meaning aside, a flat amount scales by
+  // THIS token's decimals). Clear both when the token changes so a value typed
+  // for the previous token can't be submitted against the new one — especially
+  // while the flat input is disabled during the new token's decimals load.
+  useEffect(() => {
+    setBpsInput("");
+    setFlatInput("");
+  }, [token]);
+
   // Parse once, safely, and only once decimals are known: derive validity from
   // a successful parse so the inline request builder never calls parseUnits
   // with an out-of-range value (crash) or the wrong scale.
