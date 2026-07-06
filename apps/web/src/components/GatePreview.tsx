@@ -27,8 +27,10 @@ export function GatePreview({
   defaultAddress?: Address;
 }) {
   const { address: connected } = useAccount();
-  // Manual entry wins when a full address is typed; otherwise fall back to the
-  // provided default, then the connected wallet.
+  // Any non-empty entry overrides the fallback: a complete address is checked;
+  // an incomplete/invalid one leaves checkAddr undefined (shown as INVALID) so
+  // the check waits rather than silently reverting to the default/connected
+  // wallet. An empty field falls back to the default, then the connected wallet.
   const [manual, setManual] = useState("");
   const trimmed = manual.trim();
   const typing = trimmed !== "";
@@ -38,6 +40,7 @@ export function GatePreview({
       ? (trimmed as Address)
       : undefined
     : (defaultAddress ?? connected);
+  const inputId = `gate-check-${registry}`;
 
   const { status, verifiedUntil } = useGateState(registry, checkAddr);
 
@@ -54,10 +57,14 @@ export function GatePreview({
         </p>
       ) : (
         <>
-          <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-ink/50">
+          <label
+            htmlFor={inputId}
+            className="block text-[11px] font-mono font-bold uppercase tracking-wider text-ink/50"
+          >
             Wallet to check
           </label>
           <input
+            id={inputId}
             value={manual}
             onChange={(e) => setManual(e.target.value)}
             placeholder={defaultAddress ?? connected ?? "0x…"}
