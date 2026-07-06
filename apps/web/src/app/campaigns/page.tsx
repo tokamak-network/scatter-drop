@@ -36,10 +36,12 @@ import type { Campaign } from "@/lib/stub";
 type TypeTab = "ALL" | AirdropType;
 type StatusTab = "ALL" | "ACTIVE" | "ENDED";
 
+// ONCHAIN_SNAPSHOT is retired as a creatable source, so the filter no longer
+// advertises it — campaigns already created with that type still render (with
+// their type chip) under "All Types"; the on-chain enum is untouched.
 const TYPE_TABS: TypeTab[] = [
   "ALL",
   AirdropType.CSV,
-  AirdropType.ONCHAIN_SNAPSHOT,
   AirdropType.ONCHAIN_GATED,
   AirdropType.SOCIAL,
 ];

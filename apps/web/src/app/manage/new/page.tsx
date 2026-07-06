@@ -37,10 +37,8 @@ import {
   popInputClass,
   whiteBtnClass,
 } from "@/components/pop";
-import { SnapshotBuilder } from "@/components/SnapshotBuilder";
 import { TxButton } from "@/components/TxButton";
 import { TxHashLink } from "@/components/TxHashLink";
-import type { SnapshotManifest } from "@/lib/useSnapshotJob";
 import { anchorRequired, useAllowedTokens } from "@/lib/campaigns";
 import { findDropCreated } from "@/lib/dropScan";
 import { DRAFT_CSV_KEY } from "@/lib/draftCsv";
@@ -85,12 +83,10 @@ const STEPS = ["Operator", "Basics", "Eligibility", "Recipients", "Create"];
 /** The wizard's shared field skin (inputs, selects, textareas). */
 const wizInputCls = popInputClass("px-3 py-2 rounded-xl");
 
-const TYPES = [
-  AirdropType.CSV,
-  AirdropType.ONCHAIN_SNAPSHOT,
-  AirdropType.ONCHAIN_GATED,
-  AirdropType.SOCIAL,
-];
+// ONCHAIN_SNAPSHOT is deliberately absent: a balance snapshot is gameable by
+// moving funds between wallets during the claim window, so it's retired as a
+// creatable source (the on-chain enum and existing campaigns are untouched).
+const TYPES = [AirdropType.CSV, AirdropType.ONCHAIN_GATED, AirdropType.SOCIAL];
 
 /**
  * Parse the recipients CSV using the SDK `parseCsv` (single source of truth) and
@@ -227,14 +223,9 @@ export default function NewCampaignPage() {
     }
   }, []);
 
-  // Snapshot mode (ONCHAIN_SNAPSHOT) sources recipients from a server-side
-  // holder scan instead of a pasted CSV.
-  const isSnapshot = type === AirdropType.ONCHAIN_SNAPSHOT;
-  const [snapResult, setSnapResult] = useState<SnapshotManifest | null>(null);
-  const activeManifest = isSnapshot ? snapResult : manifest;
-  const recipientCount = activeManifest?.count ?? 0;
-  const totalAmount = activeManifest ? BigInt(activeManifest.totalAmount) : 0n;
-  const merkleRoot = (activeManifest?.merkleRoot ?? `0x${"0".repeat(64)}`) as Hex;
+  const recipientCount = manifest?.count ?? 0;
+  const totalAmount = manifest ? BigInt(manifest.totalAmount) : 0n;
+  const merkleRoot = (manifest?.merkleRoot ?? `0x${"0".repeat(64)}`) as Hex;
 
   // W22: fee = computed on the airdrop token (percent of total or flat). The
   // operator deposits total + fee (on-top); pool gets total, vault gets fee.
@@ -306,7 +297,7 @@ export default function NewCampaignPage() {
     : "";
   // Chain-scoped address inputs must not survive a network switch — a
   // token/registry address means something else (or nothing) on the new
-  // chain. Chain-independent inputs (name, dates, CSV/snapshot recipient
+  // chain. Chain-independent inputs (name, dates, CSV recipient
   // lists — cross-chain drops like "mainnet stakers, L2 payout" are a real
   // use case) are deliberately kept.
   useEffect(() => {
@@ -335,10 +326,10 @@ export default function NewCampaignPage() {
   // — a failure never blocks the created campaign.
   const onCampaignCreated = (receipt: TransactionReceipt) => {
     setCreatedTx(receipt.transactionHash);
-    if (activeManifest) {
+    if (manifest) {
       // The returned CID (when server-side pinning is configured) feeds the
       // anchor tx in the success checklist.
-      void publishProofs(merkleRoot, activeManifest.claims)
+      void publishProofs(merkleRoot, manifest.claims)
         .then(setProofsCid)
         .finally(() => setPinSettled(true));
     } else {
@@ -389,8 +380,8 @@ export default function NewCampaignPage() {
   // (formatUnits is lossless), so the download round-trips through the same
   // upload box. Guarded on decimals so only one dialect can leave the wizard.
   const downloadRecipients = () => {
-    if (!activeManifest || decimals === undefined) return;
-    const claims = Object.values(activeManifest.claims) as { account: string; amount: string }[];
+    if (!manifest || decimals === undefined) return;
+    const claims = Object.values(manifest.claims) as { account: string; amount: string }[];
     const body = claims.map((c) => `${c.account},${humanAmount(BigInt(c.amount))}`).join("\n");
     // Printable-ASCII symbol only — an exotic on-chain symbol must not break
     // the CSV structure or inject rows.
@@ -415,7 +406,7 @@ export default function NewCampaignPage() {
   const startUnix = toUnix(startDate);
   const deadlineUnix = toUnix(deadline);
 
-  const recipientsValid = activeManifest !== null;
+  const recipientsValid = manifest !== null;
   // Deadline must be in the future and after the start (mirrors on-chain checks;
   // MIN_DURATION is still enforced on-chain).
   const nowSec = Math.floor(Date.now() / 1000);
@@ -662,9 +653,11 @@ export default function NewCampaignPage() {
                   ))}
                 </div>
                 <p className="text-xs text-ink/50 font-mono">
-                  Eligibility is one Merkle list; the type is how the list is
-                  built (CSV, on-chain snapshot, …). The platform fee is charged
-                  on the distribution token and shown at the final step.
+                  Recipients always come from the CSV list on the next step;
+                  the type labels how eligibility was decided (fixed list,
+                  identity-gated claims, completed tasks). The platform fee is
+                  charged on the distribution token and shown at the final
+                  step.
                 </p>
               </div>
             )}
@@ -674,57 +667,51 @@ export default function NewCampaignPage() {
                 <h2 className="text-lg font-bold text-ink">
                   Recipients &amp; window
                 </h2>
-                {isSnapshot ? (
-                  <Field label="Recipients (on-chain holder snapshot)">
-                    <SnapshotBuilder onResult={setSnapResult} />
-                  </Field>
-                ) : (
-                  <Field label="Recipients CSV (address,amount per line)">
-                    <textarea
-                      className={`${wizInputCls} font-mono text-xs`}
-                      rows={6}
-                      value={csv}
-                      onChange={(e) => setCsv(e.target.value)}
-                      placeholder={"0xabc…,120\n0xdef…,80"}
-                    />
-                    <div className="flex items-center justify-between">
-                      <span
-                        className={`text-xs ${csvError ? "text-rose-500" : "text-ink/50"}`}
+                <Field label="Recipients CSV (address,amount per line)">
+                  <textarea
+                    className={`${wizInputCls} font-mono text-xs`}
+                    rows={6}
+                    value={csv}
+                    onChange={(e) => setCsv(e.target.value)}
+                    placeholder={"0xabc…,120\n0xdef…,80"}
+                  />
+                  <div className="flex items-center justify-between">
+                    <span
+                      className={`text-xs ${csvError ? "text-rose-500" : "text-ink/50"}`}
+                    >
+                      {csvError
+                        ? csvError
+                        : manifest
+                          ? `${recipientCount} recipients · total ${fmtAmount(totalAmount)} (auto)`
+                          : csv.trim() && decimals === undefined
+                            ? "Select the distribution token first — amounts are validated against its decimals"
+                            : `Paste address,amount per line (amount in ${unit}, e.g. 120 or 1.5)`}
+                    </span>
+                    <div className="flex items-center gap-3">
+                      <input
+                        ref={csvFileRef}
+                        type="file"
+                        accept=".csv,text/csv,text/plain"
+                        className="hidden"
+                        onChange={handleCsvFile}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => csvFileRef.current?.click()}
+                        className="text-[11px] font-bold text-ink/70 inline-flex items-center gap-1 hover:text-ink hover:underline"
                       >
-                        {csvError
-                          ? csvError
-                          : manifest
-                            ? `${recipientCount} recipients · total ${fmtAmount(totalAmount)} (auto)`
-                            : csv.trim() && decimals === undefined
-                              ? "Select the distribution token first — amounts are validated against its decimals"
-                              : `Paste address,amount per line (amount in ${unit}, e.g. 120 or 1.5)`}
-                      </span>
-                      <div className="flex items-center gap-3">
-                        <input
-                          ref={csvFileRef}
-                          type="file"
-                          accept=".csv,text/csv,text/plain"
-                          className="hidden"
-                          onChange={handleCsvFile}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => csvFileRef.current?.click()}
-                          className="text-[11px] font-bold text-ink/70 inline-flex items-center gap-1 hover:text-ink hover:underline"
-                        >
-                          <Upload className="w-3 h-3" /> Upload CSV
-                        </button>
-                        <button
-                          type="button"
-                          onClick={downloadSampleCsv}
-                          className="text-[11px] font-bold text-ink/70 inline-flex items-center gap-1 hover:text-ink hover:underline"
-                        >
-                          <Download className="w-3 h-3" /> Sample CSV
-                        </button>
-                      </div>
+                        <Upload className="w-3 h-3" /> Upload CSV
+                      </button>
+                      <button
+                        type="button"
+                        onClick={downloadSampleCsv}
+                        className="text-[11px] font-bold text-ink/70 inline-flex items-center gap-1 hover:text-ink hover:underline"
+                      >
+                        <Download className="w-3 h-3" /> Sample CSV
+                      </button>
                     </div>
-                  </Field>
-                )}
+                  </div>
+                </Field>
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Start (optional, to the second)">
                     <input
@@ -857,7 +844,7 @@ export default function NewCampaignPage() {
                   <button
                     type="button"
                     onClick={downloadRecipients}
-                    disabled={!activeManifest || decimals === undefined}
+                    disabled={!manifest || decimals === undefined}
                     className={`text-xs disabled:opacity-50 ${whiteBtnClass("md")}`}
                   >
                     ↓ Download recipients CSV
@@ -979,7 +966,7 @@ export default function NewCampaignPage() {
                   )}
                 </dl>
 
-                {activeManifest && (
+                {manifest && (
                   <div className="rounded-2xl border-2 border-ink/15 p-4 space-y-3">
                     <h3 className={POP_HEADING}>
                       {anchorRequired(type)
