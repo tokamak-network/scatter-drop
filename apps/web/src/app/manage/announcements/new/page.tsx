@@ -80,10 +80,15 @@ export default function NewAnnouncementPage() {
   const { data: tokenName, isPending: namePending } = useErc20Name(lookupToken, chainId);
   const { data: liveSymbol, isPending: symbolPending } = useErc20Symbol(lookupToken, chainId);
 
+  // Block submit while a lookup is in flight — posting mid-resolution would
+  // race the symbol to undefined even though the address will resolve.
+  const resolving = hasTokenAddress && (namePending || symbolPending);
+
   const valid =
     title.trim() !== "" &&
     body.trim() !== "" &&
     tokenAddressValid &&
+    !resolving &&
     !Number.isNaN(startMs) &&
     (endMs === null || endMs > startMs) &&
     links.every((l) => l.label.trim() && LINK_URL_RE.test(l.url));
@@ -102,9 +107,14 @@ export default function NewAnnouncementPage() {
         chainId,
         title: title.trim(),
         body: body.trim(),
-        // The resolved on-chain symbol (capped like manual entry used to be);
-        // no address or no symbol() on the contract → omitted.
-        tokenSymbol: liveSymbol ? liveSymbol.slice(0, MAX_SYMBOL) : undefined,
+        // The resolved on-chain symbol (trimmed/capped like manual entry used
+        // to be); no address or no symbol() on the contract → omitted. Gated
+        // on hasTokenAddress: the query cache keeps the previous address's
+        // symbol alive after the field is cleared.
+        tokenSymbol:
+          hasTokenAddress && liveSymbol
+            ? liveSymbol.trim().slice(0, MAX_SYMBOL) || undefined
+            : undefined,
         tokenAddress: trimmedTokenAddress || undefined,
         expectedStart: toIso(expectedStart),
         expectedEnd: expectedEnd ? toIso(expectedEnd) : undefined,
