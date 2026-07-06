@@ -56,7 +56,7 @@ import {
 } from "@/lib/contracts";
 
 const SAMPLE_CSV =
-  "0x70997970C51812dc3A010C7d01b50e0d17dc79C8,1000\n0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC,500";
+  "# amounts are token units (decimals applied — not wei/base units)\naddress,amount\n0x70997970C51812dc3A010C7d01b50e0d17dc79C8,1000\n0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC,500";
 
 function downloadSampleCsv() {
   const blob = new Blob([SAMPLE_CSV], { type: "text/csv;charset=utf-8" });
@@ -368,7 +368,13 @@ export default function NewCampaignPage() {
     if (!activeManifest || decimals === undefined) return;
     const claims = Object.values(activeManifest.claims) as { account: string; amount: string }[];
     const body = claims.map((c) => `${c.account},${humanAmount(BigInt(c.amount))}`).join("\n");
-    downloadCsv(`${name.trim() || "airdrop"}-recipients.csv`, `address,amount\n${body}\n`);
+    // Printable-ASCII symbol only — an exotic on-chain symbol must not break
+    // the CSV structure or inject rows.
+    const safeUnit = unit.replace(/[^ -~]/g, "").trim() || "tokens";
+    downloadCsv(
+      `${name.trim() || "airdrop"}-recipients.csv`,
+      `# amounts in ${safeUnit} (token units, decimals applied — not wei/base units)\naddress,amount\n${body}\n`,
+    );
   };
 
   // Operators pick from the admin-curated allow-list rather than pasting an
