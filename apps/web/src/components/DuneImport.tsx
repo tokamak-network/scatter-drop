@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, Copy, Download, Loader2, Play } from "lucide-react";
+import { Download, Loader2, Play } from "lucide-react";
+import { inkBtnClass, pillClass, popInputClass, whiteBtnClass } from "@/components/pop";
+import { SqlCopyBlock } from "@/components/SqlCopyBlock";
 import { toCsv } from "@/lib/reports";
 import { downloadCsv } from "@/lib/download";
 import type { Recipient } from "@/lib/recipients";
@@ -144,7 +146,6 @@ export function DuneImport({ onRows }: { onRows: (rows: Recipient[]) => void }) 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<FetchResult | null>(null);
-  const [copied, setCopied] = useState(false);
 
   const std: Standard = category === "erc20" ? "erc20" : nftStd;
   const meta = STANDARDS.find((s) => s.id === std)!;
@@ -177,21 +178,15 @@ export function DuneImport({ onRows }: { onRows: (rows: Recipient[]) => void }) 
     }
   }
 
-  function copySql() {
-    navigator.clipboard?.writeText(sql);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1200);
-  }
-
   return (
     <div className="space-y-4">
-      <p className="text-[11px] text-slate-500">
+      <p className="text-[11px] text-ink/50">
         Run a holder-balance query on your own{" "}
         <a
           href="https://dune.com"
           target="_blank"
           rel="noreferrer"
-          className="text-emerald-600 hover:underline"
+          className="text-sky-500 hover:underline"
         >
           Dune
         </a>{" "}
@@ -218,80 +213,70 @@ export function DuneImport({ onRows }: { onRows: (rows: Recipient[]) => void }) 
           </PickBtn>
         </div>
       )}
-      <p className="text-[11px] text-slate-500">{meta.hint}</p>
+      <p className="text-[11px] text-ink/50">{meta.hint}</p>
 
       {/* Step-by-step guide */}
-      <details className="rounded-lg border border-slate-800 bg-slate-950 open:pb-3">
-        <summary className="cursor-pointer px-4 py-2.5 text-xs font-mono font-semibold text-slate-200 select-none">
+      <details className="rounded-2xl border border-ink/15 bg-pop-cream open:pb-3">
+        <summary className="cursor-pointer px-4 py-2.5 text-xs font-mono font-semibold text-ink select-none">
           How to run the query on Dune ▾
         </summary>
-        <ol className="mt-1 space-y-1.5 px-4 text-[11px] text-slate-400 list-decimal list-inside">
+        <ol className="mt-1 space-y-1.5 px-4 text-[11px] text-ink/60 list-decimal list-inside">
           <li>
             Log in at{" "}
-            <a href="https://dune.com/" target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:underline">
+            <a href="https://dune.com/" target="_blank" rel="noopener noreferrer" className="text-sky-500 hover:underline">
               dune.com
             </a>
             .
           </li>
           <li>
             Create a new query at{" "}
-            <a href="https://dune.com/queries" target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:underline">
+            <a href="https://dune.com/queries" target="_blank" rel="noopener noreferrer" className="text-sky-500 hover:underline">
               dune.com/queries
             </a>
             .
           </li>
           <li>Paste the SQL below into the query editor, then replace the placeholders (listed under it).</li>
           <li>
-            Click <span className="font-mono text-slate-200">Run</span>. Below the results, click the{" "}
-            <span className="font-mono text-slate-200">API</span> icon →{" "}
-            <span className="font-mono text-slate-200">Preview API</span> — a new tab opens with the
+            Click <span className="font-mono text-ink">Run</span>. Below the results, click the{" "}
+            <span className="font-mono text-ink">API</span> icon →{" "}
+            <span className="font-mono text-ink">Preview API</span> — a new tab opens with the
             results URL (it includes your api_key).
           </li>
           <li>Copy that URL, paste it below, and fetch.</li>
         </ol>
 
-        <div className="mx-4 mt-2 relative">
-          <pre className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-900 p-3 text-[10.5px] leading-relaxed font-mono text-slate-300">
-            {sql}
-          </pre>
-          <button
-            type="button"
-            onClick={copySql}
-            className="absolute top-2 right-2 inline-flex items-center gap-1 rounded border border-slate-700 bg-slate-950/80 px-2 py-1 text-[10px] font-semibold text-slate-300 hover:border-slate-600"
-          >
-            {copied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-            {copied ? "Copied" : "Copy SQL"}
-          </button>
+        <div className="mx-4 mt-2">
+          <SqlCopyBlock sql={sql} />
         </div>
         {/* Which placeholders to replace, for the selected standard */}
         <div className="mx-4 mt-2">
-          <p className="text-[10.5px] font-semibold text-slate-300">Replace in the query:</p>
-          <ul className="mt-1 space-y-0.5 text-[10.5px] text-slate-400">
+          <p className="text-[10.5px] font-semibold text-ink/70">Replace in the query:</p>
+          <ul className="mt-1 space-y-0.5 text-[10.5px] text-ink/60">
             {meta.params.map((p) => (
               <li key={p.ph}>
-                <span className="font-mono text-emerald-600">{p.ph}</span> — {p.desc}
+                <span className="font-mono text-sky-500">{p.ph}</span> — {p.desc}
               </li>
             ))}
           </ul>
         </div>
         {meta.id !== "erc721" && (
-          <p className="mt-2 px-4 text-[10.5px] text-amber-600">
+          <p className="mt-2 px-4 text-[10.5px] text-ink/70">
             If min balance is <span className="font-mono">0</span> (everyone), change{" "}
             <span className="font-mono">SUM(delta) &gt;=</span> to{" "}
             <span className="font-mono">SUM(delta) &gt;</span> so zero-balance (fully-exited) holders
             are dropped.
           </p>
         )}
-        <p className="mt-2 px-4 text-[10.5px] text-slate-500">
+        <p className="mt-2 px-4 text-[10.5px] text-ink/50">
           Template targets Ethereum mainnet (<span className="font-mono">{meta.table}</span>). For
           another chain, swap the table suffix (e.g. <span className="font-mono">_base</span>).
         </p>
       </details>
 
       <div>
-        <label className="text-[11px] text-slate-400">Dune results API URL</label>
+        <label className="text-[11px] text-ink/60">Dune results API URL</label>
         <input
-          className="input mt-1 font-mono text-xs"
+          className={`${popInputClass("mt-1 rounded-full px-3 py-2 font-mono")} text-xs`}
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           placeholder="https://api.dune.com/api/v1/query/…/results?api_key=…"
@@ -304,23 +289,23 @@ export function DuneImport({ onRows }: { onRows: (rows: Recipient[]) => void }) 
         type="button"
         onClick={fetchList}
         disabled={loading || url.trim() === ""}
-        className="btn btn-primary inline-flex items-center gap-1.5 disabled:opacity-50"
+        className={`inline-flex items-center gap-1.5 text-sm disabled:opacity-50 disabled:pointer-events-none ${inkBtnClass("md")}`}
       >
         {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
         {loading ? "Fetching…" : "Fetch list"}
       </button>
 
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p className="text-xs text-rose-500">{error}</p>}
 
       {result && (
-        <div className="space-y-2 border-t border-slate-800 pt-3">
-          <p className="text-xs text-slate-300 font-mono">
+        <div className="space-y-2 border-t border-ink/10 pt-3">
+          <p className="text-xs text-ink/70 font-mono">
             {result.rows.length.toLocaleString()} holders fetched
             {result.truncated && (
-              <span className="text-amber-600"> · capped at 100k — narrow the query</span>
+              <span className="text-ink/70"> · capped at 100k — narrow the query</span>
             )}
           </p>
-          <p className="text-[11px] text-slate-500">
+          <p className="text-[11px] text-ink/50">
             Amount is each holder&apos;s balance (base units). Download the CSV, or load it into the
             grid below to adjust with Equal-split / Cap.
           </p>
@@ -328,14 +313,14 @@ export function DuneImport({ onRows }: { onRows: (rows: Recipient[]) => void }) 
             <button
               type="button"
               onClick={() => downloadCsv("dune-balances.csv", `${csv}\n`)}
-              className="btn inline-flex items-center gap-1.5"
+              className={`inline-flex items-center gap-1.5 text-sm ${whiteBtnClass("md")}`}
             >
               <Download className="w-3.5 h-3.5" /> Download CSV
             </button>
             <button
               type="button"
               onClick={() => onRows(result.rows)}
-              className="inline-flex items-center gap-2 bg-slate-950 border border-emerald-500/40 hover:bg-emerald-500/10 text-emerald-600 font-semibold px-4 py-2 rounded-lg text-sm transition"
+              className={`inline-flex items-center gap-2 text-sm ${inkBtnClass("md")}`}
             >
               Load into the list ↓
             </button>
@@ -358,12 +343,9 @@ function PickBtn({
   return (
     <button
       type="button"
+      aria-pressed={active}
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition ${
-        active
-          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600"
-          : "border-slate-800 bg-slate-950 text-slate-300 hover:border-slate-700"
-      }`}
+      className={pillClass(active, "bg-pop-mint", "inline-flex items-center gap-1.5")}
     >
       {children}
     </button>

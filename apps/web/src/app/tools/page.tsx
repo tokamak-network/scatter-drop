@@ -6,7 +6,15 @@ import { useRouter } from "next/navigation";
 import { formatUnits, isAddress } from "viem";
 import { ArrowLeft, ArrowRight, Check, Copy, Download, Trash2, Upload } from "lucide-react";
 import { DuneImport } from "@/components/DuneImport";
-import { inkBtnClass, pillClass, POP_PANEL, popInputClass, whiteBtnClass } from "@/components/pop";
+import {
+  inkBtnClass,
+  pillClass,
+  POP_PANEL,
+  popInputClass,
+  SEG_WRAP,
+  whiteBtnClass,
+} from "@/components/pop";
+import { SegButton } from "@/components/popUi";
 import { PageHeader } from "@/components/ui";
 import { StakingImport } from "@/components/StakingImport";
 import { useErc20Decimals, useErc20Symbol } from "@/lib/contracts";
@@ -30,10 +38,6 @@ import { DRAFT_CSV_KEY } from "@/lib/draftCsv";
 
 // Cap how many rows the step-2 grid renders (totals/export still cover all).
 const RENDER_CAP = 500;
-
-/** Cream shell for the ViewBtn segmented toggles (promote to pop.ts with its
- *  StakingImport twin at stage 3). */
-const SEG_WRAP = "inline-flex rounded-full border-2 border-ink/15 bg-pop-cream p-0.5";
 
 /** Step CTA — primary ink pill with the shared disabled treatment. */
 const CTA_CLS = `inline-flex items-center gap-2 text-sm disabled:opacity-50 disabled:pointer-events-none ${inkBtnClass("lg")}`;
@@ -224,12 +228,12 @@ export default function ToolsPage() {
           {/* Source picker → fills the CSV below */}
           <div className={`bg-white p-5 space-y-4 ${POP_PANEL}`}>
             <div className={SEG_WRAP}>
-              <ViewBtn active={source === "dune"} onClick={() => setSource("dune")}>
+              <SegButton active={source === "dune"} onClick={() => setSource("dune")}>
                 Token / NFT holders
-              </ViewBtn>
-              <ViewBtn active={source === "staking"} onClick={() => setSource("staking")}>
+              </SegButton>
+              <SegButton active={source === "staking"} onClick={() => setSource("staking")}>
                 Staking (Tokamak)
-              </ViewBtn>
+              </SegButton>
             </div>
             {/* DuneImport/StakingImport keep their transitional classes (the
                 inverted slate palette renders them light) until their own
@@ -246,8 +250,8 @@ export default function ToolsPage() {
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-sm font-bold text-ink mr-auto">Recipient CSV</h2>
               <div className={SEG_WRAP}>
-                <ViewBtn active={view === "csv"} onClick={() => setView("csv")}>CSV</ViewBtn>
-                <ViewBtn active={view === "table"} onClick={() => setView("table")}>Table</ViewBtn>
+                <SegButton active={view === "csv"} onClick={() => setView("csv")}>CSV</SegButton>
+                <SegButton active={view === "table"} onClick={() => setView("table")}>Table</SegButton>
               </div>
               <input ref={fileRef} type="file" accept=".csv,text/csv,text/plain" className="hidden" onChange={onFile} />
               <ToolbarBtn onClick={() => fileRef.current?.click()} icon={<Upload className="w-3.5 h-3.5" />}>
@@ -741,29 +745,6 @@ function CsvTable({ rows }: { rows: Recipient[] }) {
         </p>
       )}
     </div>
-  );
-}
-
-function ViewBtn({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={`px-2.5 py-1 text-[11px] font-bold rounded-full transition ${
-        active ? "bg-ink text-white" : "text-ink/50 hover:text-ink"
-      }`}
-    >
-      {children}
-    </button>
   );
 }
 

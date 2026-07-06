@@ -58,3 +58,13 @@ export const POP_PANEL = "rounded-2xl border-2 border-ink pop-shadow-sm";
 
 /** Clickable card shell — the sticker look plus hover lift. Tone composes on top. */
 export const POP_CARD = "border-2 border-ink rounded-3xl pop-shadow hover:-translate-y-0.5 transition-transform";
+
+/** Cream pill shell that wraps a row of segmented `segBtnClass` toggles. */
+export const SEG_WRAP = "inline-flex rounded-full border-2 border-ink/15 bg-pop-cream p-0.5";
+
+/** One borderless segment inside a SEG_WRAP — solid ink when active. */
+export function segBtnClass(active: boolean): string {
+  return `px-2.5 py-1 text-[11px] font-bold rounded-full transition ${
+    active ? "bg-ink text-white" : "text-ink/50 hover:text-ink"
+  }`;
+}

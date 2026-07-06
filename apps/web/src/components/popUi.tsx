@@ -1,14 +1,37 @@
 import type { ReactNode } from "react";
-import { POP_CHIP } from "@/components/pop";
+import { POP_CHIP, segBtnClass } from "@/components/pop";
 
 /**
  * Pop design-system micro-components — the JSX siblings of the class recipes
  * in pop.ts (kept separate so that module stays a plain string library).
  *
  * CONTRACT: server-safe. No hooks, no "use client", no browser APIs — server
- * components (e.g. the landing page) import from here, so everything must be
- * pure presentational JSX. Anything stateful belongs in its own client file.
+ * components (e.g. the landing page) import from here. Event-handler props
+ * (onClick, …) are fine: they're supplied by whatever parent renders these,
+ * so a client parent wires interactivity while the components stay pure
+ * presentational JSX. Anything that itself needs state/effects/browser APIs
+ * belongs in its own "use client" file instead.
  */
+
+/**
+ * One segment of a single-choice toggle — wrap a row of these in a `SEG_WRAP`
+ * shell. `aria-pressed` marks the active choice.
+ */
+export function SegButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button type="button" aria-pressed={active} onClick={onClick} className={segBtnClass(active)}>
+      {children}
+    </button>
+  );
+}
 
 /** Ink chip with the signature pulsing mint dot (ACTIVE / LIVE / AVAILABLE). */
 export function LiveChip({ children }: { children: ReactNode }) {
