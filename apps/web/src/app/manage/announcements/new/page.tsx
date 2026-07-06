@@ -159,7 +159,8 @@ export default function NewAnnouncementPage() {
                 className={`${inputCls} font-mono ${
                   tokenAddressValid ? "" : "border-rose-500/60 focus:border-rose-500/60"
                 }`}
-                maxLength={42}
+                // No maxLength: it would truncate pasted addresses that carry
+                // leading whitespace BEFORE the trim; isAddress gates submit.
                 placeholder="0x… (the airdropped ERC-20, if already deployed)"
                 value={tokenAddress}
                 onChange={(e) => setTokenAddress(e.target.value)}
