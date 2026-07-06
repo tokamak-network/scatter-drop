@@ -13,6 +13,7 @@ import { useErc20Decimals, useErc20Symbol } from "@/lib/contracts";
 import { useAllowedTokens } from "@/lib/campaigns";
 import { isPositiveDecimal } from "@/lib/validation";
 import { downloadCsv } from "@/lib/download";
+import { toCsv } from "@/lib/reports";
 import { DRAFT_CSV_KEY } from "@/lib/draftCsv";
 
 type Row = Recipient;
@@ -274,26 +275,27 @@ export default function ToolsPage() {
   // Serialize the computed airdrop list. `address,amount` with amounts in
   // human token units (formatUnits — lossless), matching what the campaign
   // wizard's CSV box expects; an optional third `balance` column (the pasted
-  // source balances, base units) for the download when requested.
+  // source balances, base units) for the download when requested. Everything
+  // goes through toCsv, which RFC-4180-quotes and formula-injection-guards
+  // every cell — including the note, whose token symbol is on-chain and thus
+  // untrusted (a symbol like `,=HYPERLINK(...)` can't break out).
   const buildCsv = (withBalance: boolean) => {
-    const lines = rows
-      .map((r, i) => {
+    const dataRows = rows
+      .map((r, i): string[] | null => {
         const a = dist.airdrops[i];
         if (a === null || a <= 0n) return null;
         const addr = r.address.trim();
-        return withBalance ? `${addr},${human(a)},${r.amount.trim()}` : `${addr},${human(a)}`;
+        return withBalance ? [addr, human(a), r.amount.trim()] : [addr, human(a)];
       })
-      .filter(Boolean) as string[];
-    const header = withBalance ? "address,amount,balance" : "address,amount";
-    // Unit note as a '#' comment — parseCsv (and csvToRows above) skip it, so
-    // the file/paste still round-trips. The symbol is reduced to printable
-    // ASCII: an exotic on-chain symbol must not break the CSV structure.
-    const safeUnit = unit.replace(/[^ -~]/g, "").trim() || "tokens";
-    // No commas in the note — spreadsheet apps would split it into columns.
-    const note = `# amounts in ${safeUnit} - token units with decimals applied (not wei/base units)${
+      .filter((row): row is string[] => row !== null);
+    const headers = withBalance ? ["address", "amount", "balance"] : ["address", "amount"];
+    // The unit note stays a leading '#' line so parseCsv/csvToRows skip it on
+    // re-import; toCsv escapes it as a single cell so the symbol's commas or
+    // formula chars can't split it into extra columns or execute.
+    const note = `# amounts in ${unit} - token units with decimals applied (not wei/base units)${
       withBalance ? "; balance column = source balances in base units" : ""
     }`;
-    return [note, header, ...lines].join("\n");
+    return `${toCsv([note], [])}\r\n${toCsv(headers, dataRows)}`;
   };
 
   const confirmExport = () => {
