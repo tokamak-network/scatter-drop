@@ -35,8 +35,11 @@ import {
   POP_LABEL,
   POP_PANEL,
   popInputClass,
+  SEG_WRAP,
   whiteBtnClass,
 } from "@/components/pop";
+import { SegButton } from "@/components/popUi";
+import { RecipientBuilder } from "@/components/RecipientBuilder";
 import { TxButton } from "@/components/TxButton";
 import { TxHashLink } from "@/components/TxHashLink";
 import { anchorRequired, useAllowedTokens } from "@/lib/campaigns";
@@ -152,6 +155,9 @@ export default function NewCampaignPage() {
   const [registry, setRegistry] = useState<Address | "">("");
   const [type, setType] = useState<AirdropType>(AirdropType.CSV);
   const [csv, setCsv] = useState("");
+  // Recipients step: paste/upload a CSV, or build the list inline (the same
+  // RecipientBuilder as /tools) which writes its result back into `csv`.
+  const [recipMode, setRecipMode] = useState<"paste" | "build">("paste");
   const csvFileRef = useRef<HTMLInputElement>(null);
   function handleCsvFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -209,6 +215,12 @@ export default function NewCampaignPage() {
     isNative ? 18 : erc20Decimals === undefined ? undefined : Number(erc20Decimals);
   // Show the real token symbol instead of a generic "tokens" once it's known.
   const unit = isNative ? "ETH" : erc20Symbol ? String(erc20Symbol) : "tokens";
+  // The token context the embedded RecipientBuilder needs — only once a token
+  // is chosen and its decimals resolved (the builder scales amounts by them).
+  const builderToken =
+    tokenValid && decimals !== undefined
+      ? { address: token, decimals, symbol: unit }
+      : undefined;
   /** Human-unit string for a base-unit value — the only dialect the wizard emits. */
   const humanAmount = (v: bigint) =>
     decimals !== undefined ? formatUnits(v, decimals) : v.toString();
@@ -765,60 +777,100 @@ export default function NewCampaignPage() {
                 )}
                 {type === AirdropType.SOCIAL && (
                   <p className="text-xs font-medium text-ink/70 bg-pop-mint/30 border-2 border-ink/10 rounded-xl px-3 py-2 leading-relaxed">
-                    From your quest platform (Galxe/Zealy) winners list — for now
-                    enter one <span className="font-mono">address,amount</span> per
-                    line below (assign the reward each winner gets). {identityRequiredEff
+                    Reward your quest winners (Galxe/Zealy). Paste an{" "}
+                    <span className="font-mono">address,amount</span> list, or use{" "}
+                    <strong>Build a list</strong> to drop in an address-only winners
+                    list and give everyone the same amount. {identityRequiredEff
                       ? "The identity gate keeps it Sybil-resistant."
-                      : "Consider keeping the identity gate on for Sybil-resistance."}{" "}
-                    A dedicated importer that takes an address-only winners list and
-                    assigns amounts is coming to this step.
+                      : "Consider keeping the identity gate on for Sybil-resistance."}
                   </p>
                 )}
-                <Field label="Recipients CSV (address,amount per line)">
-                  <textarea
-                    className={`${wizInputCls} font-mono text-xs`}
-                    rows={6}
-                    value={csv}
-                    onChange={(e) => setCsv(e.target.value)}
-                    placeholder={"0xabc…,120\n0xdef…,80"}
-                  />
-                  <div className="flex items-center justify-between">
-                    <span
-                      className={`text-xs ${csvError ? "text-rose-500" : "text-ink/50"}`}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={SEG_WRAP}>
+                    <SegButton
+                      active={recipMode === "paste"}
+                      onClick={() => setRecipMode("paste")}
                     >
-                      {csvError
-                        ? csvError
-                        : manifest
-                          ? `${recipientCount} recipients · total ${fmtAmount(totalAmount)} (auto)`
-                          : csv.trim() && decimals === undefined
-                            ? "Select the distribution token first — amounts are validated against its decimals"
-                            : `Paste address,amount per line (amount in ${unit}, e.g. 120 or 1.5)`}
+                      Paste / upload
+                    </SegButton>
+                    <SegButton
+                      active={recipMode === "build"}
+                      onClick={() => builderToken && setRecipMode("build")}
+                    >
+                      Build a list
+                    </SegButton>
+                  </span>
+                  {!builderToken && (
+                    <span className="text-[11px] text-ink/50">
+                      Pick the distribution token on the Basics step to build a list.
                     </span>
-                    <div className="flex items-center gap-3">
-                      <input
-                        ref={csvFileRef}
-                        type="file"
-                        accept=".csv,text/csv,text/plain"
-                        className="hidden"
-                        onChange={handleCsvFile}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => csvFileRef.current?.click()}
-                        className="text-[11px] font-bold text-ink/70 inline-flex items-center gap-1 hover:text-ink hover:underline"
-                      >
-                        <Upload className="w-3 h-3" /> Upload CSV
-                      </button>
-                      <button
-                        type="button"
-                        onClick={downloadSampleCsv}
-                        className="text-[11px] font-bold text-ink/70 inline-flex items-center gap-1 hover:text-ink hover:underline"
-                      >
-                        <Download className="w-3 h-3" /> Sample CSV
-                      </button>
-                    </div>
+                  )}
+                </div>
+
+                {recipMode === "build" && builderToken ? (
+                  // Same builder as /tools — aggregate (Dune/staking/CSV) then
+                  // distribute (equal/pro-rata/√). "Use this list" writes its
+                  // address,amount CSV back into the wizard and returns to the
+                  // paste view so the auto-validation summary shows. The token
+                  // is fixed to the wizard's choice. (Equal distribution over an
+                  // address-only paste covers SOCIAL's winners-import case.)
+                  <div className={`bg-white p-4 ${POP_PANEL}`}>
+                    <RecipientBuilder
+                      fixedToken={builderToken}
+                      useLabel="Use this list"
+                      onUse={(built) => {
+                        setCsv(built);
+                        setRecipMode("paste");
+                      }}
+                    />
                   </div>
-                </Field>
+                ) : (
+                  <Field label="Recipients CSV (address,amount per line)">
+                    <textarea
+                      className={`${wizInputCls} font-mono text-xs`}
+                      rows={6}
+                      value={csv}
+                      onChange={(e) => setCsv(e.target.value)}
+                      placeholder={"0xabc…,120\n0xdef…,80"}
+                    />
+                    <div className="flex items-center justify-between">
+                      <span
+                        className={`text-xs ${csvError ? "text-rose-500" : "text-ink/50"}`}
+                      >
+                        {csvError
+                          ? csvError
+                          : manifest
+                            ? `${recipientCount} recipients · total ${fmtAmount(totalAmount)} (auto)`
+                            : csv.trim() && decimals === undefined
+                              ? "Select the distribution token first — amounts are validated against its decimals"
+                              : `Paste address,amount per line (amount in ${unit}, e.g. 120 or 1.5)`}
+                      </span>
+                      <div className="flex items-center gap-3">
+                        <input
+                          ref={csvFileRef}
+                          type="file"
+                          accept=".csv,text/csv,text/plain"
+                          className="hidden"
+                          onChange={handleCsvFile}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => csvFileRef.current?.click()}
+                          className="text-[11px] font-bold text-ink/70 inline-flex items-center gap-1 hover:text-ink hover:underline"
+                        >
+                          <Upload className="w-3 h-3" /> Upload CSV
+                        </button>
+                        <button
+                          type="button"
+                          onClick={downloadSampleCsv}
+                          className="text-[11px] font-bold text-ink/70 inline-flex items-center gap-1 hover:text-ink hover:underline"
+                        >
+                          <Download className="w-3 h-3" /> Sample CSV
+                        </button>
+                      </div>
+                    </div>
+                  </Field>
+                )}
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Start (optional, to the second)">
                     <input
