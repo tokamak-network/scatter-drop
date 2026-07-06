@@ -6,17 +6,14 @@ import { useAccount, useChainId } from "wagmi";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEligibility } from "@/lib/proofs";
 import { zeroAddress, type TransactionReceipt } from "viem";
-import {
-  buildClaimRequest,
-  isVerificationValid,
-} from "@tokamak-network/scatter-drop-sdk";
+import { buildClaimRequest } from "@tokamak-network/scatter-drop-sdk";
 import { Check, CheckCircle2, Gift, Loader2, Minus, PartyPopper, XCircle } from "lucide-react";
 import { ConnectGate } from "@/components/ConnectGate";
 import { CopyableTxHash } from "@/components/CopyableTxHash";
 import { POP_HEADING, POP_PANEL } from "@/components/pop";
 import { StatBox } from "@/components/popUi";
 import { TxButton } from "@/components/TxButton";
-import { useIsClaimed, useVerifiedUntil } from "@/lib/contracts";
+import { useGateState, useIsClaimed } from "@/lib/contracts";
 import { formatAmount, fmtUnixDateTime, useCampaignStats, useClaimEvents } from "@/lib/campaigns";
 import type { Campaign } from "@/lib/stub";
 
@@ -43,11 +40,10 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
 
   const { data: elig, isPending: eligLoading } = useEligibility(campaign, address);
   // W24: identityRegistry == 0 means an open campaign — no identity check.
+  // The one gate rule (shared with the detail card + wizard preview).
   const gateOff = campaign.identityRegistry === zeroAddress;
-  const { data: verifiedUntil, isLoading: gateLoading } = useVerifiedUntil(
-    gateOff ? undefined : campaign.identityRegistry,
-    address,
-  );
+  const { status: gateStatus } = useGateState(campaign.identityRegistry, address);
+  const gateLoading = gateStatus === "loading";
   const {
     data: claimedOnChain,
     isLoading: claimLoading,
@@ -77,9 +73,7 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
     void refetchClaimed();
   };
 
-  const verified =
-    gateOff ||
-    (verifiedUntil !== undefined && isVerificationValid(verifiedUntil, now));
+  const verified = gateStatus === "off" || gateStatus === "verified";
   const notStarted = campaign.startTimeUnix > now;
   const ended = now > campaign.deadlineUnix;
   const windowOpen = !notStarted && !ended;

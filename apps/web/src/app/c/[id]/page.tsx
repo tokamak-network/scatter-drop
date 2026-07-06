@@ -4,14 +4,15 @@ import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { useAccount, useChainId, useChains } from "wagmi";
 import { zeroAddress } from "viem";
-import { airdropTypeLabel, isVerificationValid } from "@tokamak-network/scatter-drop-sdk";
+import { airdropTypeLabel } from "@tokamak-network/scatter-drop-sdk";
 import { AlertCircle, ArrowLeft, Clock, Loader2 } from "lucide-react";
 import { CopyButton } from "@/components/CopyButton";
+import { GatePreview } from "@/components/GatePreview";
 import { IdentityGate } from "@/components/IdentityGate";
 import { inkBtnClass, POP_CHIP, POP_HEADING, POP_PANEL } from "@/components/pop";
 import { LiveChip, StatBox } from "@/components/popUi";
 import { ShareCard } from "@/components/ShareCard";
-import { useVerifiedUntil } from "@/lib/contracts";
+import { useGateState } from "@/lib/contracts";
 import { fmtUnixDateTime, useCampaign } from "@/lib/campaigns";
 import { chainLabel, explorerUrl } from "@/lib/explorer";
 import { ipfsUrl, useProofsAnchorCid } from "@/lib/proofs";
@@ -26,10 +27,10 @@ export default function CampaignDetailPage({
   const { id } = use(params);
   const { data: campaign, isPending, isError } = useCampaign(id);
   const { address } = useAccount();
-  const { data: verifiedUntil } = useVerifiedUntil(
-    campaign?.identityRegistry,
-    address,
-  );
+  // The one gate rule (zero-address = no gate + freshness), shared with the
+  // wizard preview and the claim panel so all three agree on "does this wallet
+  // pass?".
+  const { status: gateStatus } = useGateState(campaign?.identityRegistry, address);
   // The chain this campaign was read from — shown explicitly (and used for
   // explorer links) so contract lookups aren't confused across networks.
   const chainId = useChainId();
@@ -60,24 +61,19 @@ export default function CampaignDetailPage({
     );
   }
 
-  const now = BigInt(Math.floor(Date.now() / 1000));
   const open = campaign.identityRegistry === zeroAddress;
   const startsAt =
     campaign.startTimeUnix > 0n
       ? fmtUnixDateTime(campaign.startTimeUnix)
       : "At launch";
-  // Open campaigns (identityRegistry == 0) skip verification entirely — the
-  // registry read never runs, so without this branch the card would sit on
-  // "checking…" forever.
-  const gateState = open
-    ? "open"
-    : !address
-      ? "unverified"
-      : verifiedUntil === undefined
-        ? "loading"
-        : isVerificationValid(verifiedUntil, now)
-          ? "verified"
-          : "unverified";
+  // Map the shared gate status to the IdentityGate card's vocabulary: no gate →
+  // "open", gated-but-no-wallet → "unverified" (nothing to show as passing).
+  const gateState =
+    gateStatus === "off"
+      ? "open"
+      : gateStatus === "noAccount"
+        ? "unverified"
+        : gateStatus;
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -187,6 +183,15 @@ export default function CampaignDetailPage({
           />
 
           <IdentityGate state={gateState} registryLabel={campaign.identityRegistryLabel} />
+
+          {/* Gated campaigns: let a recipient check any wallet against the
+              registry before they try to claim (no connect required). */}
+          {!open && (
+            <GatePreview
+              registry={campaign.identityRegistry}
+              defaultAddress={address}
+            />
+          )}
 
           <RecipientsList campaign={campaign} />
         </div>
