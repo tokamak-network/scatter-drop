@@ -406,7 +406,7 @@ export function useGateState(
   account: Address | undefined,
 ): { status: GateStatus; verifiedUntil: bigint | undefined; gated: boolean } {
   const gated = !!registry && isAddress(registry, { strict: false }) && registry !== zeroAddress;
-  const { data: verifiedUntil, isLoading } = useVerifiedUntil(
+  const { data: verifiedUntil, isLoading, isError } = useVerifiedUntil(
     gated ? registry : undefined,
     account,
   );
@@ -415,11 +415,16 @@ export function useGateState(
     ? "off"
     : !account
       ? "noAccount"
-      : isLoading || verifiedUntil === undefined
+      : isLoading
         ? "loading"
-        : isVerificationValid(verifiedUntil, now)
-          ? "verified"
-          : "unverified";
+        : // A failed read (RPC error, or the registry isn't a live contract so
+          // the call reverts) or a still-missing value resolves conservatively
+          // to unverified — never a wallet that can't be confirmed as passing.
+          isError || verifiedUntil === undefined
+          ? "unverified"
+          : isVerificationValid(verifiedUntil, now)
+            ? "verified"
+            : "unverified";
   return { status, verifiedUntil, gated };
 }
 
