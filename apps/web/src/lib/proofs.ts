@@ -29,7 +29,8 @@ function isValidClaim(c: unknown): c is ClaimProof {
 }
 
 /**
- * Publish a campaign's per-recipient proofs to the store, keyed by merkleRoot.
+ * Publish a campaign's per-recipient proofs to the store, keyed by the
+ * vault (chainId, drop).
  * Best-effort — a failure doesn't block campaign creation (proofs can be
  * re-published later). Called after `createDrop` confirms. Returns the IPFS
  * CID when the server has pinning configured (null otherwise), so the wizard
@@ -223,8 +224,8 @@ async function fetchClaims(
 }
 
 /**
- * One proofs download per root — eligibility and the recipients directory
- * both observe this query (same key), so the largest payload on the claim
+ * One proofs download per vault — eligibility and the recipients directory
+ * both observe this query (same (chainId, drop) key), so the largest payload on the claim
  * page (up to 50k claims) is fetched once, not once per consumer. Falls back
  * to the on-chain IPFS anchor when the app's store misses.
  */
@@ -269,7 +270,7 @@ export function useMyClaims(opts?: ChainOpt) {
   const walletChainId = useChainId();
   const chainId = opts?.chainId ?? walletChainId;
   const client = usePublicClient({ chainId });
-  // Gate on dep resolving: fetchClaims caches under ["proofs", chainId, root],
+  // Gate on dep resolving: fetchClaims caches under ["proofs", chainId, drop],
   // and the claim pages read that same entry — populating it before the
   // deployment is known would cache a store-only result with no IPFS-anchor
   // fallback and poison the shared cache.

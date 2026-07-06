@@ -10,14 +10,15 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Proofs store keyed by the campaign's `merkleRoot`. This is the off-chain
+ * Proofs store keyed by the vault `(chainId, drop)`. This is the off-chain
  * proofs.json seam (DESIGN §8.7/§12): a campaign publishes its per-recipient
  * `claims` here and the claim page reads them back to find a wallet's proof.
  *
  * Persisted in the app DB (CampaignProofs) so a dev-server restart no longer
  * wipes eligibility for every campaign. Still a stand-in for IPFS pinning
  * (Filebase/Pinata) + the on-chain proofsCid; swap the backend later — the
- * client contract (root → claims) stays the same.
+ * client contract ((chainId, drop) → claims, cross-checked against the
+ * vault's on-chain root) stays the same.
  */
 
 // Bound storage: this is an untrusted, unauthenticated store (a stand-in for
