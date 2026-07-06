@@ -3,22 +3,31 @@
 import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { formatUnits, isAddress, parseUnits } from "viem";
+import { formatUnits, isAddress } from "viem";
 import { ArrowLeft, ArrowRight, Check, Copy, Download, Trash2, Upload } from "lucide-react";
-import { DuneImport, type Recipient } from "@/components/DuneImport";
+import { DuneImport } from "@/components/DuneImport";
 import { inkBtnClass, pillClass, POP_PANEL, popInputClass, whiteBtnClass } from "@/components/pop";
 import { PageHeader } from "@/components/ui";
 import { StakingImport } from "@/components/StakingImport";
 import { useErc20Decimals, useErc20Symbol } from "@/lib/contracts";
 import { useAllowedTokens } from "@/lib/campaigns";
-import { isPositiveDecimal } from "@/lib/validation";
 import { downloadCsv } from "@/lib/download";
+import {
+  BLANK_ROW,
+  computeDistribution,
+  csvToRows,
+  dedupSum,
+  duplicateCount,
+  hasInvalidAddress,
+  nonEmpty,
+  type Recipient,
+  rowsToCsv,
+  toBaseUnits,
+  withTrailingBlank,
+} from "@/lib/recipients";
 import { toCsv } from "@/lib/reports";
 import { DRAFT_CSV_KEY } from "@/lib/draftCsv";
 
-type Row = Recipient;
-const BLANK: Row = { address: "", amount: "" };
-const DEC = /^\d+$/;
 // Cap how many rows the step-2 grid renders (totals/export still cover all).
 const RENDER_CAP = 500;
 
@@ -29,75 +38,6 @@ const SEG_WRAP = "inline-flex rounded-full border-2 border-ink/15 bg-pop-cream p
 /** Step CTA — primary ink pill with the shared disabled treatment. */
 const CTA_CLS = `inline-flex items-center gap-2 text-sm disabled:opacity-50 disabled:pointer-events-none ${inkBtnClass("lg")}`;
 
-function nonEmpty(r: Row) {
-  return r.address.trim() !== "" || r.amount.trim() !== "";
-}
-
-/** Integer square root (Newton's method) — for √balance pro-rata weighting. */
-function isqrt(n: bigint): bigint {
-  if (n < 2n) return n < 0n ? 0n : n;
-  let x = n;
-  let y = (x + 1n) / 2n;
-  while (y < x) {
-    x = y;
-    y = (x + n / x) / 2n;
-  }
-  return x;
-}
-
-function rowsToCsv(rows: Row[]): string {
-  return rows
-    .filter(nonEmpty)
-    .map((r) => `${r.address.trim()},${r.amount.trim()}`)
-    .join("\n");
-}
-
-function csvToRows(text: string): Row[] {
-  const rows = text
-    .replace(/^﻿/, "")
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l !== "" && !l.startsWith("#"))
-    .map((line) => {
-      const [a, b] = line.split(/[,\t]/);
-      const address = (a ?? "").trim().replace(/^["']|["']$/g, "");
-      const amount = (b ?? "").trim().replace(/^["']|["']$/g, "");
-      return { address, amount };
-    })
-    .filter((r) => !/^address$/i.test(r.address));
-  return rows.length ? rows : [{ ...BLANK }];
-}
-
-function withTrailingBlank(rows: Row[]): Row[] {
-  const last = rows[rows.length - 1];
-  if (!last || nonEmpty(last)) return [...rows, { ...BLANK }];
-  return rows;
-}
-
-/** Merge duplicate addresses, summing balances; preserves first-seen order/casing. */
-function dedupSum(rows: Row[]): Row[] {
-  const totals = new Map<string, bigint>();
-  const display = new Map<string, string>();
-  const order: string[] = [];
-  for (const r of rows) {
-    const a = r.address.trim();
-    if (!isAddress(a, { strict: false })) continue;
-    const key = a.toLowerCase();
-    const t = r.amount.trim();
-    const amt = DEC.test(t) ? BigInt(t) : 0n;
-    if (!totals.has(key)) {
-      totals.set(key, 0n);
-      display.set(key, a);
-      order.push(key);
-    }
-    totals.set(key, (totals.get(key) as bigint) + amt);
-  }
-  return order.map((key) => ({
-    address: display.get(key) as string,
-    amount: (totals.get(key) as bigint).toString(),
-  }));
-}
-
 export default function ToolsPage() {
   const router = useRouter();
   const [step, setStep] = useState<1 | 2>(1);
@@ -107,7 +47,7 @@ export default function ToolsPage() {
   // Step 1 works on CSV text (paste / upload / Dune fill it); step 2 on the rows.
   const [csvText, setCsvText] = useState("");
   const [view, setView] = useState<"csv" | "table">("csv");
-  const [rows, setRows] = useState<Row[]>([{ ...BLANK }]);
+  const [rows, setRows] = useState<Recipient[]>([{ ...BLANK_ROW }]);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Step 2 — airdrop token (for decimals/symbol) + distribution method.
@@ -120,7 +60,7 @@ export default function ToolsPage() {
   const [exportOpen, setExportOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const setAndPad = (next: Row[]) => setRows(withTrailingBlank(next));
+  const setAndPad = (next: Recipient[]) => setRows(withTrailingBlank(next));
 
   // --- step 1: aggregate ---
   const loadRecipients = (recipients: Recipient[]) =>
@@ -169,92 +109,23 @@ export default function ToolsPage() {
   const dec = tokenOk && decData != null ? Number(decData) : 18;
   const unit = symbol ?? "tokens";
 
-  // Parse a whole-token input to base units. Returns null on empty/invalid.
-  const toBase = (v: string): bigint | null => {
-    const t = v.trim();
-    if (!t || !isPositiveDecimal(t, dec)) return null;
-    try {
-      const b = parseUnits(t, dec);
-      return b > 0n ? b : null;
-    } catch {
-      return null;
-    }
-  };
-
-  const perWalletBase = distMode === "equal" ? toBase(perWallet) : null;
-  const totalBase = distMode !== "equal" ? toBase(totalDistribute) : null;
+  const perWalletBase = distMode === "equal" ? toBaseUnits(perWallet, dec) : null;
+  const totalBase = distMode !== "equal" ? toBaseUnits(totalDistribute, dec) : null;
   // Cap only applies to the pro-rata methods (meaningless when all wallets are equal).
   const capActive = distMode !== "equal" && capValue.trim() !== "";
-  const capBase = capActive ? toBase(capValue) : null;
+  const capBase = capActive ? toBaseUnits(capValue, dec) : null;
   const capInvalid = capActive && capBase === null;
 
-  // Compute the airdrop amount (base units) per row, aligned to `rows`.
-  const dist = useMemo(() => {
-    const airdrops: (bigint | null)[] = rows.map(() => null);
-    const valid: number[] = [];
-    rows.forEach((r, i) => {
-      if (isAddress(r.address.trim(), { strict: false })) valid.push(i);
-    });
+  // Airdrop amount (base units) per row — the pure builder core, memoized on
+  // its inputs so the grid recomputes only when they change.
+  const dist = useMemo(
+    () => computeDistribution(rows, { mode: distMode, perWalletBase, totalBase, capBase }),
+    [rows, distMode, perWalletBase, totalBase, capBase],
+  );
 
-    if (distMode === "equal" && perWalletBase !== null) {
-      for (const i of valid) {
-        airdrops[i] = capBase !== null && perWalletBase > capBase ? capBase : perWalletBase;
-      }
-    } else if (totalBase !== null) {
-      // prorata: weight by balance; sqrt: weight by √balance (dampens whales).
-      const weights = valid.map((i) => {
-        const b = DEC.test(rows[i].amount.trim()) ? BigInt(rows[i].amount.trim()) : 0n;
-        return distMode === "sqrt" ? isqrt(b) : b;
-      });
-      const sumW = weights.reduce((a, b) => a + b, 0n);
-      if (sumW > 0n) {
-        let assigned = 0n;
-        let maxAt = -1;
-        let maxW = 0n;
-        valid.forEach((i, k) => {
-          const w = weights[k];
-          if (w > maxW) {
-            maxW = w;
-            maxAt = i;
-          }
-          const a = w === 0n ? 0n : (totalBase * w) / sumW;
-          airdrops[i] = a;
-          assigned += a;
-        });
-        // Give the rounding remainder to the largest holder so the sum is exact.
-        const rem = totalBase - assigned;
-        if (rem > 0n && maxAt >= 0) airdrops[maxAt] = (airdrops[maxAt] as bigint) + rem;
-        if (capBase !== null) {
-          for (const i of valid) {
-            const a = airdrops[i];
-            if (a !== null && a > capBase) airdrops[i] = capBase;
-          }
-        }
-      }
-    }
-
-    let total = 0n;
-    let count = 0;
-    for (const a of airdrops) if (a !== null && a > 0n) {
-      total += a;
-      count++;
-    }
-    return { airdrops, total, count };
-  }, [rows, distMode, perWalletBase, totalBase, capBase]);
-
-  const badAddr = rows.some((r) => nonEmpty(r) && !isAddress(r.address.trim(), { strict: false }));
+  const badAddr = hasInvalidAddress(rows);
   // Duplicate addresses break the merkle tree — detect and block until merged.
-  const dupCount = useMemo(() => {
-    const seen = new Set<string>();
-    let d = 0;
-    for (const r of rows) {
-      const a = r.address.trim().toLowerCase();
-      if (!a || !isAddress(a, { strict: false })) continue;
-      if (seen.has(a)) d++;
-      else seen.add(a);
-    }
-    return d;
-  }, [rows]);
+  const dupCount = useMemo(() => duplicateCount(rows), [rows]);
   // Decimals gate: amounts scale by the selected token's decimals and the
   // export states its unit — without a token (or while its decimals are still
   // being read) both would be guesses on the silent 18-dp fallback.
@@ -264,11 +135,11 @@ export default function ToolsPage() {
   const human = (bi: bigint) => formatUnits(bi, dec);
   const totalLabel = `${human(dist.total)} ${unit}`;
 
-  const update = (i: number, key: keyof Row, val: string) =>
+  const update = (i: number, key: keyof Recipient, val: string) =>
     setAndPad(rows.map((r, idx) => (idx === i ? { ...r, [key]: val } : r)));
   const removeRow = (i: number) => {
     const next = rows.filter((_, idx) => idx !== i);
-    setRows(next.length ? withTrailingBlank(next) : [{ ...BLANK }]);
+    setRows(next.length ? withTrailingBlank(next) : [{ ...BLANK_ROW }]);
   };
   const doDedup = () => setAndPad(dedupSum(rows.filter(nonEmpty)));
 
@@ -826,7 +697,7 @@ function UnitTag({ unit }: { unit: string }) {
 }
 
 const CSV_PREVIEW_CAP = 1000;
-function CsvTable({ rows }: { rows: Row[] }) {
+function CsvTable({ rows }: { rows: Recipient[] }) {
   const filled = rows.filter((r) => r.address.trim() !== "" || r.amount.trim() !== "");
   if (filled.length === 0) {
     return (
