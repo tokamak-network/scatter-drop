@@ -458,14 +458,16 @@ export type AllowedToken = { token: Address; symbol: string };
  * token wins). Lets the admin see what's curated instead of probing addresses
  * one at a time. Symbols are resolved for display.
  */
-export function useAllowedTokens() {
+export function useAllowedTokens(opts?: { enabled?: boolean }) {
   const chainId = useChainId();
   const client = usePublicClient({ chainId });
   const { data: dep } = useDeployment();
 
   return useQuery({
     queryKey: ["allowedTokens", chainId, dep?.dropFactory],
-    enabled: !!client && !!dep?.dropFactory,
+    // Callers that don't need the list (e.g. the builder with a fixed token)
+    // pass enabled:false to skip the log scan + metadata load entirely.
+    enabled: (opts?.enabled ?? true) && !!client && !!dep?.dropFactory,
     staleTime: 15_000,
     queryFn: async (): Promise<AllowedToken[]> => {
       if (!client || !dep?.dropFactory) return [];
