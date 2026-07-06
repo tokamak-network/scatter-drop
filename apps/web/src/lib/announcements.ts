@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useChainId } from "wagmi";
 import type { Address } from "viem";
 import { fmtDateTime, useCampaigns } from "./campaigns";
+import type { ChainOpt } from "./contracts";
 import type { Campaign } from "./stub";
 
 /**
@@ -78,9 +79,16 @@ async function fetchJson<T>(url: string): Promise<T> {
   return data;
 }
 
-/** All announcements for the connected chain, soonest expected start first. */
-export function useAnnouncements(operator?: Address, opts?: { enabled?: boolean }) {
-  const chainId = useChainId();
+/**
+ * All announcements for a chain (the connected one unless `opts.chainId`
+ * overrides — the boards' network filter), soonest expected start first.
+ */
+export function useAnnouncements(
+  operator?: Address,
+  opts?: ChainOpt & { enabled?: boolean },
+) {
+  const walletChainId = useChainId();
+  const chainId = opts?.chainId ?? walletChainId;
   return useQuery({
     queryKey: ["announcements", chainId, operator?.toLowerCase() ?? null],
     staleTime: 15_000,
@@ -104,9 +112,14 @@ export type AnnouncementWithStatus = { a: Announcement; status: AnnouncementStat
  * drops' on-chain claim windows via the campaign list, so the board and the
  * Explore strip derive LIVE/ENDED the same way.
  */
-export function useAnnouncementsWithStatus(operator?: Address) {
-  const query = useAnnouncements(operator);
-  const { data: campaignData } = useCampaigns();
+export function useAnnouncementsWithStatus(
+  operator?: Address,
+  opts?: ChainOpt,
+) {
+  const query = useAnnouncements(operator, opts);
+  // Campaigns from the same chain as the announcements — the status join
+  // (LIVE/ENDED from the linked drop's claim window) must not mix networks.
+  const { data: campaignData } = useCampaigns(opts);
   const campaigns = campaignData?.campaigns;
   const items = useMemo<AnnouncementWithStatus[]>(() => {
     const byDrop = new Map((campaigns ?? []).map((c) => [c.drop.toLowerCase(), c]));

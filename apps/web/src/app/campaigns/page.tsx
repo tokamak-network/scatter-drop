@@ -15,6 +15,9 @@ import {
   User,
 } from "lucide-react";
 import { AnnouncementCard } from "@/components/AnnouncementCard";
+import { NetworkFilter } from "@/components/NetworkFilter";
+import { inkBtnClass, pillClass, POP_CARD, POP_CHIP, POP_PANEL, usePickedChain } from "@/components/pop";
+import { PopHero } from "@/components/PopHero";
 import { EmptyBox } from "@/components/states";
 import { useAnnouncementsWithStatus } from "@/lib/announcements";
 import { useCampaigns } from "@/lib/campaigns";
@@ -33,7 +36,8 @@ const TYPE_TABS: TypeTab[] = [
 ];
 
 export default function CampaignsPage() {
-  const { data, isPending, isError } = useCampaigns();
+  const [chainId, setPickedChainId] = usePickedChain();
+  const { data, isPending, isError } = useCampaigns({ chainId });
   const campaigns = data?.campaigns ?? [];
 
   const [search, setSearch] = useState("");
@@ -56,32 +60,35 @@ export default function CampaignsPage() {
 
   return (
     <div className="space-y-8 animate-fade-in">
-      <UpcomingStrip />
+      <PopHero
+        title="What's dropping?"
+        subtitle="Live airdrops and announced drops — check your eligibility and claim your share."
+      />
+
+      <UpcomingStrip chainId={chainId} />
+
+      <NetworkFilter value={chainId} onChange={setPickedChainId} />
 
       {/* Filters */}
-      <div className="flex flex-col lg:flex-row gap-4 justify-between items-center bg-slate-900/50 p-4 rounded-xl border border-slate-800/60">
+      <div className={`flex flex-col lg:flex-row gap-4 justify-between items-center bg-white p-4 ${POP_PANEL}`}>
         <div className="relative w-full lg:max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/40" />
           <input
             type="text"
             aria-label="Search campaigns"
             placeholder="Search campaigns, tokens, descriptions..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-800 focus:border-slate-700 text-slate-100 placeholder-slate-500 pl-10 pr-4 py-2 text-sm rounded-lg outline-none transition"
+            className="w-full bg-pop-cream border-2 border-ink/15 focus:border-ink text-ink placeholder-ink/40 pl-10 pr-4 py-2 text-sm rounded-full outline-none transition"
           />
         </div>
 
-        <div className="flex flex-wrap gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800 w-full lg:w-auto">
+        <div className="flex flex-wrap gap-1.5 w-full lg:w-auto">
           {TYPE_TABS.map((tab) => (
             <button
               key={tab}
               onClick={() => setTypeTab(tab)}
-              className={`flex-1 lg:flex-none px-3 py-1.5 text-xs font-mono font-medium rounded transition ${
-                typeTab === tab
-                  ? "bg-slate-800 text-slate-100 shadow-sm"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
+              className={pillClass(typeTab === tab, "bg-pop-yellow", "flex-1 lg:flex-none")}
             >
               {tab === "ALL" ? "All Types" : airdropTypeLabel(tab)}
             </button>
@@ -93,11 +100,7 @@ export default function CampaignsPage() {
             <button
               key={s}
               onClick={() => setStatusTab(s)}
-              className={`flex-1 lg:flex-none px-3 py-1.5 text-xs font-medium rounded border transition ${
-                statusTab === s
-                  ? "bg-slate-100 text-slate-900 border-slate-200 shadow-sm"
-                  : "bg-slate-950 text-slate-400 border-slate-800 hover:bg-slate-900/50"
-              }`}
+              className={pillClass(statusTab === s, "bg-pop-mint", "flex-1 lg:flex-none")}
             >
               {s === "ALL" ? "All Status" : s === "ACTIVE" ? "Active" : "Ended"}
             </button>
@@ -124,8 +127,8 @@ export default function CampaignsPage() {
         </EmptyBox>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filtered.map((c) => (
-            <CampaignCard key={c.id} c={c} />
+          {filtered.map((c, i) => (
+            <CampaignCard key={c.id} c={c} tone={POP_TONES[i % POP_TONES.length]!} />
           ))}
         </div>
       )}
@@ -137,20 +140,20 @@ export default function CampaignsPage() {
  * Announced-but-not-yet-live drops, teased above Explore. Renders nothing when
  * there's nothing upcoming, so the board stays invisible until operators use it.
  */
-function UpcomingStrip() {
-  const { items } = useAnnouncementsWithStatus();
+function UpcomingStrip({ chainId }: { chainId: number }) {
+  const { items } = useAnnouncementsWithStatus(undefined, { chainId });
   const upcoming = items.filter(({ status }) => status === "UPCOMING");
   if (upcoming.length === 0) return null;
 
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">
+        <h2 className="font-chunk uppercase text-sm tracking-wide text-ink">
           Upcoming drops
         </h2>
         <Link
           href="/upcoming"
-          className="text-[11px] font-mono text-sky-500 hover:text-sky-400 transition flex items-center"
+          className="text-[11px] font-bold text-ink bg-white border-2 border-ink/20 hover:border-ink rounded-full px-3 py-1 transition flex items-center"
         >
           View all <ChevronRight className="w-3.5 h-3.5" />
         </Link>
@@ -164,7 +167,10 @@ function UpcomingStrip() {
   );
 }
 
-function CampaignCard({ c }: { c: Campaign }) {
+/** Pastel card backgrounds rotated by grid position (playful pilot). */
+const POP_TONES = ["bg-pop-mint", "bg-pop-sky", "bg-pop-yellow", "bg-pop-purple"] as const;
+
+function CampaignCard({ c, tone }: { c: Campaign; tone: (typeof POP_TONES)[number] }) {
   const ended = c.status === "ended";
   // Address-based, like the detail page — the human label isn't load-bearing.
   const open = c.identityRegistry === zeroAddress;
@@ -173,20 +179,20 @@ function CampaignCard({ c }: { c: Campaign }) {
   return (
     <Link
       href={`/c/${c.id}`}
-      className="group relative flex flex-col bg-slate-900 border border-slate-800 hover:border-emerald-500/40 rounded-xl p-5 shadow-sm hover:shadow-md transition"
+      className={`group relative flex flex-col ${tone} p-5 ${POP_CARD}`}
     >
       {/* Type + status */}
       <div className="flex items-center justify-between">
-        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold border uppercase tracking-wide bg-slate-950 text-slate-400 border-slate-800">
+        <span className={`${POP_CHIP} border-ink/25 uppercase tracking-wide bg-white/80 text-ink`}>
           {airdropTypeLabel(c.type)}
         </span>
         {ended ? (
-          <span className="text-[10px] text-slate-400 font-mono bg-slate-950 border border-slate-800 px-2 py-0.5 rounded">
+          <span className={`${POP_CHIP} text-ink/60 bg-white/60 border-ink/20`}>
             ENDED
           </span>
         ) : (
-          <span className="text-[10px] text-emerald-600 font-mono bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span className={`${POP_CHIP} text-white bg-ink border-ink flex items-center gap-1`}>
+            <span className="w-1.5 h-1.5 rounded-full bg-pop-mint animate-pulse" />
             ACTIVE
           </span>
         )}
@@ -194,30 +200,30 @@ function CampaignCard({ c }: { c: Campaign }) {
 
       {/* Token identity */}
       <div className="mt-4 flex items-center gap-3">
-        <div className="w-11 h-11 shrink-0 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center font-bold text-[11px] text-emerald-600">
+        <div className="w-11 h-11 shrink-0 rounded-full bg-white border-2 border-ink flex items-center justify-center font-bold text-[11px] text-ink">
           {avatar}
         </div>
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-slate-50 group-hover:text-emerald-600 leading-tight transition truncate">
+          <h3 className="text-sm font-bold text-ink leading-tight truncate">
             {c.name}
           </h3>
-          <p className="text-[11px] text-slate-400 font-mono mt-0.5 truncate">
+          <p className="text-[11px] text-ink/60 font-mono mt-0.5 truncate">
             {shortAddr(c.drop)}
           </p>
         </div>
       </div>
 
       {/* Tagline — what this drop is / why to click in */}
-      <p className="mt-3 text-xs text-slate-400 leading-relaxed line-clamp-2 min-h-[2rem]">
+      <p className="mt-3 text-xs text-ink/70 leading-relaxed line-clamp-2 min-h-[2rem]">
         {c.description}
       </p>
 
       {/* Hero stat: pool */}
-      <div className="mt-4 rounded-lg bg-slate-950 border border-slate-800/80 px-3.5 py-3">
-        <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+      <div className="mt-4 rounded-2xl bg-white/70 border border-ink/15 px-3.5 py-3">
+        <div className="text-[10px] font-mono uppercase tracking-wider text-ink/50">
           Pool
         </div>
-        <div className="text-lg font-bold text-slate-50 truncate">
+        <div className="text-lg font-bold text-ink truncate">
           {c.totalAmount}
         </div>
       </div>
@@ -225,34 +231,34 @@ function CampaignCard({ c }: { c: Campaign }) {
       {/* Meta */}
       <dl className="mt-4 space-y-2 text-[11px]">
         <div className="flex items-center justify-between gap-2">
-          <dt className="flex items-center gap-1.5 text-slate-400">
+          <dt className="flex items-center gap-1.5 text-ink/60">
             <User className="w-3.5 h-3.5" /> Operator
           </dt>
-          <dd className="font-mono text-slate-200">{shortAddr(c.operator)}</dd>
+          <dd className="font-mono text-ink">{shortAddr(c.operator)}</dd>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <dt className="flex items-center gap-1.5 text-slate-400">
+          <dt className="flex items-center gap-1.5 text-ink/60">
             {open ? (
               <Globe className="w-3.5 h-3.5" />
             ) : (
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+              <ShieldCheck className="w-3.5 h-3.5 text-ink" />
             )}
             Access
           </dt>
-          <dd className="text-slate-200 truncate max-w-[60%] text-right">
+          <dd className="text-ink truncate max-w-[60%] text-right">
             {open ? "No identity gate" : c.identityRegistryLabel}
           </dd>
         </div>
       </dl>
 
       {/* Footer */}
-      <div className="mt-5 pt-4 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-400 font-mono">
+      <div className="mt-5 pt-4 border-t border-ink/15 flex items-center justify-between text-[10px] text-ink/60 font-mono">
         <span className="flex items-center gap-1">
           <Calendar className="w-3 h-3" />
           {c.deadline === "No deadline" ? "No deadline" : `Ends ${c.deadline}`}
         </span>
-        <span className="flex items-center font-semibold text-emerald-600 group-hover:translate-x-0.5 transition-transform">
-          Check eligibility <ChevronRight className="w-3.5 h-3.5 ml-0.5" />
+        <span className={`flex items-center gap-0.5 group-hover:translate-x-0.5 ${inkBtnClass("md")}`}>
+          Check eligibility <ChevronRight className="w-3.5 h-3.5" />
         </span>
       </div>
     </Link>
