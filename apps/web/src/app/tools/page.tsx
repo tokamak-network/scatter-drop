@@ -272,7 +272,10 @@ export default function ToolsPage() {
       })
       .filter(Boolean) as string[];
     const header = withBalance ? "address,amount,balance" : "address,amount";
-    return [header, ...lines].join("\n");
+    // Unit note as a '#' comment — parseCsv skips it, so the file/paste still
+    // round-trips through the campaign wizard.
+    const note = `# amounts in ${unit} (token units, decimals applied — not wei/base units)`;
+    return [note, header, ...lines].join("\n");
   };
 
   const confirmExport = () => {
