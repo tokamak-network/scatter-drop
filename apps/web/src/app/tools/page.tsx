@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { formatUnits, isAddress, parseUnits } from "viem";
 import { ArrowLeft, ArrowRight, Check, Copy, Download, Trash2, Upload } from "lucide-react";
 import { DuneImport, type Recipient } from "@/components/DuneImport";
+import { inkBtnClass, pillClass, POP_PANEL, popInputClass, whiteBtnClass } from "@/components/pop";
+import { PageHeader } from "@/components/ui";
 import { StakingImport } from "@/components/StakingImport";
 import { useErc20Decimals, useErc20Symbol } from "@/lib/contracts";
 import { useAllowedTokens } from "@/lib/campaigns";
@@ -18,6 +20,13 @@ const BLANK: Row = { address: "", amount: "" };
 const DEC = /^\d+$/;
 // Cap how many rows the step-2 grid renders (totals/export still cover all).
 const RENDER_CAP = 500;
+
+/** Cream shell for the ViewBtn segmented toggles (promote to pop.ts with its
+ *  StakingImport twin at stage 3). */
+const SEG_WRAP = "inline-flex rounded-full border-2 border-ink/15 bg-pop-cream p-0.5";
+
+/** Step CTA — primary ink pill with the shared disabled treatment. */
+const CTA_CLS = `inline-flex items-center gap-2 text-sm disabled:opacity-50 disabled:pointer-events-none ${inkBtnClass("lg")}`;
 
 function nonEmpty(r: Row) {
   return r.address.trim() !== "" || r.amount.trim() !== "";
@@ -309,18 +318,11 @@ export default function ToolsPage() {
 
   return (
     <div className="space-y-8 animate-fade-in">
-      <div>
-        <span className="text-[11px] font-mono font-semibold uppercase tracking-wider text-emerald-600">
-          Tools
-        </span>
-        <h1 className="mt-1 text-2xl font-bold text-slate-50 tracking-tight">
-          Recipient list builder
-        </h1>
-        <p className="mt-2 text-sm text-slate-400 max-w-2xl">
-          Two steps: aggregate the recipients (from a Dune query or a CSV), then
-          decide how much each one gets.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Tools"
+        title="Recipient list builder"
+        subtitle="Two steps: aggregate the recipients (from a Dune query or a CSV), then decide how much each one gets."
+      />
 
       {/* Wizard step indicator */}
       <div className="flex items-center gap-2">
@@ -330,7 +332,7 @@ export default function ToolsPage() {
           active={step === 1}
           onClick={() => step === 2 && backToAggregate()}
         />
-        <span className="h-px w-6 bg-slate-800" />
+        <span className="h-0.5 w-6 bg-ink/20" />
         <StepPill
           n={2}
           label="Decide amounts"
@@ -343,8 +345,8 @@ export default function ToolsPage() {
       {step === 1 && (
         <div className="space-y-4">
           {/* Source picker → fills the CSV below */}
-          <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4">
-            <div className="inline-flex rounded-lg border border-slate-800 bg-slate-950 p-0.5">
+          <div className={`bg-white p-5 space-y-4 ${POP_PANEL}`}>
+            <div className={SEG_WRAP}>
               <ViewBtn active={source === "dune"} onClick={() => setSource("dune")}>
                 Token / NFT holders
               </ViewBtn>
@@ -352,6 +354,9 @@ export default function ToolsPage() {
                 Staking (Tokamak)
               </ViewBtn>
             </div>
+            {/* DuneImport/StakingImport keep their transitional classes (the
+                inverted slate palette renders them light) until their own
+                rollout stage. */}
             {source === "dune" ? (
               <DuneImport onRows={loadRecipients} />
             ) : (
@@ -360,10 +365,10 @@ export default function ToolsPage() {
           </div>
 
           {/* Source: upload / paste / hand-edit — the shared recipient CSV */}
-          <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-3">
+          <div className={`bg-white p-5 space-y-3 ${POP_PANEL}`}>
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-sm font-bold text-slate-100 mr-auto">Recipient CSV</h2>
-              <div className="inline-flex rounded-lg border border-slate-800 bg-slate-950 p-0.5">
+              <h2 className="text-sm font-bold text-ink mr-auto">Recipient CSV</h2>
+              <div className={SEG_WRAP}>
                 <ViewBtn active={view === "csv"} onClick={() => setView("csv")}>CSV</ViewBtn>
                 <ViewBtn active={view === "table"} onClick={() => setView("table")}>Table</ViewBtn>
               </div>
@@ -375,7 +380,7 @@ export default function ToolsPage() {
                 Clear
               </ToolbarBtn>
             </div>
-            <p className="text-[11px] text-slate-500">
+            <p className="text-[11px] text-ink/50">
               One <span className="font-mono">address,balance</span> per line. A Dune fetch above
               fills this box; you can also upload, paste, or type directly.
             </p>
@@ -387,20 +392,20 @@ export default function ToolsPage() {
                 rows={10}
                 spellCheck={false}
                 placeholder={"0xabc…,1000000000000000000\n0xdef…,500000000000000000"}
-                className="input font-mono text-xs"
+                className={popInputClass("rounded-2xl px-3 py-2 font-mono")}
               />
             ) : (
               <CsvTable rows={parsedRows} />
             )}
 
             <div className="flex items-center gap-3">
-              <span className="text-xs text-slate-400 font-mono">
+              <span className="text-xs text-ink/60 font-mono">
                 {parsedCount.toLocaleString()} recipient(s)
               </span>
               <button
                 onClick={goToAmounts}
                 disabled={parsedCount === 0}
-                className="ml-auto inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg text-sm transition"
+                className={`ml-auto ${CTA_CLS}`}
               >
                 Next: decide amounts <ArrowRight className="w-4 h-4" />
               </button>
@@ -412,16 +417,16 @@ export default function ToolsPage() {
       {step === 2 && (
         <div className="space-y-4">
           {/* Airdrop token */}
-          <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-2">
-            <h2 className="text-sm font-bold text-slate-100">Airdrop token</h2>
-            <p className="text-[11px] text-slate-500">
+          <div className={`bg-white p-5 space-y-2 ${POP_PANEL}`}>
+            <h2 className="text-sm font-bold text-ink">Airdrop token</h2>
+            <p className="text-[11px] text-ink/50">
               Choose the token you will distribute — only admin allow-listed tokens can be airdropped
               on-chain. Amounts are entered in whole tokens and scaled by the decimals.
             </p>
             <select
               value={token}
               onChange={(e) => setToken(e.target.value)}
-              className="input font-mono text-xs"
+              className={popInputClass("rounded-full px-3 py-2 font-mono")}
             >
               <option value="">Select an allow-listed token…</option>
               {(allowedTokens ?? []).map((t) => (
@@ -437,8 +442,8 @@ export default function ToolsPage() {
                 </span>
               )}
               {tokenOk && (
-                <span className="text-slate-500">
-                  {symbol && <span className="font-mono text-emerald-600">{symbol} </span>}·{" "}
+                <span className="text-ink/50">
+                  {symbol && <span className="font-mono font-bold text-ink">{symbol} </span>}·{" "}
                   {decData != null ? `${dec} decimals` : "reading decimals…"} · 1 ={" "}
                   {`1${"0".repeat(dec)}`} base units
                 </span>
@@ -447,10 +452,10 @@ export default function ToolsPage() {
           </div>
 
           {/* Distribution method */}
-          <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4">
+          <div className={`bg-white p-5 space-y-4 ${POP_PANEL}`}>
             <div>
-              <h2 className="text-sm font-bold text-slate-100">How to distribute</h2>
-              <p className="text-[11px] text-slate-500">
+              <h2 className="text-sm font-bold text-ink">How to distribute</h2>
+              <p className="text-[11px] text-ink/50">
                 Pick a method, then set its value — the amount each wallet receives updates live in
                 the list below.
               </p>
@@ -487,14 +492,14 @@ export default function ToolsPage() {
                     value={perWallet}
                     onChange={(e) => setPerWallet(e.target.value)}
                     placeholder="e.g. 1"
-                    className="input font-mono text-xs w-56"
+                    className={popInputClass("rounded-full px-3 py-2 font-mono w-56")}
                   />
                   <UnitTag unit={unit} />
                 </Field>
                 {perWalletBase !== null && dist.count > 0 && (
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-[11px] text-ink/60">
                     Total airdrop ={" "}
-                    <span className="font-mono text-emerald-500">
+                    <span className="font-mono font-bold text-ink">
                       {human(dist.total)} {unit}
                     </span>{" "}
                     across {dist.count.toLocaleString()} wallets.
@@ -513,7 +518,7 @@ export default function ToolsPage() {
                   value={totalDistribute}
                   onChange={(e) => setTotalDistribute(e.target.value)}
                   placeholder="e.g. 1000"
-                  className="input font-mono text-xs w-56"
+                  className={popInputClass("rounded-full px-3 py-2 font-mono w-56")}
                 />
                 <UnitTag unit={unit} />
               </Field>
@@ -529,7 +534,7 @@ export default function ToolsPage() {
                   value={capValue}
                   onChange={(e) => setCapValue(e.target.value)}
                   placeholder="no cap"
-                  className="input font-mono text-xs w-56"
+                  className={popInputClass("rounded-full px-3 py-2 font-mono w-56")}
                 />
                 <UnitTag unit={unit} />
               </Field>
@@ -539,9 +544,9 @@ export default function ToolsPage() {
 
           {/* Airdrop preview */}
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-sm font-bold text-slate-100 mr-auto">
+            <h2 className="text-sm font-bold text-ink mr-auto">
               Airdrop
-              <span className="ml-2 text-xs font-normal text-slate-400">
+              <span className="ml-2 text-xs font-normal text-ink/60">
                 {dist.count.toLocaleString()} recipients · total {totalLabel}
                 {!tokenOk ? (
                   <span className="text-amber-600"> · select the airdrop token above</span>
@@ -563,22 +568,22 @@ export default function ToolsPage() {
             <ToolbarBtn onClick={() => setExportOpen(true)} icon={<Download className="w-3.5 h-3.5" />} disabled={!canUse}>
               Export CSV
             </ToolbarBtn>
-            <ToolbarBtn onClick={copyCsv} icon={copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />} disabled={!canUse}>
+            <ToolbarBtn onClick={copyCsv} icon={copied ? <Check className="w-3.5 h-3.5 text-ink" /> : <Copy className="w-3.5 h-3.5" />} disabled={!canUse}>
               {copied ? "Copied" : "Copy"}
             </ToolbarBtn>
             <button
               onClick={useInCampaign}
               disabled={!canUse}
-              className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg text-sm transition"
+              className={CTA_CLS}
             >
               Use in a campaign <ArrowRight className="w-4 h-4" />
             </button>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900">
+          <div className={`overflow-x-auto bg-white ${POP_PANEL}`}>
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-[10px] font-mono uppercase tracking-wider text-slate-400 border-b border-slate-800">
+                <tr className="text-left text-[10px] font-mono uppercase tracking-wider text-ink/50 border-b border-ink/10">
                   <th className="w-10 px-3 py-2 text-right">#</th>
                   <th className="px-3 py-2">Address</th>
                   <th className="px-3 py-2 w-56">Balance (base units)</th>
@@ -591,15 +596,15 @@ export default function ToolsPage() {
                   const addrBad = nonEmpty(r) && !isAddress(r.address.trim(), { strict: false });
                   const a = dist.airdrops[i];
                   return (
-                    <tr key={i} className="border-b border-slate-800/60 last:border-0">
-                      <td className="px-3 py-1 text-right font-mono text-[11px] text-slate-500">{i + 1}</td>
+                    <tr key={i} className="border-b border-ink/10 last:border-0">
+                      <td className="px-3 py-1 text-right font-mono text-[11px] text-ink/40">{i + 1}</td>
                       <td className="px-1 py-1">
                         <input
                           value={r.address}
                           onChange={(e) => update(i, "address", e.target.value)}
                           placeholder="0x…"
-                          className={`w-full bg-transparent px-2 py-1 rounded font-mono text-xs outline-none focus:bg-slate-950 ${
-                            addrBad ? "text-red-500" : "text-slate-100"
+                          className={`w-full bg-transparent px-2 py-1 rounded font-mono text-xs outline-none focus:bg-pop-cream ${
+                            addrBad ? "text-rose-500" : "text-ink"
                           }`}
                         />
                       </td>
@@ -608,22 +613,22 @@ export default function ToolsPage() {
                           value={r.amount}
                           onChange={(e) => update(i, "amount", e.target.value)}
                           placeholder="0"
-                          className="w-full bg-transparent px-2 py-1 rounded font-mono text-xs text-slate-300 outline-none focus:bg-slate-950"
+                          className="w-full bg-transparent px-2 py-1 rounded font-mono text-xs text-ink/70 outline-none focus:bg-pop-cream"
                         />
                       </td>
                       <td className="px-3 py-1 text-right font-mono text-xs">
                         {a !== null && a > 0n ? (
-                          <span className="text-emerald-500">
+                          <span className="font-semibold text-ink">
                             {human(a)}
-                            {symbol && <span className="text-slate-500"> {symbol}</span>}
+                            {symbol && <span className="font-normal text-ink/50"> {symbol}</span>}
                           </span>
                         ) : (
-                          <span className="text-slate-600">—</span>
+                          <span className="text-ink/30">—</span>
                         )}
                       </td>
                       <td className="px-1 py-1 text-center">
                         {nonEmpty(r) && (
-                          <button onClick={() => removeRow(i)} className="text-slate-500 hover:text-red-500 transition" title="Remove row">
+                          <button onClick={() => removeRow(i)} className="text-ink/40 hover:text-rose-500 transition" title="Remove row">
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         )}
@@ -634,7 +639,7 @@ export default function ToolsPage() {
               </tbody>
             </table>
             {rows.filter(nonEmpty).length > RENDER_CAP && (
-              <p className="px-3 py-2 text-[11px] text-slate-500 border-t border-slate-800">
+              <p className="px-3 py-2 text-[11px] text-ink/50 border-t border-ink/10">
                 Showing first {RENDER_CAP.toLocaleString()} rows — totals and export cover all{" "}
                 {rows.filter(nonEmpty).length.toLocaleString()}.
               </p>
@@ -679,33 +684,33 @@ function ExportModal({
       onClick={onCancel}
     >
       <div
-        className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4"
+        className={`w-full max-w-sm bg-white p-5 space-y-4 ${POP_PANEL}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-sm font-bold text-slate-100">Export CSV</h3>
-        <p className="text-[11px] text-slate-400">
+        <h3 className="text-sm font-bold text-ink">Export CSV</h3>
+        <p className="text-[11px] text-ink/60">
           {count.toLocaleString()} recipients · columns{" "}
-          <span className="font-mono text-slate-300">
+          <span className="font-mono text-ink">
             address,amount{includeBalance ? ",balance" : ""}
           </span>
           .
         </p>
-        <label className="flex items-center gap-2 text-xs text-slate-300">
+        <label className="flex items-center gap-2 text-xs text-ink/80">
           <input
             type="checkbox"
             checked={includeBalance}
             onChange={(e) => setIncludeBalance(e.target.checked)}
-            className="accent-emerald-500"
+            className="accent-ink"
           />
           Include the snapshot balance as an extra column
         </label>
         <div className="flex justify-end gap-2">
-          <button onClick={onCancel} className="btn text-xs">
+          <button onClick={onCancel} className={`text-xs ${whiteBtnClass("md")}`}>
             Cancel
           </button>
           <button
             onClick={onConfirm}
-            className="inline-flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-400 text-white font-bold px-4 py-2 rounded-lg text-sm transition"
+            className={`inline-flex items-center gap-1.5 text-sm ${inkBtnClass("md")}`}
           >
             <Download className="w-3.5 h-3.5" /> Download
           </button>
@@ -733,15 +738,16 @@ function StepPill({
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed ${
-        active
-          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600"
-          : "border-slate-800 bg-slate-950 text-slate-300 hover:border-slate-700"
-      }`}
+      aria-current={active ? "step" : undefined}
+      className={pillClass(
+        active,
+        "bg-pop-yellow",
+        "inline-flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed",
+      )}
     >
       <span
         className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-mono ${
-          active ? "bg-emerald-500 text-white" : "bg-slate-800 text-slate-300"
+          active ? "bg-ink text-white" : "bg-ink/10 text-ink/60"
         }`}
       >
         {n}
@@ -766,21 +772,22 @@ function MethodCard({
     <button
       type="button"
       onClick={onClick}
-      className={`text-left rounded-lg border p-3 transition ${
+      aria-pressed={active}
+      className={`text-left rounded-2xl border-2 p-3 transition ${
         active
-          ? "border-emerald-500/50 bg-emerald-500/10"
-          : "border-slate-800 bg-slate-950 hover:border-slate-700"
+          ? "border-ink bg-pop-yellow"
+          : "border-ink/15 bg-pop-cream hover:border-ink/40"
       }`}
     >
-      <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+      <div className="flex items-center gap-2 text-sm font-semibold text-ink">
         <span
           className={`h-3.5 w-3.5 rounded-full border-2 ${
-            active ? "border-emerald-500 bg-emerald-500" : "border-slate-600"
+            active ? "border-ink bg-ink" : "border-ink/30"
           }`}
         />
         {title}
       </div>
-      <p className="mt-1 text-[11px] text-slate-400">{desc}</p>
+      <p className="mt-1 text-[11px] text-ink/60">{desc}</p>
     </button>
   );
 }
@@ -798,9 +805,9 @@ function Field({
 }) {
   return (
     <div className="space-y-1">
-      <label className="text-xs font-mono text-slate-300">{label}</label>
+      <label className="text-xs font-mono font-bold text-ink/70">{label}</label>
       <div className="flex items-center gap-2">{children}</div>
-      <p className={`text-[11px] ${invalid ? "text-red-500" : "text-slate-500"}`}>
+      <p className={`text-[11px] ${invalid ? "text-rose-500" : "text-ink/50"}`}>
         {invalid ? "Enter a positive number." : hint}
       </p>
     </div>
@@ -808,7 +815,7 @@ function Field({
 }
 
 function UnitTag({ unit }: { unit: string }) {
-  return <span className="text-[11px] font-mono text-slate-400">{unit}</span>;
+  return <span className="text-[11px] font-mono text-ink/50">{unit}</span>;
 }
 
 const CSV_PREVIEW_CAP = 1000;
@@ -816,33 +823,33 @@ function CsvTable({ rows }: { rows: Row[] }) {
   const filled = rows.filter((r) => r.address.trim() !== "" || r.amount.trim() !== "");
   if (filled.length === 0) {
     return (
-      <div className="rounded-lg border border-slate-800 bg-slate-950 p-4 text-center text-xs text-slate-500">
+      <div className="rounded-2xl border border-ink/15 bg-pop-cream p-4 text-center text-xs text-ink/50">
         No recipients yet — fetch from Dune, upload a CSV, or switch to the CSV view to paste.
       </div>
     );
   }
   const shown = filled.slice(0, CSV_PREVIEW_CAP);
   return (
-    <div className="overflow-auto rounded-lg border border-slate-800 max-h-96">
+    <div className="overflow-auto rounded-2xl border border-ink/15 max-h-96">
       <table className="w-full text-xs border-collapse">
-        <thead className="sticky top-0 bg-slate-950">
-          <tr className="text-left font-mono uppercase tracking-wider text-[10px] text-slate-400">
-            <th className="w-12 px-3 py-2 text-right border-b border-slate-800">#</th>
-            <th className="px-3 py-2 border-b border-slate-800">Address</th>
-            <th className="px-3 py-2 border-b border-slate-800">Balance (base units)</th>
+        <thead className="sticky top-0 bg-pop-cream">
+          <tr className="text-left font-mono uppercase tracking-wider text-[10px] text-ink/50">
+            <th className="w-12 px-3 py-2 text-right border-b border-ink/15">#</th>
+            <th className="px-3 py-2 border-b border-ink/15">Address</th>
+            <th className="px-3 py-2 border-b border-ink/15">Balance (base units)</th>
           </tr>
         </thead>
         <tbody>
           {shown.map((r, i) => {
             const bad = !isAddress(r.address.trim(), { strict: false });
             return (
-              <tr key={i} className="odd:bg-slate-900/40">
-                <td className="px-3 py-1 text-right font-mono text-slate-500 border-r border-slate-800/60">{i + 1}</td>
-                <td className={`px-3 py-1 font-mono border-r border-slate-800/60 ${bad ? "text-red-500" : "text-slate-200"}`}>
-                  {r.address || <span className="text-slate-600">—</span>}
+              <tr key={i} className="odd:bg-pop-cream/50">
+                <td className="px-3 py-1 text-right font-mono text-ink/40 border-r border-ink/10">{i + 1}</td>
+                <td className={`px-3 py-1 font-mono border-r border-ink/10 ${bad ? "text-rose-500" : "text-ink"}`}>
+                  {r.address || <span className="text-ink/30">—</span>}
                 </td>
-                <td className="px-3 py-1 font-mono text-slate-200">
-                  {r.amount || <span className="text-slate-600">—</span>}
+                <td className="px-3 py-1 font-mono text-ink">
+                  {r.amount || <span className="text-ink/30">—</span>}
                 </td>
               </tr>
             );
@@ -850,7 +857,7 @@ function CsvTable({ rows }: { rows: Row[] }) {
         </tbody>
       </table>
       {filled.length > CSV_PREVIEW_CAP && (
-        <p className="px-3 py-2 text-[11px] text-slate-500 border-t border-slate-800">
+        <p className="px-3 py-2 text-[11px] text-ink/50 border-t border-ink/15">
           Showing first {CSV_PREVIEW_CAP.toLocaleString()} of {filled.length.toLocaleString()} — all
           are kept.
         </p>
@@ -871,8 +878,9 @@ function ViewBtn({
   return (
     <button
       onClick={onClick}
-      className={`px-2.5 py-1 text-[11px] font-semibold rounded-md transition ${
-        active ? "bg-slate-800 text-slate-100" : "text-slate-400 hover:text-slate-200"
+      aria-pressed={active}
+      className={`px-2.5 py-1 text-[11px] font-bold rounded-full transition ${
+        active ? "bg-ink text-white" : "text-ink/50 hover:text-ink"
       }`}
     >
       {children}
@@ -895,7 +903,7 @@ function ToolbarBtn({
     <button
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex items-center gap-1.5 bg-slate-950 border border-slate-800 hover:border-slate-700 disabled:opacity-50 text-slate-100 text-xs font-semibold px-3 py-2 rounded-lg transition"
+      className={`inline-flex items-center gap-1.5 text-xs disabled:opacity-50 disabled:pointer-events-none ${whiteBtnClass("md")}`}
     >
       {icon}
       {children}
