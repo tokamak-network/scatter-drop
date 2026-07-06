@@ -6,7 +6,6 @@ import {
   ToggleRight,
   Lock,
   Upload,
-  Camera,
   KeyRound,
   Award,
   Coins,
@@ -60,11 +59,6 @@ const TYPES = [
     icon: Upload,
     title: "CSV upload",
     body: "Import an allow-list of addresses and amounts for a fixed distribution.",
-  },
-  {
-    icon: Camera,
-    title: "On-chain snapshot",
-    body: "Reward token or NFT holders captured at a chosen block height.",
   },
   {
     icon: KeyRound,
@@ -162,9 +156,9 @@ export default function HomePage() {
         <SectionHead
           eyebrow="Features"
           title="Built for every kind of drop"
-          sub="Four distribution types, a curated asset registry, and flexible fees — all in one flow."
+          sub="Three distribution types, a curated asset registry, and flexible fees — all in one flow."
         />
-        <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {TYPES.map((t) => (
             <div
               key={t.title}
