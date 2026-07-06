@@ -1,16 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import { useChainId, usePublicClient } from "wagmi";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useChainId } from "wagmi";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Hex } from "viem";
 import { buildPublishProofsRequest } from "@tokamak-network/scatter-drop-sdk";
 import { CheckCircle2, CloudUpload, Loader2 } from "lucide-react";
 import { TxButton } from "@/components/TxButton";
 import { useDeployment } from "@/lib/contracts";
-import { scanLatestProofsCid } from "@/lib/dropScan";
 import { shortHash } from "@/lib/explorer";
-import { useProofsMeta, type ProofsMeta } from "@/lib/proofs";
+import {
+  ipfsUrl,
+  proofsAnchorQueryKey,
+  useProofsAnchorCid,
+  useProofsMeta,
+  type ProofsMeta,
+} from "@/lib/proofs";
 import type { Campaign } from "@/lib/stub";
 import { useWalletSession } from "@/lib/useWalletSession";
 
@@ -30,7 +35,6 @@ export function ProofsPanel({
 }) {
   const root = campaign.merkleRoot?.toLowerCase() as Hex | undefined;
   const chainId = useChainId();
-  const client = usePublicClient({ chainId });
   const { data: dep, isLoading: depLoading } = useDeployment();
   const queryClient = useQueryClient();
   const { ensureSession } = useWalletSession(
@@ -49,12 +53,7 @@ export function ProofsPanel({
     data: anchoredCid,
     isLoading: anchorLoading,
     isError: anchorError,
-  } = useQuery({
-    queryKey: ["proofsAnchor", chainId, campaign.drop],
-    enabled: !!client && !!dep,
-    staleTime: 30_000,
-    queryFn: () => scanLatestProofsCid(client!, dep!, campaign.drop),
-  });
+  } = useProofsAnchorCid(campaign);
 
   const repin = async () => {
     setRepinError(null);
@@ -133,24 +132,31 @@ export function ProofsPanel({
             </div>
             <div className="flex justify-between gap-4">
               <dt className="text-slate-500">IPFS pin</dt>
-              <dd className="text-slate-200" title={cid ?? undefined}>
-                {cid ? `${shortHash(cid)} ✓` : "not pinned"}
+              <dd className="text-slate-200">
+                {cid ? (
+                  <CidLink cid={cid} className="text-emerald-600">
+                    {shortHash(cid)} ✓
+                  </CidLink>
+                ) : (
+                  "not pinned"
+                )}
               </dd>
             </div>
             <div className="flex justify-between gap-4">
               <dt className="text-slate-500">On-chain anchor</dt>
-              <dd
-                className={anchored ? "text-emerald-500" : "text-slate-200"}
-                title={anchoredCid ?? undefined}
-              >
-                {anchored
-                  ? "anchored ✓"
-                  : anchoredCid
-                    ? // CIDs are content-addressed — a mismatch only says the
-                      // anchored content differs from the current pin, not
-                      // which side is newer.
-                      `${shortHash(anchoredCid)} (differs from pin)`
-                    : "not anchored"}
+              <dd className={anchored ? "text-emerald-500" : "text-slate-200"}>
+                {anchoredCid ? (
+                  <CidLink cid={anchoredCid}>
+                    {anchored
+                      ? "anchored ✓"
+                      : // CIDs are content-addressed — a mismatch only says the
+                        // anchored content differs from the current pin, not
+                        // which side is newer.
+                        `${shortHash(anchoredCid)} (differs from pin)`}
+                  </CidLink>
+                ) : (
+                  "not anchored"
+                )}
               </dd>
             </div>
           </dl>
@@ -191,7 +197,7 @@ export function ProofsPanel({
                   disableWhenConfirmed
                   onConfirmed={() => {
                     void queryClient.invalidateQueries({
-                      queryKey: ["proofsAnchor", chainId, campaign.drop],
+                      queryKey: proofsAnchorQueryKey(chainId, campaign.drop),
                     });
                   }}
                 />
@@ -208,5 +214,28 @@ export function ProofsPanel({
         </>
       )}
     </div>
+  );
+}
+
+/** Gateway link for a CID row — one home for the ↗ affordance and rel/title. */
+function CidLink({
+  cid,
+  className = "",
+  children,
+}: {
+  cid: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <a
+      href={ipfsUrl(cid)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`hover:underline ${className}`}
+      title={`Open proofs.json (${cid}) on the IPFS gateway`}
+    >
+      {children} ↗
+    </a>
   );
 }

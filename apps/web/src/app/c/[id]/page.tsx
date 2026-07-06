@@ -21,6 +21,7 @@ import { IdentityGate } from "@/components/IdentityGate";
 import { useVerifiedUntil } from "@/lib/contracts";
 import { fmtUnixDateTime, useCampaign } from "@/lib/campaigns";
 import { explorerUrl } from "@/lib/explorer";
+import { ipfsUrl, useProofsAnchorCid } from "@/lib/proofs";
 import { ClaimPanel } from "./ClaimPanel";
 import { RecipientsList } from "./RecipientsList";
 
@@ -41,6 +42,7 @@ export default function CampaignDetailPage({
   const chainId = useChainId();
   const chains = useChains();
   const currentChain = chains.find((c) => c.id === chainId);
+  const { data: proofsCid } = useProofsAnchorCid(campaign);
 
   if (isPending) {
     return (
@@ -171,6 +173,16 @@ export default function CampaignDetailPage({
                   value={campaign.drop}
                   href={explorerUrl(currentChain, "address", campaign.drop)}
                 />
+                {/* On-chain anchored recipient list — the IPFS fallback anyone
+                    can open to verify the raw proofs.json exists. */}
+                {proofsCid && (
+                  <AddressField
+                    label="Recipient Proofs (IPFS)"
+                    value={proofsCid}
+                    href={ipfsUrl(proofsCid)}
+                    hrefTitle="Open the anchored proofs.json on the IPFS gateway"
+                  />
+                )}
               </div>
             </div>
           </div>
@@ -305,12 +317,16 @@ function AddressField({
   label,
   value,
   href,
+  hrefTitle,
 }: {
   label: string;
   value: string;
   /** Block-explorer address URL — omitted on chains without one (local fork). */
   href?: string;
+  /** Link tooltip override for non-explorer targets (e.g. an IPFS gateway). */
+  hrefTitle?: string;
 }) {
+  const linkTitle = hrefTitle ?? `View ${label} on the block explorer`;
   return (
     <div className="space-y-1 min-w-0">
       <span className="text-slate-500">{label}</span>
@@ -324,8 +340,8 @@ function AddressField({
             href={href}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={`View ${label} on the block explorer`}
-            title={`View ${label} on the block explorer`}
+            aria-label={linkTitle}
+            title={linkTitle}
             className="text-emerald-600 hover:underline shrink-0"
           >
             ↗
