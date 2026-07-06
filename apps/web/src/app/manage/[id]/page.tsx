@@ -3,7 +3,7 @@
 import { use, useState } from "react";
 import Link from "next/link";
 import { useAccount } from "wagmi";
-import { encodeFunctionData } from "viem";
+import { encodeFunctionData, type Hex } from "viem";
 import { merkleDropAbi } from "@tokamak-network/scatter-drop-sdk";
 import {
   AlertCircle,
@@ -12,7 +12,9 @@ import {
   Loader2,
   Users,
 } from "lucide-react";
+import { CopyButton } from "@/components/CopyButton";
 import { TxButton } from "@/components/TxButton";
+import { TxHashLink } from "@/components/TxHashLink";
 import { useCampaign, useCampaignStats } from "@/lib/campaigns";
 import { useProofsMeta } from "@/lib/proofs";
 import { MetaEditor } from "./MetaEditor";
@@ -79,6 +81,7 @@ export default function ManageCampaignPage({
         <p className="text-xs text-slate-500 font-mono mt-0.5">
           {campaign.drop}
         </p>
+        {campaign.creationTx && <CreationTx hash={campaign.creationTx} />}
       </div>
 
       <div className="flex flex-wrap gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800 w-fit">
@@ -143,6 +146,20 @@ export default function ManageCampaignPage({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The campaign's creation (createDrop) transaction — explorer link when the
+ * network has one, and always copyable, since chains without an explorer
+ * (e.g. the local fork) would otherwise leave the full hash unreachable.
+ */
+function CreationTx({ hash }: { hash: Hex }) {
+  return (
+    <p className="text-xs text-slate-500 font-mono mt-1 flex items-center gap-1.5">
+      Created in tx <TxHashLink hash={hash} />
+      <CopyButton value={hash} label="Copy transaction hash" />
+    </p>
   );
 }
 

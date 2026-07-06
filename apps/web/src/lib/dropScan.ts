@@ -33,7 +33,20 @@ export type DropCreatedArgs = {
   startTime: bigint;
   deadline: bigint;
   fee: bigint;
+  /**
+   * Creation (createDrop) transaction hash — not an event arg; attached from
+   * the log by the scanners so the UI can link the campaign's origin tx.
+   * Absent on pending logs (viem types transactionHash as nullable).
+   */
+  txHash?: `0x${string}`;
 };
+
+/** Attach the log's transactionHash to the decoded args (single home for the
+    nullable→optional normalization — viem types pending logs' hash as null). */
+const withTxHash = (
+  args: DropCreatedArgs,
+  log: { transactionHash: `0x${string}` | null },
+): DropCreatedArgs => ({ ...args, txHash: log.transactionHash ?? undefined });
 
 /**
  * The DropCreated args from `logs` (e.g. a creation receipt's), considering
@@ -52,7 +65,9 @@ export function findDropCreated(
         data: log.data,
         topics: log.topics,
       });
-      if (ev.eventName === "DropCreated") return ev.args as unknown as DropCreatedArgs;
+      if (ev.eventName === "DropCreated") {
+        return withTxHash(ev.args as unknown as DropCreatedArgs, log);
+      }
     } catch {
       /* not a DropCreated log — keep scanning */
     }
@@ -99,7 +114,7 @@ export async function scanDropCreated(
     fromBlock,
     toBlock,
   });
-  return logs.map((l) => l.args as DropCreatedArgs);
+  return logs.map((l) => withTxHash(l.args as DropCreatedArgs, l));
 }
 
 /**
@@ -147,6 +162,8 @@ function latestCid(logs: { args: unknown }[]): string | null {
 // (10k–100k blocks) while keeping the number of round-trips sane.
 const CHUNK = 9_000n;
 
+type ScannedLog = { args: unknown; transactionHash: `0x${string}` | null };
+
 /**
  * getLogs with a chunked fallback: try the whole window in one call (fast
  * path — anvil and paid RPCs take any range), and only on failure re-scan in
@@ -156,18 +173,18 @@ const CHUNK = 9_000n;
 async function getLogsChunked(
   client: PublicClient,
   params: { fromBlock: bigint; toBlock: bigint } & Record<string, unknown>,
-): Promise<{ args: unknown }[]> {
+): Promise<ScannedLog[]> {
   try {
-    return (await client.getLogs(params as never)) as unknown as { args: unknown }[];
+    return (await client.getLogs(params as never)) as unknown as ScannedLog[];
   } catch {
-    const out: { args: unknown }[] = [];
+    const out: ScannedLog[] = [];
     for (let lo = params.fromBlock; lo <= params.toBlock; lo += CHUNK) {
       const hi = lo + CHUNK - 1n < params.toBlock ? lo + CHUNK - 1n : params.toBlock;
       const slice = (await client.getLogs({
         ...params,
         fromBlock: lo,
         toBlock: hi,
-      } as never)) as unknown as { args: unknown }[];
+      } as never)) as unknown as ScannedLog[];
       out.push(...slice);
     }
     return out;

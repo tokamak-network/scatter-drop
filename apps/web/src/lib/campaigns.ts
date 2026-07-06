@@ -186,6 +186,7 @@ function toCampaign(
     identityRegistry: args.identityRegistry,
     identityRegistryLabel: registryLabel(args.identityRegistry, chainId),
     merkleRoot: args.merkleRoot,
+    creationTx: args.txHash,
     operator: args.operator,
     status: args.deadline >= nowSeconds ? "active" : "ended",
   };

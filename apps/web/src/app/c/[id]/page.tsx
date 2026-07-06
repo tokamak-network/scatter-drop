@@ -10,13 +10,13 @@ import {
   ArrowLeft,
   Check,
   Clock,
-  Copy,
   Link as LinkIcon,
   Loader2,
   Send,
   Share2,
   Twitter,
 } from "lucide-react";
+import { CopyButton } from "@/components/CopyButton";
 import { IdentityGate } from "@/components/IdentityGate";
 import { useVerifiedUntil } from "@/lib/contracts";
 import { fmtUnixDateTime, useCampaign } from "@/lib/campaigns";
@@ -333,29 +333,6 @@ function AddressField({
         )}
       </div>
     </div>
-  );
-}
-
-function CopyButton({ value, label }: { value: string; label: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={copied ? "Copied" : label}
-      onClick={() => {
-        navigator.clipboard?.writeText(value);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1200);
-      }}
-      className="shrink-0 text-slate-500 hover:text-emerald-600 transition"
-    >
-      {copied ? (
-        <Check className="w-3.5 h-3.5 text-emerald-600" />
-      ) : (
-        <Copy className="w-3.5 h-3.5" />
-      )}
-    </button>
   );
 }
 

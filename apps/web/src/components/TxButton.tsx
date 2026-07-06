@@ -8,7 +8,7 @@ import {
   useWaitForTransactionReceipt,
 } from "wagmi";
 import type { Address, Hex, TransactionReceipt } from "viem";
-import { explorerUrl, shortHash } from "@/lib/explorer";
+import { TxHashLink } from "@/components/TxHashLink";
 
 /**
  * Sends a prepared SDK calldata request ({to,data}) as a real transaction and
@@ -52,10 +52,6 @@ export function TxButton({
   // onConfirmed callback — on the receipt's actual execution status.
   const confirmed = isSuccess && receipt?.status === "success";
   const reverted = isSuccess && receipt?.status === "reverted";
-
-  // Explorer link for the submitted tx so the user can track it and keep a
-  // record of the result (the helper returns undefined until a hash exists).
-  const txUrl = explorerUrl(currentChain, "tx", hash);
 
   // Keep the latest callback in a ref so the success effect depends only on
   // `confirmed` — an inline `onConfirmed` (new identity each render) would
@@ -121,23 +117,7 @@ export function TxButton({
                   : "Submitted"}
           </span>
           {" · "}
-          {txUrl ? (
-            <a
-              href={txUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-mono text-emerald-600 hover:underline"
-              title={hash}
-            >
-              {shortHash(hash)} ↗
-            </a>
-          ) : (
-            // No explorer for this chain (e.g. local fork) — still surface
-            // the hash so the user can copy/inspect it.
-            <span className="font-mono" title={hash}>
-              {shortHash(hash)}
-            </span>
-          )}
+          <TxHashLink hash={hash} chain={currentChain} />
         </div>
       )}
       {error && (

@@ -48,6 +48,8 @@ export interface Campaign {
   identityRegistryLabel: string;
   /** Merkle root committing to the recipient list — key for the proofs store. */
   merkleRoot?: Hex;
+  /** Creation (createDrop) transaction hash, from the DropCreated log scan. */
+  creationTx?: Hex;
   operator: Address;
   status: CampaignStatus;
 }
