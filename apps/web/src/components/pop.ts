@@ -45,6 +45,14 @@ export const POP_HEADING =
 /** Tiny status/type chip core — skin (colors) composes on top, e.g. STATUS_STYLES. */
 export const POP_CHIP = "text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border";
 
+/**
+ * POP_CHIP's bigger sibling: the promoted live-feedback chip (e.g. TxButton's
+ * transaction status) — page-level state, not a passive tag. Tone composes on
+ * top.
+ */
+export const POP_STATUS_CHIP =
+  "inline-flex items-center gap-1.5 rounded-full border-2 px-3 py-1 text-sm font-bold";
+
 /** Static panel shell (filter bars, boxes). Tone (bg-*) composes on top. */
 export const POP_PANEL = "rounded-2xl border-2 border-ink pop-shadow-sm";
 
