@@ -125,6 +125,7 @@ export function TxButton({
   return (
     <div>
       <button
+        type="button"
         className={`inline-flex items-center gap-1.5 text-sm disabled:opacity-50 disabled:pointer-events-none ${
           primary ? inkBtnClass("md") : whiteBtnClass("md")
         }`}
@@ -149,10 +150,18 @@ export function TxButton({
       {/* Live status chip + tx hash link AND copy — on explorer-less chains
           (e.g. the local fork) copying is the only way to keep the tx id. */}
       {status && (
-        <div role="status" className="mt-2 flex flex-wrap items-center gap-2">
-          <span className={`${POP_STATUS_CHIP} ${status.tone}`}>
-            {status.icon}
-            {status.text}
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {/* The live region covers only the status text + failure detail —
+              a live region around the link/copy controls would make screen
+              readers re-announce interactive elements on every state change. */}
+          <span role="status" className="flex flex-wrap items-center gap-2">
+            <span className={`${POP_STATUS_CHIP} ${status.tone}`}>
+              {status.icon}
+              {status.text}
+            </span>
+            {status.detail && (
+              <span className="text-sm text-rose-600">{status.detail}</span>
+            )}
           </span>
           {hash && (
             <span className="flex items-center gap-1 text-sm text-ink/70 font-mono">
@@ -160,7 +169,6 @@ export function TxButton({
               <CopyButton value={hash} label="Copy transaction hash" />
             </span>
           )}
-          {status.detail && <p className="text-sm text-rose-600">{status.detail}</p>}
         </div>
       )}
     </div>
