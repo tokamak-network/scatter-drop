@@ -1,12 +1,15 @@
 "use client";
 
 import { memo, type ReactNode } from "react";
+import Link from "next/link";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 // Hoisted so their identities are stable across renders — fresh props would
 // make ReactMarkdown re-run the whole unified parse on every parent re-render.
 const remarkPlugins = [remarkGfm];
+
+const linkCls = "text-sky-500 hover:text-sky-400 underline underline-offset-2 transition";
 
 // Headings demote one level (the page owns the real <h1>) and differ only in
 // tag + classes.
@@ -22,16 +25,21 @@ const components: Components = {
   h4: h("h5", "text-sm font-semibold text-slate-200"),
   h5: h("h6", "text-sm font-semibold text-slate-300"),
   h6: h("p", "text-sm font-semibold text-slate-400"),
-  a: ({ href, children }) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="text-sky-500 hover:text-sky-400 underline underline-offset-2 transition"
-    >
-      {children}
-    </a>
-  ),
+  // In-app links keep client-side routing; everything else (including
+  // protocol-relative //host, which "/" alone would misclassify) opens in a
+  // new tab with an opener guard.
+  a: ({ href = "", children }) => {
+    const internal = (href.startsWith("/") && !href.startsWith("//")) || href.startsWith("#");
+    return internal ? (
+      <Link href={href} className={linkCls}>
+        {children}
+      </Link>
+    ) : (
+      <a href={href} target="_blank" rel="noopener noreferrer" className={linkCls}>
+        {children}
+      </a>
+    );
+  },
   ul: ({ children }) => <ul className="list-disc pl-5 space-y-1">{children}</ul>,
   ol: ({ children }) => <ol className="list-decimal pl-5 space-y-1">{children}</ol>,
   // Inline chrome only — inside <pre> it is neutralized by the [&_code]
