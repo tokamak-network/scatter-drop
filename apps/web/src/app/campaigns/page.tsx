@@ -161,7 +161,7 @@ function UpcomingStrip({ chainId }: { chainId: number }) {
     <section className="space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="font-chunk uppercase text-sm tracking-wide text-ink">
-          Upcoming drops
+          Announcements
         </h2>
         <Link
           href="/upcoming"
