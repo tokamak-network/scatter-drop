@@ -39,7 +39,7 @@ const CARD_TONES: Record<AnnouncementStatus, string> = {
 };
 
 /**
- * One announcement on the Upcoming board. `compact` renders the smaller strip
+ * One announcement on the Announcements board. `compact` renders the smaller strip
  * variant used on Explore (no body excerpt / operator row).
  */
 export function AnnouncementCard({

@@ -61,7 +61,7 @@ export default function AnnouncementPage() {
         <AlertCircle className="w-8 h-8 text-red-500" />
         <p className="text-slate-400 text-sm">Announcement not found.</p>
         <Link href="/upcoming" className="text-sky-500 text-xs font-mono hover:underline">
-          ← Back to Upcoming Drops
+          ← Back to Announcements
         </Link>
       </div>
     );
@@ -75,7 +75,7 @@ export default function AnnouncementPage() {
         href="/upcoming"
         className="inline-flex items-center gap-1.5 text-xs font-mono text-slate-400 hover:text-slate-200 transition"
       >
-        <ArrowLeft className="w-3.5 h-3.5" /> Upcoming Drops
+        <ArrowLeft className="w-3.5 h-3.5" /> Announcements
       </Link>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
