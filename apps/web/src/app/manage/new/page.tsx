@@ -56,7 +56,7 @@ import {
 } from "@/lib/contracts";
 
 const SAMPLE_CSV =
-  "# amounts are token units (decimals applied — not wei/base units)\naddress,amount\n0x70997970C51812dc3A010C7d01b50e0d17dc79C8,1000\n0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC,500";
+  "# amounts are token units with decimals applied (not wei/base units)\naddress,amount\n0x70997970C51812dc3A010C7d01b50e0d17dc79C8,1000\n0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC,500";
 
 function downloadSampleCsv() {
   const blob = new Blob([SAMPLE_CSV], { type: "text/csv;charset=utf-8" });
@@ -373,7 +373,7 @@ export default function NewCampaignPage() {
     const safeUnit = unit.replace(/[^ -~]/g, "").trim() || "tokens";
     downloadCsv(
       `${name.trim() || "airdrop"}-recipients.csv`,
-      `# amounts in ${safeUnit} (token units, decimals applied — not wei/base units)\naddress,amount\n${body}\n`,
+      `# amounts in ${safeUnit} — token units with decimals applied (not wei/base units)\naddress,amount\n${body}\n`,
     );
   };
 
