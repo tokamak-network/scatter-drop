@@ -154,8 +154,8 @@ export default function ToolsPage() {
   )?.symbol;
   const symbol = listedSymbol ?? (typeof symData === "string" && symData ? symData : undefined);
   // Decimals come from the selected (allow-listed) token on-chain; 18 while the
-  // read resolves. Amounts are entered in whole tokens and scaled by this to the
-  // base units (wei) the CSV/merkle carry.
+  // read resolves. Amounts are entered in whole tokens and scaled by this to
+  // the base units (wei) the merkle math carries; the exported CSV is human units.
   const dec = tokenOk && decData != null ? Number(decData) : 18;
   const unit = symbol ?? "tokens";
 
@@ -258,15 +258,17 @@ export default function ToolsPage() {
   };
   const doDedup = () => setAndPad(dedupSum(rows.filter(nonEmpty)));
 
-  // Serialize the computed airdrop list. `address,amount` (base units) always;
-  // an optional third `balance` column for the download when requested.
+  // Serialize the computed airdrop list. `address,amount` with amounts in
+  // human token units (formatUnits — lossless), matching what the campaign
+  // wizard's CSV box expects; an optional third `balance` column (the pasted
+  // source balances, base units) for the download when requested.
   const buildCsv = (withBalance: boolean) => {
     const lines = rows
       .map((r, i) => {
         const a = dist.airdrops[i];
         if (a === null || a <= 0n) return null;
         const addr = r.address.trim();
-        return withBalance ? `${addr},${a.toString()},${r.amount.trim()}` : `${addr},${a.toString()}`;
+        return withBalance ? `${addr},${human(a)},${r.amount.trim()}` : `${addr},${human(a)}`;
       })
       .filter(Boolean) as string[];
     const header = withBalance ? "address,amount,balance" : "address,amount";
@@ -285,7 +287,7 @@ export default function ToolsPage() {
   };
   const useInCampaign = () => {
     try {
-      // The campaign draft is always address,amount (base units) — no balance col.
+      // The campaign draft is always address,amount (human units) — no balance col.
       localStorage.setItem(DRAFT_CSV_KEY, buildCsv(false));
     } catch {
       /* ignore */

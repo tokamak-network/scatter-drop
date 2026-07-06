@@ -1,11 +1,15 @@
+import { parseHumanAmount } from "@tokamak-network/scatter-drop-sdk";
+
 /**
  * True for a positive decimal string with at most `maxDecimals` fractional
- * digits. The decimals cap matches `parseUnits(s, maxDecimals)` so a value with
- * too many fractional digits is rejected here instead of throwing downstream.
+ * digits. Delegates to the SDK's `parseHumanAmount` — the same grammar the
+ * recipients-CSV parser uses — so form inputs and CSV rows can never drift
+ * on what counts as a valid amount.
  */
 export function isPositiveDecimal(s: string, maxDecimals = 18): boolean {
-  const match = s.match(/^\d+(?:\.(\d+))?$/);
-  if (!match) return false;
-  const decimals = match[1]?.length ?? 0;
-  return decimals <= maxDecimals && Number(s) > 0;
+  try {
+    return parseHumanAmount(s, maxDecimals) > 0n;
+  } catch {
+    return false;
+  }
 }

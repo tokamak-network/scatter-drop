@@ -152,7 +152,7 @@ export function DuneImport({ onRows }: { onRows: (rows: Recipient[]) => void }) 
   const sql = TEMPLATES[std];
 
   const csv = useMemo(
-    () => (result ? toCsv(["address", "amount"], result.rows.map((r) => [r.address, r.amount])) : ""),
+    () => (result ? toCsv(["address", "balance"], result.rows.map((r) => [r.address, r.amount])) : ""),
     [result],
   );
 
@@ -328,7 +328,7 @@ export function DuneImport({ onRows }: { onRows: (rows: Recipient[]) => void }) 
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => downloadCsv("dune-recipients.csv", `${csv}\n`)}
+              onClick={() => downloadCsv("dune-balances.csv", `${csv}\n`)}
               className="btn inline-flex items-center gap-1.5"
             >
               <Download className="w-3.5 h-3.5" /> Download CSV

@@ -126,4 +126,23 @@ describe("parseCsv", () => {
     expect(() => parseCsv("0xnotanaddress,100")).toThrow(/invalid address/);
     expect(() => parseCsv(`${A(1)},1.5`)).toThrow(/base-unit integer/);
   });
+
+  it("scales human token amounts by decimals when opted in", () => {
+    const csv = [`${A(1)},1000`, `${A(2)},1.5`].join("\n");
+    expect(parseCsv(csv, { decimals: 18 })).toEqual([
+      { account: A(1), amount: 1000n * 10n ** 18n },
+      { account: A(2), amount: 15n * 10n ** 17n },
+    ]);
+    // 6-decimal token (USDC-like)
+    expect(parseCsv(`${A(1)},2.25`, { decimals: 6 })).toEqual([
+      { account: A(1), amount: 2_250_000n },
+    ]);
+  });
+
+  it("rejects amounts with more fraction digits than the token's decimals", () => {
+    expect(() => parseCsv(`${A(1)},1.1234567`, { decimals: 6 })).toThrow(
+      /more than 6 decimal places/,
+    );
+    expect(() => parseCsv(`${A(1)},abc`, { decimals: 18 })).toThrow(/token amount/);
+  });
 });
