@@ -3,6 +3,7 @@
 import { useChains } from "wagmi";
 import { Globe } from "lucide-react";
 import { pillClass } from "@/components/pop";
+import { useMounted } from "@/lib/useMounted";
 
 /**
  * Registered-network filter pills for the boards (Explore / Upcoming) —
@@ -18,21 +19,29 @@ export function NetworkFilter({
   onChange: (chainId: number) => void;
 }) {
   const chains = useChains();
+  // The viewed chain follows the wallet, which reconnects after hydration —
+  // mark the active pill only once mounted so server and first client render
+  // agree (same guard the manage pages use for wallet-derived state).
+  const mounted = useMounted();
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <span className="flex items-center gap-1.5 text-[11px] font-mono font-bold uppercase tracking-wider text-ink/50">
         <Globe className="w-3.5 h-3.5" /> Network
       </span>
-      {chains.map((c) => (
-        <button
-          key={c.id}
-          type="button"
-          onClick={() => onChange(c.id)}
-          className={pillClass(c.id === value, "bg-pop-purple")}
-        >
-          {c.name} · {c.id}
-        </button>
-      ))}
+      {chains.map((c) => {
+        const active = mounted && c.id === value;
+        return (
+          <button
+            key={c.id}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(c.id)}
+            className={pillClass(active, "bg-pop-purple")}
+          >
+            {c.name} · {c.id}
+          </button>
+        );
+      })}
     </div>
   );
 }

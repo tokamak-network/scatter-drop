@@ -43,6 +43,8 @@ export default function UpcomingPage() {
         {TABS.map((t) => (
           <button
             key={t}
+            type="button"
+            aria-pressed={tab === t}
             onClick={() => setTab(t)}
             className={pillClass(tab === t, "bg-pop-sky")}
           >

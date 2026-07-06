@@ -87,6 +87,8 @@ export default function CampaignsPage() {
           {TYPE_TABS.map((tab) => (
             <button
               key={tab}
+              type="button"
+              aria-pressed={typeTab === tab}
               onClick={() => setTypeTab(tab)}
               className={pillClass(typeTab === tab, "bg-pop-yellow", "flex-1 lg:flex-none")}
             >
@@ -99,6 +101,8 @@ export default function CampaignsPage() {
           {(["ALL", "ACTIVE", "ENDED"] as const).map((s) => (
             <button
               key={s}
+              type="button"
+              aria-pressed={statusTab === s}
               onClick={() => setStatusTab(s)}
               className={pillClass(statusTab === s, "bg-pop-mint", "flex-1 lg:flex-none")}
             >

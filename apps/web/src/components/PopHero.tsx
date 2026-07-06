@@ -16,10 +16,11 @@ export function PopHero({
 }) {
   return (
     <section className="relative overflow-hidden rounded-3xl border-2 border-ink bg-white pop-shadow px-6 py-12 md:py-16 text-center">
-      <Squiggle className="absolute -left-4 top-6 w-24 text-pop-yellow rotate-12" />
-      <Blob className="absolute -left-10 bottom-[-3rem] w-40 text-pop-mint" />
-      <Flower className="absolute right-6 top-8 w-16 text-pop-purple" />
-      <Blob className="absolute -right-12 bottom-[-4rem] w-44 text-pop-sky" />
+      {/* pointer-events-none: decorations must never intercept clicks/drags */}
+      <Squiggle className="pointer-events-none select-none absolute -left-4 top-6 w-24 text-pop-yellow rotate-12" />
+      <Blob className="pointer-events-none select-none absolute -left-10 bottom-[-3rem] w-40 text-pop-mint" />
+      <Flower className="pointer-events-none select-none absolute right-6 top-8 w-16 text-pop-purple" />
+      <Blob className="pointer-events-none select-none absolute -right-12 bottom-[-4rem] w-44 text-pop-sky" />
 
       <div className="relative space-y-4 max-w-2xl mx-auto">
         <h1 className="font-chunk uppercase text-4xl md:text-6xl leading-[0.95] tracking-tight text-ink">
