@@ -1,12 +1,11 @@
 import type { Address, Hex } from "viem";
 
 /**
- * Tax-document data layer (W11) for the W6 scaffold.
- *
- * Stub aggregation of claim events — swapped for real factory/MerkleDrop event
- * indexing in M5+ (same async seam as lib/stub.ts). Personal data is limited to
- * what the customer CA selectively discloses; these stubs expose only
- * address/amount/time/tx (no identity fields).
+ * Tax-document data types + CSV helpers. Receipts and reports are now built
+ * from live Claimed events at the call sites (the customer receipt page, the
+ * operator distribution report); this module holds the shared shapes and the
+ * RFC-4180 / formula-injection-safe CSV serialization. Data is limited to
+ * address/amount/time/tx — no identity fields.
  */
 
 export interface ClaimReceipt {

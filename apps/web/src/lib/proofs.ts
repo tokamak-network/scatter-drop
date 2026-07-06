@@ -139,7 +139,22 @@ async function fetchClaimsFromIpfs(
   if (!data || typeof data !== "object" || data.root?.toLowerCase() !== root) {
     throw new Error("Anchored proofs file is malformed or for a different root");
   }
-  const valid = validateClaims(data.claims ?? {});
+  return merkleVerified(data.claims ?? {}, root);
+}
+
+/**
+ * Shape-validate a claims map, then keep only entries that merkle-verify
+ * against `root`. The proofs stores (app DB and IPFS) are BOTH untrusted:
+ * `/api/proofs` POST is unauthenticated and first-writer-wins, so an attacker
+ * who sees a fresh `DropCreated` root can race the operator and poison it with
+ * shape-valid junk. A merkle list is self-verifying — the on-chain root is the
+ * only authority — so we hash every claim to the root and drop the rest.
+ */
+function merkleVerified(
+  raw: Record<string, unknown>,
+  root: Hex,
+): Record<string, ClaimProof> {
+  const valid = validateClaims(raw);
   const verified: Record<string, ClaimProof> = {};
   for (const [addr, claim] of Object.entries(valid)) {
     if (verifyClaim(root, claim)) verified[addr] = claim;
@@ -148,8 +163,10 @@ async function fetchClaimsFromIpfs(
 }
 
 /**
- * The validated claims map for a root, or `null` when no proofs are published
- * anywhere (store 404 and no on-chain IPFS anchor).
+ * The verified claims map for a root, or `null` when no proofs are published
+ * anywhere (store 404 and no on-chain IPFS anchor). Both sources are
+ * merkle-verified against `root`; a store payload that verifies to nothing is
+ * treated as poisoned/absent and the on-chain IPFS anchor is tried instead.
  */
 async function fetchClaims(
   root: Hex,
@@ -165,9 +182,14 @@ async function fetchClaims(
     });
     if (res.ok) {
       const data = (await res.json()) as { claims?: Record<string, unknown> };
-      return validateClaims(data.claims ?? {});
+      const verified = merkleVerified(data.claims ?? {}, root);
+      // Non-empty store payload that verifies to zero entries = poisoned (or a
+      // different root's data) — fall through to the on-chain anchor instead
+      // of trusting it.
+      if (Object.keys(verified).length > 0) return verified;
+    } else {
+      notPublished = res.status === 404;
     }
-    notPublished = res.status === 404;
   } catch {
     /* store unreachable → try the anchor */
   }
@@ -237,6 +259,10 @@ export function useMyClaims(opts?: ChainOpt) {
   const walletChainId = useChainId();
   const chainId = opts?.chainId ?? walletChainId;
   const client = usePublicClient({ chainId });
+  // Gate on dep resolving: fetchClaims caches under ["proofs", chainId, root],
+  // and the claim pages read that same entry — populating it before the
+  // deployment is known would cache a store-only result with no IPFS-anchor
+  // fallback and poison the shared cache.
   const { data: dep } = useDeployment(opts);
   const queryClient = useQueryClient();
   const {
@@ -253,32 +279,32 @@ export function useMyClaims(opts?: ChainOpt) {
       address?.toLowerCase(),
       campaigns?.map((c) => c.drop),
     ],
-    enabled: !!address && !!client && !!campaigns,
+    enabled: !!address && !!client && !!campaigns && dep !== undefined,
     staleTime: 15_000,
     queryFn: async (): Promise<MyClaimRow[]> => {
       const addr = address!.toLowerCase();
       const lookups = campaigns!.map(async (campaign): Promise<MyClaimRow | null> => {
         const root = campaign.merkleRoot?.toLowerCase() as Hex | undefined;
         if (!root) return null;
-        try {
-          const claims = await queryClient.fetchQuery({
-            queryKey: ["proofs", chainId, root],
-            staleTime: 60_000,
-            queryFn: () =>
-              fetchClaims(root, { client: client ?? undefined, dep, drop: campaign.drop }),
-          });
-          const mine = claims?.[addr];
-          if (!mine) return null;
-          const claimed = (await client!.readContract({
-            address: campaign.drop,
-            abi: merkleDropAbi,
-            functionName: "isClaimed",
-            args: [BigInt(mine.index)],
-          })) as boolean;
-          return { campaign, amount: BigInt(mine.amount), claimed };
-        } catch {
-          return null; // unpublished list / store+anchor outage — skip this campaign
-        }
+        // No catch here: fetchClaims returns null for "not on this list"
+        // (expected — skip the campaign), but THROWS on a store/RPC outage.
+        // Let that propagate so the page shows an error instead of silently
+        // dropping the wallet's real allocation (a "disappearing data" bug).
+        const claims = await queryClient.fetchQuery({
+          queryKey: ["proofs", chainId, root],
+          staleTime: Infinity, // a root's proofs are immutable
+          queryFn: () =>
+            fetchClaims(root, { client: client ?? undefined, dep, drop: campaign.drop }),
+        });
+        const mine = claims?.[addr];
+        if (!mine) return null;
+        const claimed = (await client!.readContract({
+          address: campaign.drop,
+          abi: merkleDropAbi,
+          functionName: "isClaimed",
+          args: [BigInt(mine.index)],
+        })) as boolean;
+        return { campaign, amount: BigInt(mine.amount), claimed };
       });
       return (await Promise.all(lookups)).filter((r): r is MyClaimRow => r !== null);
     },

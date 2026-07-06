@@ -22,9 +22,15 @@ export default function ClaimReceiptPage({
   const chains = useChains();
   // Live receipt: the wallet's Claimed event on this campaign — the same
   // sources the operator's distribution report uses (no stub, no store).
-  const { data: campaign, isLoading: campaignLoading } = useCampaign(id);
-  const { data: claims, isLoading: claimsLoading } = useClaimEvents(campaign ?? undefined);
+  const { data: campaign, isLoading: campaignLoading, isError: campaignError } =
+    useCampaign(id);
+  const {
+    data: claims,
+    isLoading: claimsLoading,
+    isError: claimsError,
+  } = useClaimEvents(campaign ?? undefined);
   const isLoading = campaignLoading || claimsLoading;
+  const isError = campaignError || claimsError;
   const mine = address
     ? claims?.find((c) => c.account === address.toLowerCase())
     : undefined;
@@ -56,6 +62,14 @@ export default function ClaimReceiptPage({
       <ConnectGate prompt="Connect a wallet to view your claim receipt.">
         {isLoading ? (
           <Loading label="Loading receipt…" />
+        ) : isError ? (
+          // Distinguish an RPC/indexing outage from a genuine "no claim" —
+          // otherwise a fork hiccup reads as "you never claimed".
+          <EmptyState
+            title="Couldn't load the receipt"
+            description="The campaign or its claim history couldn't be read — check the network and retry."
+            action={{ href: `/c/${id}`, label: "Back to campaign" }}
+          />
         ) : !receipt ? (
           <EmptyState
             title="No receipt found"
