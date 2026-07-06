@@ -3,21 +3,22 @@ import { Prisma } from "@prisma/client";
 import { verifyClaim, type ClaimProof } from "@tokamak-network/scatter-drop-sdk";
 import type { Hex } from "viem";
 import { prisma } from "@/lib/db";
-import { LOWER_ADDR_RE, ROOT_RE } from "@/lib/server/apiInput";
+import { isChainId, LOWER_ADDR_RE, ROOT_RE } from "@/lib/server/apiInput";
 import { pinJson } from "@/lib/server/pinning";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Proofs store keyed by the campaign's `merkleRoot`. This is the off-chain
+ * Proofs store keyed by the vault `(chainId, drop)`. This is the off-chain
  * proofs.json seam (DESIGN §8.7/§12): a campaign publishes its per-recipient
  * `claims` here and the claim page reads them back to find a wallet's proof.
  *
  * Persisted in the app DB (CampaignProofs) so a dev-server restart no longer
  * wipes eligibility for every campaign. Still a stand-in for IPFS pinning
  * (Filebase/Pinata) + the on-chain proofsCid; swap the backend later — the
- * client contract (root → claims) stays the same.
+ * client contract ((chainId, drop) → claims, cross-checked against the
+ * vault's on-chain root) stays the same.
  */
 
 // Bound storage: this is an untrusted, unauthenticated store (a stand-in for
@@ -52,8 +53,14 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const b = body as { root?: unknown; claims?: unknown };
+  const b = body as { chainId?: unknown; drop?: unknown; root?: unknown; claims?: unknown };
+  const chainId = isChainId(b.chainId) ? b.chainId : null;
+  const drop = typeof b.drop === "string" ? b.drop.toLowerCase() : null;
   const root = typeof b.root === "string" ? b.root.toLowerCase() : null;
+  if (!chainId) return NextResponse.json({ error: "Invalid chainId" }, { status: 400 });
+  if (!drop || !LOWER_ADDR_RE.test(drop)) {
+    return NextResponse.json({ error: "Invalid drop address" }, { status: 400 });
+  }
   if (!root || !ROOT_RE.test(root)) {
     return NextResponse.json({ error: "Invalid merkleRoot" }, { status: 400 });
   }
@@ -111,24 +118,35 @@ export async function POST(req: NextRequest) {
   }
   try {
     await prisma.campaignProofs.create({
-      data: { root, claims: serialized, count },
+      data: { chainId, drop, root, claims: serialized, count },
     });
   } catch (err) {
-    // Unique violation — proofs are immutable (tied to the root), so a second
-    // publish for the same root is rejected rather than overwriting. Anything
+    // Unique violation — proofs are immutable per (chainId, drop), so a second
+    // publish for the SAME vault is rejected rather than overwriting. A
+    // different vault sharing this root gets its own row (no squat). Anything
     // else is a real DB failure, not a conflict.
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      return NextResponse.json({ error: "Proofs already published for this root" }, { status: 409 });
+      return NextResponse.json(
+        { error: "Proofs already published for this campaign" },
+        { status: 409 },
+      );
     }
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
   // Best-effort IPFS pin after the durable store: the CID lets the operator
   // anchor the list on-chain (publishProofs) and lets clients recover it when
   // this store is unavailable. A pinning failure must not fail the publish.
+  // The pinned JSON is self-describing (chainId + drop + root) so a CID names
+  // the exact vault it belongs to, not just an ownerless recipient list.
   let cid: string | null = null;
   try {
-    cid = await pinJson(`proofs-${root}.json`, { root, claims: norm });
-    if (cid) await prisma.campaignProofs.update({ where: { root }, data: { cid } });
+    cid = await pinJson(`proofs-${chainId}-${drop}.json`, { chainId, drop, root, claims: norm });
+    if (cid) {
+      await prisma.campaignProofs.update({
+        where: { chainId_drop: { chainId, drop } },
+        data: { cid },
+      });
+    }
   } catch {
     cid = null;
   }
@@ -136,28 +154,31 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  const root = req.nextUrl.searchParams.get("root")?.toLowerCase();
-  if (!root || !ROOT_RE.test(root)) {
-    return NextResponse.json({ error: "root query required" }, { status: 400 });
+  const chainId = Number(req.nextUrl.searchParams.get("chainId"));
+  const drop = req.nextUrl.searchParams.get("drop")?.toLowerCase();
+  if (!isChainId(chainId) || !drop || !LOWER_ADDR_RE.test(drop)) {
+    return NextResponse.json({ error: "chainId and drop query required" }, { status: 400 });
   }
+  const where = { chainId_drop: { chainId, drop } };
   // ?meta=1 → status only (count + cid), skipping the multi-MB claims body —
   // for surfaces like the operator console that only need "is it published?".
   const metaOnly = req.nextUrl.searchParams.get("meta") === "1";
   if (metaOnly) {
     const meta = await prisma.campaignProofs.findUnique({
-      where: { root },
+      where,
       select: { count: true, cid: true },
     });
     if (!meta) return NextResponse.json({ error: "not found" }, { status: 404 });
     return NextResponse.json(meta);
   }
-  const row = await prisma.campaignProofs.findUnique({ where: { root } });
+  const row = await prisma.campaignProofs.findUnique({ where });
   if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
   // The stored claims are JSON text we wrote ourselves — embed the string
   // directly instead of parse + re-stringify (up to MAX_CLAIMS entries on the
-  // eligibility hot path). cid rides along for republish/anchor surfaces.
+  // eligibility hot path). root lets the client cross-check the stored list
+  // against the vault's on-chain root; cid rides along for anchor surfaces.
   return new NextResponse(
-    `{"claims":${row.claims},"cid":${JSON.stringify(row.cid)}}`,
+    `{"root":${JSON.stringify(row.root)},"claims":${row.claims},"cid":${JSON.stringify(row.cid)}}`,
     { headers: { "content-type": "application/json" } },
   );
 }

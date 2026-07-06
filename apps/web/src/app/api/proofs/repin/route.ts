@@ -46,14 +46,24 @@ export async function POST(req: NextRequest) {
   const rejection = await verifyDropOperator(chainId, drop, wallet, b.txHash, root);
   if (rejection) return NextResponse.json({ error: rejection }, { status: 422 });
 
-  const row = await prisma.campaignProofs.findUnique({ where: { root } });
+  const row = await prisma.campaignProofs.findUnique({
+    where: { chainId_drop: { chainId, drop } },
+  });
   if (!row) {
     return NextResponse.json(
-      { error: "No stored proofs for this root — publish them first" },
+      { error: "No stored proofs for this campaign — publish them first" },
       { status: 404 },
     );
   }
 
+  // The stored row's root must match the drop's on-chain root that
+  // verifyDropOperator just bound — else the row is stale/for a different list.
+  if (row.root !== root) {
+    return NextResponse.json(
+      { error: "Stored proofs root does not match this campaign" },
+      { status: 409 },
+    );
+  }
   let claims: unknown;
   try {
     claims = JSON.parse(row.claims);
@@ -61,7 +71,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Stored proofs are corrupt" }, { status: 500 });
   }
   try {
-    const cid = await pinJson(`proofs-${root}.json`, { root, claims });
+    const cid = await pinJson(`proofs-${chainId}-${drop}.json`, { chainId, drop, root, claims });
     if (!cid) {
       return NextResponse.json(
         { error: "IPFS pinning is not configured on this server" },
@@ -69,7 +79,10 @@ export async function POST(req: NextRequest) {
       );
     }
     if (cid !== row.cid) {
-      await prisma.campaignProofs.update({ where: { root }, data: { cid } });
+      await prisma.campaignProofs.update({
+        where: { chainId_drop: { chainId, drop } },
+        data: { cid },
+      });
     }
     return NextResponse.json({ ok: true, cid });
   } catch {

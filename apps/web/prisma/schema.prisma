@@ -40,11 +40,20 @@ model PlatformAdmin {
 /// restart no longer wipes eligibility. Stand-in for IPFS pinning; immutable
 /// once written (the claims are tied to the root).
 model CampaignProofs {
-  root      String   @id // lowercased 0x… merkleRoot
+  // Keyed by (chainId, drop) — the vault is the identity, not the merkleRoot.
+  // Two vaults can legitimately share a root (same recipient list), so a root
+  // PK let the first publisher squat the slot and 409 the others (and let an
+  // attacker on any chain block a victim's publish). Scoping to the vault gives
+  // each its own row; the on-chain claim is unaffected.
+  chainId   Int
+  drop      String   // lowercased drop (vault) address
+  root      String   // lowercased 0x… merkleRoot (kept for verify + self-describing pin)
   claims    String   // JSON: { [lowercased address]: {index, account, amount, proof[]} }
   count     Int
   cid       String?  // IPFS CID of the pinned proofs.json (when pinning is configured)
   createdAt DateTime @default(now())
+
+  @@id([chainId, drop])
 }
 
 /// Operator-entered campaign name/description — collected by the wizard but

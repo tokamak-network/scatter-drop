@@ -327,17 +327,18 @@ export default function NewCampaignPage() {
   // — a failure never blocks the created campaign.
   const onCampaignCreated = (receipt: TransactionReceipt) => {
     setCreatedTx(receipt.transactionHash);
-    if (manifest) {
+    const drop = dep && findDropCreated(receipt.logs, dep.dropFactory)?.drop;
+    if (drop) setCreatedDrop(drop);
+    if (manifest && dep && drop) {
       // The returned CID (when server-side pinning is configured) feeds the
-      // anchor tx in the success checklist.
-      void publishProofs(merkleRoot, manifest.claims)
+      // anchor tx in the success checklist. The store is keyed by the vault
+      // (chainId, drop), so publish with the just-created drop address.
+      void publishProofs(dep.chainId, drop, merkleRoot, manifest.claims)
         .then(setProofsCid)
         .finally(() => setPinSettled(true));
     } else {
       setPinSettled(true);
     }
-    const drop = dep && findDropCreated(receipt.logs, dep.dropFactory)?.drop;
-    if (drop) setCreatedDrop(drop);
     const trimmedName = name.trim();
     if (!drop || (!trimmedName && !linkedAnnouncementId)) return;
     void ensureSession(account).then((session) => {

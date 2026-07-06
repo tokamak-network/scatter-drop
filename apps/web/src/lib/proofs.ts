@@ -29,13 +29,16 @@ function isValidClaim(c: unknown): c is ClaimProof {
 }
 
 /**
- * Publish a campaign's per-recipient proofs to the store, keyed by merkleRoot.
+ * Publish a campaign's per-recipient proofs to the store, keyed by the
+ * vault (chainId, drop).
  * Best-effort — a failure doesn't block campaign creation (proofs can be
  * re-published later). Called after `createDrop` confirms. Returns the IPFS
  * CID when the server has pinning configured (null otherwise), so the wizard
  * can offer the on-chain publishProofs(drop, cid) anchor tx.
  */
 export async function publishProofs(
+  chainId: number,
+  drop: Address,
   root: Hex,
   claims: Record<string, unknown>,
 ): Promise<string | null> {
@@ -43,7 +46,7 @@ export async function publishProofs(
     const res = await fetch("/api/proofs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ root, claims }),
+      body: JSON.stringify({ chainId, drop, root, claims }),
     });
     if (!res.ok) return null;
     const data = (await res.json()) as { cid?: string | null };
@@ -169,20 +172,27 @@ function merkleVerified(
  * treated as poisoned/absent and the on-chain IPFS anchor is tried instead.
  */
 async function fetchClaims(
+  chainId: number,
+  drop: Address,
   root: Hex,
-  fallback: { client?: PublicClient; dep?: WebDeployment | null; drop?: Address },
+  fallback: { client?: PublicClient; dep?: WebDeployment | null },
 ): Promise<Record<string, ClaimProof> | null> {
-  // A 404 means "nothing published"; any other store failure (500, network)
-  // is an outage — try the anchor either way, but only report "not published"
-  // when that's actually what the store said.
+  // Look the store up by the VAULT (chainId, drop), not the root: two vaults
+  // can share a root, so the vault is the identity. A 404 means "nothing
+  // published"; any other store failure is an outage — try the anchor either
+  // way, but only report "not published" when that's what the store said.
   let notPublished = false;
   try {
-    const res = await fetch(`/api/proofs?root=${encodeURIComponent(root)}`, {
-      cache: "no-store",
-    });
+    const res = await fetch(
+      `/api/proofs?chainId=${chainId}&drop=${encodeURIComponent(drop.toLowerCase())}`,
+      { cache: "no-store" },
+    );
     if (res.ok) {
-      const data = (await res.json()) as { claims?: Record<string, unknown> };
-      const verified = merkleVerified(data.claims ?? {}, root);
+      const data = (await res.json()) as { root?: string; claims?: Record<string, unknown> };
+      // The stored row's root must match the vault's on-chain root we verify
+      // against; a mismatch means the row is stale/wrong — ignore it.
+      const verified =
+        data.root?.toLowerCase() === root ? merkleVerified(data.claims ?? {}, root) : {};
       // Non-empty store payload that verifies to zero entries = poisoned (or a
       // different root's data) — fall through to the on-chain anchor instead
       // of trusting it.
@@ -193,12 +203,12 @@ async function fetchClaims(
   } catch {
     /* store unreachable → try the anchor */
   }
-  if (fallback.client && fallback.dep && fallback.drop) {
+  if (fallback.client && fallback.dep) {
     try {
       const viaIpfs = await fetchClaimsFromIpfs(
         fallback.client,
         fallback.dep,
-        fallback.drop,
+        drop,
         root,
       );
       if (viaIpfs) return viaIpfs;
@@ -214,25 +224,26 @@ async function fetchClaims(
 }
 
 /**
- * One proofs download per root — eligibility and the recipients directory
- * both observe this query (same key), so the largest payload on the claim
+ * One proofs download per vault — eligibility and the recipients directory
+ * both observe this query (same (chainId, drop) key), so the largest payload on the claim
  * page (up to 50k claims) is fetched once, not once per consumer. Falls back
  * to the on-chain IPFS anchor when the app's store misses.
  */
 function useClaims(campaign: Campaign | undefined, opts?: ChainOpt) {
   const root = campaign?.merkleRoot?.toLowerCase() as Hex | undefined;
+  const drop = campaign?.drop;
   const walletChainId = useChainId();
   const chainId = opts?.chainId ?? walletChainId;
   const client = usePublicClient({ chainId });
   const { data: dep } = useDeployment(opts);
   return useQuery({
-    // chainId in the key: the IPFS-anchor fallback reads that chain's factory
-    // logs, so cross-chain views must not share a cache entry.
-    queryKey: ["proofs", chainId, root],
-    enabled: !!root && dep !== undefined,
+    // Keyed by (chainId, drop) — the vault is the store identity, and the
+    // IPFS-anchor fallback reads that chain's factory logs.
+    queryKey: ["proofs", chainId, drop],
+    enabled: !!root && !!drop && dep !== undefined,
     staleTime: 60_000,
     queryFn: () =>
-      fetchClaims(root!, { client: client ?? undefined, dep, drop: campaign?.drop }),
+      fetchClaims(chainId, drop!, root!, { client: client ?? undefined, dep }),
   });
 }
 
@@ -259,7 +270,7 @@ export function useMyClaims(opts?: ChainOpt) {
   const walletChainId = useChainId();
   const chainId = opts?.chainId ?? walletChainId;
   const client = usePublicClient({ chainId });
-  // Gate on dep resolving: fetchClaims caches under ["proofs", chainId, root],
+  // Gate on dep resolving: fetchClaims caches under ["proofs", chainId, drop],
   // and the claim pages read that same entry — populating it before the
   // deployment is known would cache a store-only result with no IPFS-anchor
   // fallback and poison the shared cache.
@@ -291,10 +302,10 @@ export function useMyClaims(opts?: ChainOpt) {
         // Let that propagate so the page shows an error instead of silently
         // dropping the wallet's real allocation (a "disappearing data" bug).
         const claims = await queryClient.fetchQuery({
-          queryKey: ["proofs", chainId, root],
-          staleTime: Infinity, // a root's proofs are immutable
+          queryKey: ["proofs", chainId, campaign.drop],
+          staleTime: Infinity, // a vault's proofs are immutable
           queryFn: () =>
-            fetchClaims(root, { client: client ?? undefined, dep, drop: campaign.drop }),
+            fetchClaims(chainId, campaign.drop, root, { client: client ?? undefined, dep }),
         });
         const mine = claims?.[addr];
         if (!mine) return null;
@@ -327,15 +338,18 @@ export type ProofsMeta = { count: number; cid: string | null };
  * published. Shared by the operator console's durability panel and the
  * participants stats.
  */
-export function useProofsMeta(campaign: Campaign | undefined) {
-  const root = campaign?.merkleRoot?.toLowerCase() as Hex | undefined;
+export function useProofsMeta(campaign: Campaign | undefined, opts?: ChainOpt) {
+  const drop = campaign?.drop;
+  const walletChainId = useChainId();
+  const chainId = opts?.chainId ?? walletChainId;
   return useQuery({
-    queryKey: ["proofsMeta", root],
-    enabled: !!root,
+    queryKey: ["proofsMeta", chainId, drop],
+    enabled: !!drop,
     queryFn: async (): Promise<ProofsMeta | null> => {
-      const res = await fetch(`/api/proofs?root=${encodeURIComponent(root!)}&meta=1`, {
-        cache: "no-store",
-      });
+      const res = await fetch(
+        `/api/proofs?chainId=${chainId}&drop=${encodeURIComponent(drop!.toLowerCase())}&meta=1`,
+        { cache: "no-store" },
+      );
       if (res.status === 404) return null;
       if (!res.ok) throw new Error(`Failed to load proofs status (HTTP ${res.status})`);
       return (await res.json()) as ProofsMeta;
