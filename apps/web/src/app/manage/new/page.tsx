@@ -28,6 +28,7 @@ import { ArrowLeft, ArrowRight, ArrowUpRight, Check, Download, Loader2, Upload }
 import Link from "next/link";
 import { ConnectGate } from "@/components/ConnectGate";
 import { CopyButton } from "@/components/CopyButton";
+import { GatePreview } from "@/components/GatePreview";
 import { NetworkSelect } from "@/components/NetworkSelect";
 import {
   inkBtnClass,
@@ -707,15 +708,12 @@ export default function NewCampaignPage() {
                         </option>
                       )}
                     </select>
-                    {/* GatePreview (K2, components/GatePreview.tsx): paste an
-                        address → useVerifiedUntil shows ✓/✗ so the operator can
-                        sanity-check the chosen registry against a known wallet.
-                        Placeholder until that component lands. */}
+                    {/* Sanity-check the chosen registry: does a known wallet
+                        pass its zk-X509 gate? Read-only, any address. */}
                     {registryAddr && (
-                      <p className="text-[11px] text-ink/50 mt-1">
-                        Registry {registryAddr.slice(0, 6)}…{registryAddr.slice(-4)} — a
-                        verification preview will appear here.
-                      </p>
+                      <div className="mt-2">
+                        <GatePreview registry={registryAddr} defaultAddress={account} />
+                      </div>
                     )}
                   </Field>
                 )}
