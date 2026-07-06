@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { whiteBtnClass } from "@/components/pop";
 
@@ -11,10 +11,21 @@ import { whiteBtnClass } from "@/components/pop";
  */
 export function SqlCopyBlock({ sql }: { sql: string }) {
   const [copied, setCopied] = useState(false);
-  const copy = () => {
-    navigator.clipboard?.writeText(sql);
+  // One live timer; unmount clears it so no setState fires after unmount
+  // (mirrors CopyButton).
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const copy = async () => {
+    // Only flash "Copied" once the write actually succeeds — it can reject or
+    // be absent in a non-secure context.
+    try {
+      await navigator.clipboard.writeText(sql);
+    } catch {
+      return;
+    }
     setCopied(true);
-    setTimeout(() => setCopied(false), 1200);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setCopied(false), 1200);
   };
   return (
     <div className="relative">

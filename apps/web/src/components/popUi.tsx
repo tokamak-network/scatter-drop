@@ -6,8 +6,11 @@ import { POP_CHIP, segBtnClass } from "@/components/pop";
  * in pop.ts (kept separate so that module stays a plain string library).
  *
  * CONTRACT: server-safe. No hooks, no "use client", no browser APIs — server
- * components (e.g. the landing page) import from here, so everything must be
- * pure presentational JSX. Anything stateful belongs in its own client file.
+ * components (e.g. the landing page) import from here. Event-handler props
+ * (onClick, …) are fine: they're supplied by whatever parent renders these,
+ * so a client parent wires interactivity while the components stay pure
+ * presentational JSX. Anything that itself needs state/effects/browser APIs
+ * belongs in its own "use client" file instead.
  */
 
 /**
