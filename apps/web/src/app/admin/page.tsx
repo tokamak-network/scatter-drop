@@ -18,6 +18,7 @@ import {
   TokenTier,
 } from "@tokamak-network/scatter-drop-sdk";
 import { Loader2, ShieldCheck } from "lucide-react";
+import { pillClass } from "@/components/pop";
 import { TxButton } from "@/components/TxButton";
 import { VaultWithdraw } from "@/components/VaultWithdraw";
 import { NetworksTab } from "./NetworksTab";
@@ -60,7 +61,7 @@ export default function AdminPage() {
 
   const issue = deploymentIssue(dep, isLoading);
   if (issue || !dep) {
-    return <p className="text-slate-400 text-sm">{issue ?? "No deployment."}</p>;
+    return <p className="text-ink/60 text-sm">{issue ?? "No deployment."}</p>;
   }
   const factory = dep.dropFactory;
   const ownerHint = dep.deployer
@@ -73,7 +74,7 @@ export default function AdminPage() {
         <div className="inline-flex items-center gap-1.5 text-[11px] font-mono text-amber-600">
           <ShieldCheck className="w-3.5 h-3.5" /> PLATFORM ADMIN
         </div>
-        <h1 className="text-2xl font-bold text-slate-100 tracking-tight">
+        <h1 className="font-chunk uppercase text-2xl tracking-tight text-ink">
           DropFactory Governance Center
         </h1>
       </div>
@@ -92,16 +93,14 @@ export default function AdminPage() {
         </div>
       )}
 
-      <div className="flex flex-wrap gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800 w-fit">
+      <div className="flex flex-wrap gap-1.5 w-fit">
         {TABS.map((t) => (
           <button
             key={t}
+            type="button"
+            aria-pressed={tab === t}
             onClick={() => setTab(t)}
-            className={`px-4 py-1.5 text-xs font-mono font-medium rounded transition ${
-              tab === t
-                ? "bg-slate-800 text-slate-100"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
+            className={pillClass(tab === t, "bg-pop-yellow")}
           >
             {t}
           </button>
@@ -113,7 +112,7 @@ export default function AdminPage() {
       {tab === "Tokens" && <Tokens factory={factory} />}
       {tab === "Campaigns" && <Campaigns />}
       {tab === "Vault" && (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+        <div className="bg-white rounded-2xl border-2 border-ink pop-shadow-sm p-6">
           <VaultWithdraw />
         </div>
       )}
@@ -124,8 +123,8 @@ export default function AdminPage() {
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
-      <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300 font-mono">
+    <div className="bg-white rounded-2xl border-2 border-ink pop-shadow-sm p-6 space-y-4">
+      <h3 className="text-xs font-bold uppercase tracking-wider text-ink/80 font-mono">
         {title}
       </h3>
       {children}
@@ -136,7 +135,7 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <Card title={label}>
-      <div className="text-2xl font-bold text-slate-100">{value}</div>
+      <div className="text-2xl font-bold text-ink">{value}</div>
     </Card>
   );
 }
@@ -163,7 +162,7 @@ function Overview({ factory }: { factory: Address }) {
       />
       <Stat label="Default fee" value={defaultFee} />
       <Card title="DropFactory">
-        <div className="text-xs font-mono text-slate-400 break-all">{factory}</div>
+        <div className="text-xs font-mono text-ink/60 break-all">{factory}</div>
       </Card>
     </div>
   );
@@ -188,8 +187,8 @@ function DefaultFeeConfig({ factory }: { factory: Address }) {
   return (
     <Card title="Platform default fee">
       <div className="flex items-center gap-2 text-xs">
-        <span className="text-slate-400">Current default mode:</span>
-        <span className="text-slate-200 font-mono">
+        <span className="text-ink/60">Current default mode:</span>
+        <span className="text-ink font-mono">
           {modeNum === undefined
             ? "…"
             : modeNum === FeeMode.PERCENT
@@ -197,7 +196,7 @@ function DefaultFeeConfig({ factory }: { factory: Address }) {
               : "FLAT"}
         </span>
         {modeNum === FeeMode.PERCENT && (
-          <span className="text-slate-400">
+          <span className="text-ink/60">
             · {bps === undefined ? "…" : `${Number(bps)} bps (${Number(bps) / 100}%)`}
           </span>
         )}
@@ -277,9 +276,9 @@ function TokenFeeConfig({ factory }: { factory: Address }) {
       />
       {t && (
         <div className="space-y-3">
-          <div className="text-xs font-mono text-slate-400">
+          <div className="text-xs font-mono text-ink/60">
             Mode:{" "}
-            <span className="text-slate-200">
+            <span className="text-ink">
               {modeNum === undefined
                 ? "…"
                 : modeNum === FeeMode.PERCENT
@@ -342,9 +341,9 @@ function TokenFeeConfig({ factory }: { factory: Address }) {
             />
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-mono text-slate-400">
+            <span className="text-xs font-mono text-ink/60">
               approveAndCall (one-tx):{" "}
-              <span className="text-slate-200">
+              <span className="text-ink">
                 {supportsAac === undefined ? "…" : supportsAac ? "enabled" : "disabled"}
               </span>
             </span>
@@ -405,19 +404,19 @@ function NativeEthToggle({ factory }: { factory: Address }) {
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-mono font-bold text-slate-100">Ξ ETH</span>
+            <span className="font-mono font-bold text-ink">Ξ ETH</span>
             <span
               className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
                 enabled
                   ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
-                  : "bg-slate-800 text-slate-400 border border-slate-700/50"
+                  : "bg-white text-ink/60 border border-ink/20"
               }`}
             >
               {loading ? "…" : enabled ? "ON" : "OFF"}
             </span>
           </div>
-          <p className="text-[11px] text-slate-500 mt-1 max-w-md">
-            When on, operators can airdrop native ETH (funded from their wallet,
+          <p className="text-[11px] text-ink0 mt-1 max-w-md">
+            When on, operators can distribute native ETH (funded from their wallet,
             no wrapper) and ETH is selectable in the campaign wizard.
           </p>
         </div>
@@ -462,15 +461,15 @@ function Tokens({ factory }: { factory: Address }) {
     <div className="space-y-4">
       <NativeEthToggle factory={factory} />
       <Card title="Allowed ERC-20 curation (admin)">
-      <p className="text-[11px] text-slate-500">
+      <p className="text-[11px] text-ink0">
         Curate which established assets (e.g. WETH, USDC, USDT) operators may use.
         The platform is neutral infrastructure — this is a suitability decision,
         not a securities determination.
       </p>
 
       {/* Currently allowed */}
-      <div className="rounded-lg bg-slate-950 border border-slate-800/60 p-3 space-y-2">
-        <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+      <div className="rounded-lg bg-pop-cream border-2 border-ink/15/60 p-3 space-y-2">
+        <div className="text-[10px] font-mono uppercase tracking-wider text-ink/60">
           Currently allowed ({allowedList?.length ?? 0})
         </div>
         {allowedList && allowedList.length > 0 ? (
@@ -484,7 +483,7 @@ function Tokens({ factory }: { factory: Address }) {
                   <span className="font-mono font-bold text-emerald-600 shrink-0">
                     {a.symbol}
                   </span>
-                  <span className="font-mono text-slate-400 truncate">
+                  <span className="font-mono text-ink/60 truncate">
                     {a.token.slice(0, 8)}…{a.token.slice(-6)}
                   </span>
                 </div>
@@ -498,18 +497,18 @@ function Tokens({ factory }: { factory: Address }) {
             ))}
           </div>
         ) : (
-          <p className="text-[11px] text-slate-500">
+          <p className="text-[11px] text-ink0">
             No tokens allow-listed yet. Add one below.
           </p>
         )}
       </div>
 
       {/* Add a token */}
-      <div className="pt-2 border-t border-slate-800/60 text-[10px] font-mono uppercase tracking-wider text-slate-400">
+      <div className="pt-2 border-t border-ink/10 text-[10px] font-mono uppercase tracking-wider text-ink/60">
         Add a token
       </div>
       <div className="space-y-1.5">
-        <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500">
+        <div className="text-[10px] font-mono uppercase tracking-wider text-ink0">
           Quick pick (Sepolia)
         </div>
         <div className="flex flex-wrap gap-2">
@@ -520,7 +519,7 @@ function Tokens({ factory }: { factory: Address }) {
               className={`px-3 py-1.5 rounded-lg border text-xs font-mono transition ${
                 token.toLowerCase() === p.address.toLowerCase()
                   ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600"
-                  : "border-slate-800 bg-slate-950 text-slate-200 hover:border-slate-700"
+                  : "border-ink/15 bg-white text-ink hover:border-ink"
               }`}
             >
               {p.label}
@@ -538,7 +537,7 @@ function Tokens({ factory }: { factory: Address }) {
       {t && tier !== undefined && (
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-xs">
-            <span className="text-slate-400">Status:</span>
+            <span className="text-ink/60">Status:</span>
             <span
               className={`font-mono font-bold px-2 py-0.5 rounded border ${
                 allowed
@@ -549,7 +548,7 @@ function Tokens({ factory }: { factory: Address }) {
               {allowed ? "ALLOWED" : "NOT ALLOWED"}
             </span>
             {decimals !== undefined && (
-              <span className="text-slate-500">· {decimals} dp</span>
+              <span className="text-ink0">· {decimals} dp</span>
             )}
           </div>
 
@@ -590,7 +589,7 @@ function Campaigns() {
   const { data, isPending } = useCampaigns();
   if (isPending) {
     return (
-      <div className="flex items-center justify-center p-12 text-slate-500">
+      <div className="flex items-center justify-center p-12 text-ink0">
         <Loader2 className="w-6 h-6 animate-spin" />
       </div>
     );
@@ -603,16 +602,16 @@ function Campaigns() {
           <Link
             key={c.id}
             href={`/c/${c.id}`}
-            className="flex justify-between items-center bg-slate-950 border border-slate-800/80 rounded-lg p-3 text-xs hover:border-slate-700"
+            className="flex justify-between items-center bg-pop-cream border-2 border-ink/15 rounded-lg p-3 text-xs hover:border-ink"
           >
-            <span className="text-slate-200">{c.name}</span>
-            <span className="font-mono text-slate-500">
+            <span className="text-ink">{c.name}</span>
+            <span className="font-mono text-ink0">
               {airdropTypeLabel(c.type)} · {c.status}
             </span>
           </Link>
         ))}
         {campaigns.length === 0 && (
-          <p className="text-slate-500 text-xs">No campaigns on-chain yet.</p>
+          <p className="text-ink0 text-xs">No campaigns on-chain yet.</p>
         )}
       </div>
     </Card>
