@@ -81,7 +81,7 @@ function displaySymbol(symbol: string): string {
 }
 
 /** Amount scaled by decimals, with thousands separators (max 4 dp). */
-function formatAmount(raw: bigint, decimals: number): string {
+export function formatAmount(raw: bigint, decimals: number): string {
   const n = Number(formatUnits(raw, decimals));
   return Number.isFinite(n)
     ? n.toLocaleString("en-US", { maximumFractionDigits: 4 })
@@ -303,7 +303,7 @@ export type ClaimEvent = {
  * operator's distribution report (one row per claim: who, how much, when,
  * which tx). Timestamps come from one getBlock per unique block.
  */
-export function useClaimEvents(campaign?: Campaign, opts?: ChainOpt) {
+export function useClaimEvents(campaign?: Campaign, opts?: ChainOpt & { enabled?: boolean }) {
   const walletChainId = useChainId();
   const chainId = opts?.chainId ?? walletChainId;
   const client = usePublicClient({ chainId });
@@ -313,7 +313,10 @@ export function useClaimEvents(campaign?: Campaign, opts?: ChainOpt) {
 
   return useQuery({
     queryKey: ["claimEvents", chainId, campaign?.drop],
-    enabled: !!client && !!campaign?.drop && dep !== undefined,
+    // The full log scan is opt-in per caller (opts.enabled) — the claim page
+    // only needs it once a wallet has actually claimed, not on every visit.
+    enabled:
+      (opts?.enabled ?? true) && !!client && !!campaign?.drop && dep !== undefined,
     staleTime: 15_000,
     queryFn: async (): Promise<ClaimEvent[]> => {
       if (!client || !campaign) return [];
