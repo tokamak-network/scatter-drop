@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useAccount, useChainId } from "wagmi";
-import { isAddress } from "viem";
+import { useAccount, useChainId, useChains } from "wagmi";
+import { isAddress, type Address } from "viem";
 import { ArrowLeft, Loader2, Megaphone, Plus, Trash2 } from "lucide-react";
 import { ConnectGate } from "@/components/ConnectGate";
-import { NetworkSelect } from "@/components/NetworkSelect";
+import { NetworkPills } from "@/components/NetworkSelect";
+import { useErc20Name, useErc20Symbol } from "@/lib/contracts";
 import {
   createAnnouncement,
   type AnnouncementLink,
@@ -34,11 +35,18 @@ const labelCls = "block text-[11px] font-mono uppercase tracking-wider text-slat
  */
 export default function NewAnnouncementPage() {
   const router = useRouter();
-  const chainId = useChainId();
+  const walletChainId = useChainId();
+  const chains = useChains();
   const { address } = useAccount();
   const { me, ensureSession, busy } = useWalletSession(
     "Sign in to scatter.drop to manage your announcements.",
   );
+
+  // Form-local network choice — null means "follow the wallet's chain". A
+  // SIWE post is chain-agnostic, so the operator may announce for any
+  // registered network without switching the wallet.
+  const [selectedChainId, setSelectedChainId] = useState<number | null>(null);
+  const chainId = selectedChainId ?? walletChainId;
 
   const [title, setTitle] = useState("");
   const [tokenSymbol, setTokenSymbol] = useState("");
@@ -62,6 +70,22 @@ export default function NewAnnouncementPage() {
   // rejects anything else, so catch it before the SIWE prompt.
   const trimmedTokenAddress = tokenAddress.trim();
   const tokenAddressValid = trimmedTokenAddress === "" || isAddress(trimmedTokenAddress);
+  const hasTokenAddress = trimmedTokenAddress !== "" && tokenAddressValid;
+
+  // Live ERC-20 lookup on the SELECTED network once the address parses —
+  // instant feedback that the pasted contract is the intended token.
+  // Intermediate keystrokes fail isAddress, so the hooks' enabled guard is
+  // the debounce.
+  const lookupToken = hasTokenAddress ? (trimmedTokenAddress as Address) : undefined;
+  const { data: tokenName, isPending: namePending } = useErc20Name(lookupToken, chainId);
+  const { data: liveSymbol, isPending: symbolPending } = useErc20Symbol(lookupToken, chainId);
+
+  // Autofill the symbol from the resolved token — never clobber the
+  // operator's own input (functional update keeps this effect off the
+  // tokenSymbol dependency, so clearing the field doesn't re-trigger it).
+  useEffect(() => {
+    if (liveSymbol) setTokenSymbol((s) => (s.trim() ? s : liveSymbol.slice(0, MAX_SYMBOL)));
+  }, [liveSymbol]);
   const valid =
     title.trim() !== "" &&
     body.trim() !== "" &&
@@ -117,9 +141,31 @@ export default function NewAnnouncementPage() {
       </div>
 
       <ConnectGate prompt="Connect the wallet that will operate the drop.">
-        {/* The announcement is posted on the wallet's active chain (the board
-            filters by it too) — surface that and let the operator switch. */}
-        <NetworkSelect />
+        {/* Form-local network choice (not a wallet switch): a SIWE post works
+            for any registered chain. The board lists the WALLET's chain, so a
+            mismatch is flagged instead of hidden. */}
+        <NetworkPills
+          chains={chains}
+          activeId={chainId}
+          onSelect={setSelectedChainId}
+          title={(c, active) =>
+            active ? "Announcing on this network" : `Announce on ${c.name}`
+          }
+        >
+          {chainId !== walletChainId && (
+            <span className="text-[11px] text-amber-500">
+              Differs from your wallet&apos;s network — the Upcoming board shows
+              the wallet&apos;s chain, so switch there to see the post listed.{" "}
+              <button
+                type="button"
+                onClick={() => setSelectedChainId(null)}
+                className="underline hover:text-amber-400 transition"
+              >
+                Use wallet network
+              </button>
+            </span>
+          )}
+        </NetworkPills>
 
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-5">
           <div>
@@ -170,6 +216,23 @@ export default function NewAnnouncementPage() {
                   Not a valid address — leave empty if the token isn&apos;t deployed yet.
                 </p>
               )}
+              {hasTokenAddress &&
+                (namePending || symbolPending ? (
+                  <p className="text-[11px] text-slate-500 mt-1 flex items-center gap-1.5">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Resolving token…
+                  </p>
+                ) : tokenName || liveSymbol ? (
+                  // Tolerate partial ERC-20s — either read alone still
+                  // confirms a token lives at the address.
+                  <p className="text-[11px] text-emerald-500 mt-1">
+                    ✓ {[tokenName, liveSymbol && `(${liveSymbol})`].filter(Boolean).join(" ")}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-amber-500 mt-1">
+                    Could not resolve an ERC-20 at this address on{" "}
+                    {chains.find((c) => c.id === chainId)?.name ?? `chain ${chainId}`}.
+                  </p>
+                ))}
             </div>
           </div>
 

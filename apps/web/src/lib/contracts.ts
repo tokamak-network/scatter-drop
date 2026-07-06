@@ -248,13 +248,42 @@ const erc20SymbolAbi = [
   },
 ] as const;
 
-/** ERC20.symbol() for an address — for human-readable amount labels. */
-export function useErc20Symbol(token: Address | undefined) {
+/**
+ * ERC20.symbol() for an address — for human-readable amount labels.
+ * `chainId` overrides the wallet chain (e.g. a form-selected network).
+ */
+export function useErc20Symbol(token: Address | undefined, chainId?: number) {
+  const walletChainId = useChainId();
   return useReadContract({
     address: token,
     abi: erc20SymbolAbi,
     functionName: "symbol",
-    chainId: useChainId(),
+    chainId: chainId ?? walletChainId,
+    query: { enabled: !!token },
+  });
+}
+
+const erc20NameAbi = [
+  {
+    type: "function",
+    name: "name",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "string" }],
+  },
+] as const;
+
+/**
+ * ERC20.name() for an address — to confirm a pasted contract is the intended
+ * token. `chainId` overrides the wallet chain like useErc20Symbol's.
+ */
+export function useErc20Name(token: Address | undefined, chainId?: number) {
+  const walletChainId = useChainId();
+  return useReadContract({
+    address: token,
+    abi: erc20NameAbi,
+    functionName: "name",
+    chainId: chainId ?? walletChainId,
     query: { enabled: !!token },
   });
 }
