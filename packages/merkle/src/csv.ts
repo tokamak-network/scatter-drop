@@ -19,6 +19,9 @@ import type { AirdropEntry } from "./types.js";
  * delegate to it so inputs and CSVs accept the same strings).
  */
 export function parseHumanAmount(amount: string, decimals: number): bigint {
+  if (!Number.isInteger(decimals) || decimals < 0) {
+    throw new Error(`decimals must be a non-negative integer, got ${decimals}`);
+  }
   if (!/^\d+(\.\d+)?$/.test(amount)) {
     throw new Error(`amount must be a token amount like "120" or "1.5", got "${amount}"`);
   }

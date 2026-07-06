@@ -145,4 +145,9 @@ describe("parseCsv", () => {
     );
     expect(() => parseCsv(`${A(1)},abc`, { decimals: 18 })).toThrow(/token amount/);
   });
+
+  it("rejects a malformed decimals option", () => {
+    expect(() => parseCsv(`${A(1)},1`, { decimals: 1.5 })).toThrow(/non-negative integer/);
+    expect(() => parseCsv(`${A(1)},1`, { decimals: -1 })).toThrow(/non-negative integer/);
+  });
 });

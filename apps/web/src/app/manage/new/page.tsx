@@ -157,7 +157,9 @@ export default function NewCampaignPage() {
   const { data: erc20Symbol } = useErc20Symbol(
     tokenValid && !isNative ? (token as Address) : undefined,
   );
-  const decimals = isNative ? 18 : erc20Decimals;
+  // Normalize the on-chain uint8 (decoders may hand back number or bigint).
+  const decimals =
+    isNative ? 18 : erc20Decimals === undefined ? undefined : Number(erc20Decimals);
   // Show the real token symbol instead of a generic "tokens" once it's known.
   const unit = isNative ? "ETH" : erc20Symbol ? String(erc20Symbol) : "tokens";
   /** Human-unit string for a base-unit value — the only dialect the wizard emits. */
@@ -177,7 +179,16 @@ export default function NewCampaignPage() {
   }>({ manifest: null, error: null });
   const lastBuilt = useRef<{ csv: string; decimals: number } | null>(null);
   useEffect(() => {
-    if (decimals === undefined) return;
+    if (decimals === undefined) {
+      // Token cleared/invalid: drop the stale tree rather than keep showing a
+      // manifest scaled for the previous token. A mid-read undefined for the
+      // SAME token resolves quickly and the ref guard skips the no-op rebuild.
+      if (!tokenValid && lastBuilt.current) {
+        lastBuilt.current = null;
+        setParsed({ manifest: null, error: null });
+      }
+      return;
+    }
     if (lastBuilt.current?.csv === csv && lastBuilt.current.decimals === decimals) return;
     const t = setTimeout(() => {
       lastBuilt.current = { csv, decimals };
