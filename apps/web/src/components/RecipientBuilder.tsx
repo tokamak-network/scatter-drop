@@ -116,7 +116,9 @@ export function RecipientBuilder({
   const tokenTrimmed = token.trim();
   const tokenOk = isAddress(tokenTrimmed, { strict: false });
   const tokenAddr = tokenOk ? (tokenTrimmed as `0x${string}`) : undefined;
-  const { data: allowedTokens } = useAllowedTokens();
+  // With a fixed token the picker is hidden, so the allow-list isn't needed —
+  // skip its log scan + metadata load.
+  const { data: allowedTokens } = useAllowedTokens({ enabled: !fixedToken });
   // Skip the on-chain reads when the wizard already resolved decimals/symbol.
   const { data: decData } = useErc20Decimals(fixedToken ? undefined : tokenAddr);
   const { data: symData } = useErc20Symbol(fixedToken ? undefined : tokenAddr);
@@ -204,11 +206,17 @@ export function RecipientBuilder({
     downloadCsv("scatter-drop-distribution.csv", `${buildCsv(includeBalance)}\n`);
     setExportOpen(false);
   };
-  const copyCsv = () => {
+  const copyCsv = async () => {
     // Copy is address,amount only — the balance column is a download-time choice.
-    navigator.clipboard?.writeText(buildCsv(false));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1200);
+    // Only flash "Copied" if the write actually succeeded (clipboard can be
+    // unavailable in a non-secure context or denied by permission).
+    try {
+      await navigator.clipboard.writeText(buildCsv(false));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {
+      /* clipboard unavailable — no false confirmation */
+    }
   };
   // Hand the finished list up. Always address,amount in human units (no balance
   // column) — matching what both the /tools "use in a campaign" draft and the
@@ -444,8 +452,14 @@ export function RecipientBuilder({
               <span className="ml-2 text-xs font-normal text-ink/60">
                 {dist.count.toLocaleString()} recipients · total {totalLabel}
                 {!tokenOk ? (
-                  <span className="text-amber-600"> · select the distribution token above</span>
-                ) : decData == null ? (
+                  <span className="text-amber-600">
+                    {fixedToken
+                      ? " · invalid token address"
+                      : " · select the distribution token above"}
+                  </span>
+                ) : !decReady ? (
+                  // decReady is always true for a fixedToken, so this no longer
+                  // sticks on "reading decimals…" in the wizard embed.
                   <span className="text-amber-600"> · reading token decimals…</span>
                 ) : null}
                 {badAddr && <span className="text-amber-600"> · fix invalid address(es)</span>}
