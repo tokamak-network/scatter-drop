@@ -18,6 +18,11 @@ export function explorerUrl(
     : undefined;
 }
 
+/** "Local Fork · 31337"-style chip label for where a campaign/announcement lives. */
+export function chainLabel(chain: Chain | undefined, chainId: number): string {
+  return chain ? `${chain.name} · ${chainId}` : `Chain ${chainId}`;
+}
+
 /** 0x05fd…1f86-style shortening for inline tx-hash display next to those links. */
 export function shortHash(value: string): string {
   return `${value.slice(0, 10)}…${value.slice(-4)}`;

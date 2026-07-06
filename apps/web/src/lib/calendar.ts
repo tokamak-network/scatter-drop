@@ -15,7 +15,7 @@ function icsEscape(s: string): string {
 
 /** Date → "YYYYMMDDTHHMMSSZ" (UTC basic format). */
 function icsUtc(d: Date): string {
-  return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  return d.toISOString().replace(/[-:]|\.\d{3}/g, "");
 }
 
 /**
@@ -24,8 +24,9 @@ function icsUtc(d: Date): string {
  * title is 3 bytes per syllable), and never splits inside a character.
  * Continuation lines start with a space (which costs one octet).
  */
+const encoder = new TextEncoder();
+
 function fold(line: string): string {
-  const encoder = new TextEncoder();
   const out: string[] = [];
   let current = "";
   let currentBytes = 0;
@@ -45,7 +46,7 @@ function fold(line: string): string {
   return out.join("\r\n ");
 }
 
-export function buildIcs(event: {
+export type CalendarEvent = {
   /** Stable unique id (e.g. the announcement id). */
   uid: string;
   title: string;
@@ -54,8 +55,43 @@ export function buildIcs(event: {
   /** Defaults to start + 1h when the announcement has no expected end. */
   end?: Date;
   url?: string;
-}): string {
-  const end = event.end ?? new Date(event.start.getTime() + 60 * 60 * 1000);
+};
+
+/** Google/Outlook (and DTEND) require an end; announcements may omit one. */
+function eventEnd(event: CalendarEvent): Date {
+  return event.end ?? new Date(event.start.getTime() + 60 * 60 * 1000);
+}
+
+/** description + event URL as the free-text body web calendars display. */
+function eventDetails(event: CalendarEvent): string {
+  return [event.description, event.url].filter(Boolean).join("\n\n");
+}
+
+/** "Add event" template URL for Google Calendar (opens prefilled composer). */
+export function googleCalendarUrl(event: CalendarEvent): string {
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: event.title,
+    dates: `${icsUtc(event.start)}/${icsUtc(eventEnd(event))}`,
+    details: eventDetails(event),
+  });
+  return `https://calendar.google.com/calendar/render?${params}`;
+}
+
+/** "Add event" compose URL for Outlook.com (personal accounts). */
+export function outlookCalendarUrl(event: CalendarEvent): string {
+  const params = new URLSearchParams({
+    rru: "addevent",
+    subject: event.title,
+    startdt: event.start.toISOString(),
+    enddt: eventEnd(event).toISOString(),
+    body: eventDetails(event),
+  });
+  return `https://outlook.live.com/calendar/0/action/compose?${params}`;
+}
+
+export function buildIcs(event: CalendarEvent): string {
+  const end = eventEnd(event);
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
