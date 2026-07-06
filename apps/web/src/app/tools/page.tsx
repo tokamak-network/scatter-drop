@@ -245,9 +245,11 @@ export default function ToolsPage() {
     }
     return d;
   }, [rows]);
-  // tokenOk gate: amounts scale by the selected token's decimals and the
-  // export states its unit — without a token both would be guesses.
-  const canUse = tokenOk && dist.count > 0 && !badAddr && !capInvalid && dupCount === 0;
+  // Decimals gate: amounts scale by the selected token's decimals and the
+  // export states its unit — without a token (or while its decimals are still
+  // being read) both would be guesses on the silent 18-dp fallback.
+  const decReady = tokenOk && decData != null;
+  const canUse = decReady && dist.count > 0 && !badAddr && !capInvalid && dupCount === 0;
 
   const human = (bi: bigint) => formatUnits(bi, dec);
   const totalLabel = `${human(dist.total)} ${unit}`;
@@ -540,9 +542,11 @@ export default function ToolsPage() {
               Airdrop
               <span className="ml-2 text-xs font-normal text-slate-400">
                 {dist.count.toLocaleString()} recipients · total {totalLabel}
-                {!tokenOk && (
+                {!tokenOk ? (
                   <span className="text-amber-600"> · select the airdrop token above</span>
-                )}
+                ) : decData == null ? (
+                  <span className="text-amber-600"> · reading token decimals…</span>
+                ) : null}
                 {badAddr && <span className="text-amber-600"> · fix invalid address(es)</span>}
                 {dupCount > 0 && (
                   <span className="text-amber-600"> · {dupCount} duplicate address(es)</span>
