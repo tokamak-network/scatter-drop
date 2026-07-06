@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { Hex } from "viem";
 import { buildPublishProofsRequest } from "@tokamak-network/scatter-drop-sdk";
 import { CheckCircle2, CloudUpload, Loader2 } from "lucide-react";
+import { inkBtnClass, POP_HEADING, POP_PANEL, whiteBtnClass } from "@/components/pop";
 import { TxButton } from "@/components/TxButton";
 import { useDeployment } from "@/lib/contracts";
 import { shortHash } from "@/lib/explorer";
@@ -93,12 +94,12 @@ export function ProofsPanel({
   const anchored = !!anchoredCid && anchoredCid === cid;
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4 max-w-xl">
-      <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300 font-mono flex items-center gap-2">
-        <CloudUpload className="w-4 h-4 text-emerald-500" />
+    <div className={`bg-white p-6 space-y-4 max-w-xl ${POP_PANEL}`}>
+      <h3 className={`${POP_HEADING} flex items-center gap-2`}>
+        <CloudUpload className="w-4 h-4 text-ink" />
         Recipient list durability
       </h3>
-      <p className="text-sm text-slate-400 leading-relaxed">
+      <p className="text-sm text-ink/70 leading-relaxed">
         The recipient list lives in this app&apos;s store; pinning it to IPFS
         and anchoring the CID on-chain lets claimers recover it even if the
         store is unavailable.
@@ -108,16 +109,16 @@ export function ProofsPanel({
           resolves, and a disabled query isn't "loading" — without this the
           panel would flash "not anchored" before the scan ever ran. */}
       {metaLoading || anchorLoading || depLoading ? (
-        <div className="flex items-center gap-2 text-xs text-slate-500">
+        <div className="flex items-center gap-2 text-xs text-ink/50">
           <Loader2 className="w-4 h-4 animate-spin" /> Checking proofs status…
         </div>
       ) : metaError || anchorError ? (
         // A fetch failure must not masquerade as "no recipient list stored".
-        <p className="text-xs text-amber-600">
+        <p className="text-xs font-medium text-amber-600">
           Could not load proofs status — check the fork/RPC and retry.
         </p>
       ) : !meta ? (
-        <p className="text-xs text-amber-600">
+        <p className="text-xs font-medium text-amber-600">
           No recipient list is stored for this campaign — republish it from the
           creation flow first.
         </p>
@@ -125,14 +126,14 @@ export function ProofsPanel({
         <>
           <dl className="text-xs space-y-1.5 font-mono">
             <div className="flex justify-between gap-4">
-              <dt className="text-slate-500">Store</dt>
-              <dd className="text-slate-200">
+              <dt className="text-ink/50">Store</dt>
+              <dd className="text-ink">
                 {meta.count.toLocaleString()} recipients ✓
               </dd>
             </div>
             <div className="flex justify-between gap-4">
-              <dt className="text-slate-500">IPFS pin</dt>
-              <dd className="text-slate-200">
+              <dt className="text-ink/50">IPFS pin</dt>
+              <dd className="text-ink">
                 {cid ? (
                   <CidLink cid={cid} className="text-emerald-600">
                     {shortHash(cid)} ✓
@@ -143,8 +144,8 @@ export function ProofsPanel({
               </dd>
             </div>
             <div className="flex justify-between gap-4">
-              <dt className="text-slate-500">On-chain anchor</dt>
-              <dd className={anchored ? "text-emerald-500" : "text-slate-200"}>
+              <dt className="text-ink/50">On-chain anchor</dt>
+              <dd className={anchored ? "text-emerald-600" : "text-ink"}>
                 {anchoredCid ? (
                   <CidLink cid={anchoredCid}>
                     {anchored
@@ -162,7 +163,7 @@ export function ProofsPanel({
           </dl>
 
           {!isOperator ? (
-            <p className="text-xs text-amber-600">
+            <p className="text-xs font-medium text-amber-600">
               Only the campaign operator can pin or anchor the list.
             </p>
           ) : (
@@ -172,7 +173,7 @@ export function ProofsPanel({
                   type="button"
                   onClick={repin}
                   disabled={repinning}
-                  className="btn btn-primary text-xs"
+                  className={`text-xs disabled:opacity-50 ${inkBtnClass("sm")}`}
                 >
                   {repinning ? "Pinning…" : "Pin recipient list to IPFS"}
                 </button>
@@ -184,7 +185,7 @@ export function ProofsPanel({
                   type="button"
                   onClick={repin}
                   disabled={repinning}
-                  className="btn text-xs"
+                  className={`text-xs disabled:opacity-50 ${whiteBtnClass("sm")}`}
                 >
                   {repinning ? "Pinning…" : "Re-pin to IPFS"}
                 </button>
@@ -208,7 +209,7 @@ export function ProofsPanel({
                   Fully durable — pinned to IPFS and anchored on-chain.
                 </p>
               )}
-              {repinError && <p className="text-xs text-red-500">{repinError}</p>}
+              {repinError && <p className="text-xs text-rose-500">{repinError}</p>}
             </div>
           )}
         </>

@@ -38,6 +38,10 @@ export function popInputClass(extra = ""): string {
 export const POP_LABEL =
   "block text-[11px] font-mono font-bold uppercase tracking-wider text-ink/50 mb-1.5";
 
+/** Panel section heading (h3 inside a POP_PANEL). */
+export const POP_HEADING =
+  "text-xs font-mono font-bold uppercase tracking-wider text-ink/60";
+
 /** Tiny status/type chip core — skin (colors) composes on top, e.g. STATUS_STYLES. */
 export const POP_CHIP = "text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border";
 

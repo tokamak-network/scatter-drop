@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { Loader2 } from "lucide-react";
 import { POP_PANEL } from "@/components/pop";
 
 export function EmptyState({
@@ -35,14 +36,27 @@ export function EmptyState({
 export function EmptyBox({
   children,
   icon,
+  action,
 }: {
   children: ReactNode;
   icon?: ReactNode;
+  /** Optional trailing CTA (link/button) under the message. */
+  action?: ReactNode;
 }) {
   return (
     <div className={`flex flex-col items-center justify-center p-12 bg-white text-center space-y-3 ${POP_PANEL}`}>
       {icon}
       <p className="text-ink/60 text-sm max-w-sm">{children}</p>
+      {action}
+    </div>
+  );
+}
+
+/** Full-page centered spinner shown while a page's primary query resolves. */
+export function PageSpinner() {
+  return (
+    <div className="flex items-center justify-center p-12 text-ink/40">
+      <Loader2 className="w-6 h-6 animate-spin" />
     </div>
   );
 }
