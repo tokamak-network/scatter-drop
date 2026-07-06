@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { useChainId, usePublicClient } from "wagmi";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAccount, useChainId, usePublicClient } from "wagmi";
 import type { Address, Hex, PublicClient } from "viem";
-import { verifyClaim, type ClaimProof } from "@tokamak-network/scatter-drop-sdk";
+import { merkleDropAbi, verifyClaim, type ClaimProof } from "@tokamak-network/scatter-drop-sdk";
+import { useCampaigns } from "./campaigns";
 import { useDeployment, type ChainOpt } from "./contracts";
 import type { WebDeployment } from "./deployment";
 import { scanLatestProofsCid } from "./dropScan";
@@ -211,6 +212,85 @@ function useClaims(campaign: Campaign | undefined, opts?: ChainOpt) {
     queryFn: () =>
       fetchClaims(root!, { client: client ?? undefined, dep, drop: campaign?.drop }),
   });
+}
+
+/** One row of the wallet's allocations across the viewed chain's campaigns. */
+export type MyClaimRow = {
+  campaign: Campaign;
+  /** Allocation in base units (scale by campaign.decimals for display). */
+  amount: bigint;
+  claimed: boolean;
+};
+
+/**
+ * The connected wallet's allocations across every campaign on the viewed
+ * chain. Each campaign's recipient list is read through the shared
+ * ["proofs", chainId, root] cache (fetchClaims — validated, with the
+ * IPFS-anchor fallback), so this page and the claim pages download each list
+ * once between them. The claimed flag comes from the drop contract's
+ * isClaimed bitmap — authoritative where a log scan could miss a window.
+ * Campaigns whose list isn't published (or whose read fails) are skipped
+ * rather than failing the whole page.
+ */
+export function useMyClaims(opts?: ChainOpt) {
+  const { address } = useAccount();
+  const walletChainId = useChainId();
+  const chainId = opts?.chainId ?? walletChainId;
+  const client = usePublicClient({ chainId });
+  const { data: dep } = useDeployment(opts);
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: campaignsPending,
+    isError: campaignsError,
+  } = useCampaigns(opts);
+  const campaigns = data?.campaigns;
+
+  const query = useQuery({
+    queryKey: [
+      "myClaims",
+      chainId,
+      address?.toLowerCase(),
+      campaigns?.map((c) => c.drop),
+    ],
+    enabled: !!address && !!client && !!campaigns,
+    staleTime: 15_000,
+    queryFn: async (): Promise<MyClaimRow[]> => {
+      const addr = address!.toLowerCase();
+      const lookups = campaigns!.map(async (campaign): Promise<MyClaimRow | null> => {
+        const root = campaign.merkleRoot?.toLowerCase() as Hex | undefined;
+        if (!root) return null;
+        try {
+          const claims = await queryClient.fetchQuery({
+            queryKey: ["proofs", chainId, root],
+            staleTime: 60_000,
+            queryFn: () =>
+              fetchClaims(root, { client: client ?? undefined, dep, drop: campaign.drop }),
+          });
+          const mine = claims?.[addr];
+          if (!mine) return null;
+          const claimed = (await client!.readContract({
+            address: campaign.drop,
+            abi: merkleDropAbi,
+            functionName: "isClaimed",
+            args: [BigInt(mine.index)],
+          })) as boolean;
+          return { campaign, amount: BigInt(mine.amount), claimed };
+        } catch {
+          return null; // unpublished list / store+anchor outage — skip this campaign
+        }
+      });
+      return (await Promise.all(lookups)).filter((r): r is MyClaimRow => r !== null);
+    },
+  });
+  // Campaign enumeration counts as loading/error too — the dependent query is
+  // disabled (stuck isPending) until the list resolves, so expose an explicit
+  // narrow shape rather than the raw query's misleading flags.
+  return {
+    data: query.data,
+    isLoading: campaignsPending || query.isLoading,
+    isError: campaignsError || query.isError,
+  };
 }
 
 export type ProofsMeta = { count: number; cid: string | null };

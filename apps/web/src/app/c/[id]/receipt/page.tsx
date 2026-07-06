@@ -2,13 +2,14 @@
 
 import { use } from "react";
 import Link from "next/link";
-import { useAccount } from "wagmi";
-import { useQuery } from "@tanstack/react-query";
+import { useAccount, useChainId, useChains } from "wagmi";
+import { formatUnits } from "viem";
 import { ConnectGate } from "@/components/ConnectGate";
 import { DescriptionList } from "@/components/ui";
 import { EmptyState, Loading } from "@/components/states";
 import { ReportActions } from "@/components/ReportActions";
-import { getClaimReceipt, receiptCsv } from "@/lib/reports";
+import { fmtUnixDateTime, useCampaign, useClaimEvents } from "@/lib/campaigns";
+import { receiptCsv, type ClaimReceipt } from "@/lib/reports";
 
 export default function ClaimReceiptPage({
   params,
@@ -17,11 +18,30 @@ export default function ClaimReceiptPage({
 }) {
   const { id } = use(params);
   const { address } = useAccount();
-  const { data: receipt, isLoading } = useQuery({
-    queryKey: ["receipt", id, address],
-    queryFn: () => getClaimReceipt(id, address),
-    enabled: !!address,
-  });
+  const chainId = useChainId();
+  const chains = useChains();
+  // Live receipt: the wallet's Claimed event on this campaign — the same
+  // sources the operator's distribution report uses (no stub, no store).
+  const { data: campaign, isLoading: campaignLoading } = useCampaign(id);
+  const { data: claims, isLoading: claimsLoading } = useClaimEvents(campaign ?? undefined);
+  const isLoading = campaignLoading || claimsLoading;
+  const mine = address
+    ? claims?.find((c) => c.account === address.toLowerCase())
+    : undefined;
+  const receipt: ClaimReceipt | null =
+    campaign && mine
+      ? {
+          campaignId: campaign.id,
+          campaignName: campaign.name,
+          token: campaign.token,
+          amount: `${formatUnits(mine.amount, campaign.decimals ?? 18)} ${campaign.tokenSymbol}`,
+          // timestamp 0 = block time not resolved (capped scan) — show the tx instead.
+          claimedAt: mine.timestamp ? fmtUnixDateTime(BigInt(mine.timestamp)) : "—",
+          tx: mine.txHash,
+          chain:
+            chains.find((c) => c.id === chainId)?.name ?? `chainId ${chainId}`,
+        }
+      : null;
 
   return (
     <div className="print-doc">

@@ -1,5 +1,4 @@
 import type { Address, Hex } from "viem";
-import { getCampaign } from "./stub";
 
 /**
  * Tax-document data layer (W11) for the W6 scaffold.
@@ -20,27 +19,6 @@ export interface ClaimReceipt {
   chain: string;
 }
 
-const fakeTx = (seed: string): Hex =>
-  `0x${seed.repeat(64).slice(0, 64)}` as Hex;
-
-/** Customer claim receipt for a campaign (tax-filing record). */
-export async function getClaimReceipt(
-  campaignId: string,
-  account?: Address,
-): Promise<ClaimReceipt | null> {
-  if (!account) return null;
-  const campaign = await getCampaign(campaignId);
-  if (!campaign) return null;
-  return {
-    campaignId: campaign.id,
-    campaignName: campaign.name,
-    token: campaign.token,
-    amount: `120 ${campaign.tokenSymbol}`,
-    claimedAt: "2026-06-12T09:14:00Z",
-    tx: fakeTx("a"),
-    chain: "Ethereum Sepolia",
-  };
-}
 
 /** Build a CSV string from a header row + data rows (RFC-4180 escaping). */
 export function toCsv(headers: string[], rows: string[][]): string {

@@ -119,22 +119,6 @@ export async function getCampaign(id: string): Promise<Campaign | undefined> {
   return CAMPAIGNS.find((c) => c.id === id);
 }
 
-export interface MyClaim {
-  campaignId: string;
-  campaignName: string;
-  amount: string;
-  claimed: boolean;
-}
-
-/** Pre-confirmed (Merkle) claims for the connected wallet. Empty is valid. */
-export async function listMyClaims(address?: string): Promise<MyClaim[]> {
-  if (!address) return [];
-  return [
-    // Campaign 1 already claimed (has a receipt); campaign 2 still available.
-    { campaignId: "1", campaignName: "Acme Loyalty Drop", amount: "120 ACME", claimed: true },
-    { campaignId: "2", campaignName: "DAO Contributor Snapshot", amount: "80 DAO", claimed: false },
-  ];
-}
 
 export interface Eligibility {
   eligible: boolean;
