@@ -4,6 +4,10 @@ import { POP_CHIP } from "@/components/pop";
 /**
  * Pop design-system micro-components — the JSX siblings of the class recipes
  * in pop.ts (kept separate so that module stays a plain string library).
+ *
+ * CONTRACT: server-safe. No hooks, no "use client", no browser APIs — server
+ * components (e.g. the landing page) import from here, so everything must be
+ * pure presentational JSX. Anything stateful belongs in its own client file.
  */
 
 /** Ink chip with the signature pulsing mint dot (ACTIVE / LIVE / AVAILABLE). */

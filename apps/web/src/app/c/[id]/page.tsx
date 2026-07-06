@@ -119,7 +119,7 @@ export default function CampaignDetailPage({
                   {campaign.name}
                 </h1>
                 <p className="text-xs text-ink/60 font-mono">
-                  Operator:{" "}
+                  Distributed by{" "}
                   <span className="text-ink">
                     {campaign.operator.slice(0, 10)}…{campaign.operator.slice(-8)}
                   </span>
@@ -154,7 +154,7 @@ export default function CampaignDetailPage({
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <AddressField
-                  label="Airdrop Token"
+                  label="Distribution Token"
                   value={campaign.token}
                   href={explorerUrl(currentChain, "address", campaign.token)}
                 />

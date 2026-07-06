@@ -179,7 +179,7 @@ export default function AnnouncementPage() {
           <ShareCard
             heading="Share this announcement"
             description="Let eligible wallets know a drop is coming."
-            shareText={`${a.title} — upcoming airdrop on scatter.drop. ${fmtExpectedWindow(a)}.`}
+            shareText={`${a.title} — upcoming drop on scatter.drop. ${fmtExpectedWindow(a)}.`}
           />
           <OperatorActions id={a.id} operator={a.operator} canceled={a.canceled} />
         </div>
