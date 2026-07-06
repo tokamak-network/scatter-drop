@@ -13,7 +13,7 @@ const linkCls = "text-sky-500 hover:text-sky-400 underline underline-offset-2 tr
 
 // Headings demote one level (the page owns the real <h1>) and differ only in
 // tag + classes.
-const h = (Tag: "h2" | "h3" | "h4" | "h5" | "h6" | "p", cls: string) =>
+const h = (Tag: "h2" | "h3" | "h4" | "h5" | "h6", cls: string) =>
   function Heading({ children }: { children?: ReactNode }) {
     return <Tag className={cls}>{children}</Tag>;
   };
@@ -24,7 +24,9 @@ const components: Components = {
   h3: h("h4", "text-sm font-bold text-slate-200 pt-1"),
   h4: h("h5", "text-sm font-semibold text-slate-200"),
   h5: h("h6", "text-sm font-semibold text-slate-300"),
-  h6: h("p", "text-sm font-semibold text-slate-400"),
+  // h5/h6 both land on <h6> — there is no h7, and a real heading element
+  // keeps the outline navigable for screen readers.
+  h6: h("h6", "text-sm font-semibold text-slate-400"),
   // In-app links keep client-side routing; everything else (including
   // protocol-relative //host, which "/" alone would misclassify) opens in a
   // new tab with an opener guard.
@@ -60,6 +62,9 @@ const components: Components = {
     <blockquote className="border-l-2 border-slate-700 pl-3 text-slate-400">{children}</blockquote>
   ),
   hr: () => <hr className="border-slate-800" />,
+  // Images are disabled: operator markdown must not trigger remote requests
+  // (tracking pixels). The alt text renders in place so content isn't lost.
+  img: ({ alt }) => (alt ? <span className="text-slate-500 italic">[image: {alt}]</span> : null),
   table: ({ children }) => (
     <div className="overflow-x-auto">
       <table className="text-xs border-collapse">{children}</table>
