@@ -55,8 +55,12 @@ export function EmptyBox({
 /** Full-page centered spinner shown while a page's primary query resolves. */
 export function PageSpinner() {
   return (
-    <div className="flex items-center justify-center p-12 text-ink/40">
-      <Loader2 className="w-6 h-6 animate-spin" />
+    <div
+      role="status"
+      aria-label="Loading"
+      className="flex items-center justify-center p-12 text-ink/40"
+    >
+      <Loader2 aria-hidden="true" className="w-6 h-6 animate-spin" />
     </div>
   );
 }
