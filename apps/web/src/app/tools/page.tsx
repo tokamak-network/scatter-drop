@@ -245,7 +245,9 @@ export default function ToolsPage() {
     }
     return d;
   }, [rows]);
-  const canUse = dist.count > 0 && !badAddr && !capInvalid && dupCount === 0;
+  // tokenOk gate: amounts scale by the selected token's decimals and the
+  // export states its unit — without a token both would be guesses.
+  const canUse = tokenOk && dist.count > 0 && !badAddr && !capInvalid && dupCount === 0;
 
   const human = (bi: bigint) => formatUnits(bi, dec);
   const totalLabel = `${human(dist.total)} ${unit}`;
@@ -538,6 +540,9 @@ export default function ToolsPage() {
               Airdrop
               <span className="ml-2 text-xs font-normal text-slate-400">
                 {dist.count.toLocaleString()} recipients · total {totalLabel}
+                {!tokenOk && (
+                  <span className="text-amber-600"> · select the airdrop token above</span>
+                )}
                 {badAddr && <span className="text-amber-600"> · fix invalid address(es)</span>}
                 {dupCount > 0 && (
                   <span className="text-amber-600"> · {dupCount} duplicate address(es)</span>
