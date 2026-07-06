@@ -82,6 +82,21 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       );
     }
     parsed.value.tokenAddress = canonical;
+  } else if (
+    row.drop &&
+    parsed.value.drop !== null &&
+    parsed.value.tokenAddress !== undefined &&
+    parsed.value.tokenAddress !== row.tokenAddress
+  ) {
+    // Once a drop is linked, its token is fixed: a later patch that touches
+    // ONLY tokenAddress (drop unchanged / omitted, not being unlinked) must
+    // not repoint the chip to another token. row.tokenAddress is already the
+    // canonical value the link-time check stored, so re-deriving it on-chain
+    // would just burn an RPC round-trip for the same answer.
+    return NextResponse.json(
+      { error: "tokenAddress is fixed to the linked drop's on-chain token" },
+      { status: 400 },
+    );
   }
   // Reopening (canceled → open) takes a board slot back, so it must pass the
   // same caps as POST — otherwise cancel + repost + reopen multiplies an
