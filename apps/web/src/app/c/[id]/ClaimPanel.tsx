@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useAccount, useChainId } from "wagmi";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEligibility } from "@/lib/proofs";
-import { formatUnits, zeroAddress, type TransactionReceipt } from "viem";
+import { zeroAddress, type TransactionReceipt } from "viem";
 import {
   buildClaimRequest,
   isVerificationValid,
@@ -48,10 +48,11 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
     gateOff ? undefined : campaign.identityRegistry,
     address,
   );
-  const { data: claimedOnChain, isLoading: claimLoading } = useIsClaimed(
-    campaign.drop,
-    elig?.claim?.index,
-  );
+  const {
+    data: claimedOnChain,
+    isLoading: claimLoading,
+    refetch: refetchClaimed,
+  } = useIsClaimed(campaign.drop, elig?.claim?.index);
 
   // The connected wallet's own Claimed event supplies the revisit state's
   // amount/timestamp/hash. Gate the (RPC-heavy) log scan on having actually
@@ -66,12 +67,14 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
     return claimEvents.findLast((e) => e.account === me);
   }, [claimEvents, address]);
 
-  // On confirmation, surface the hash and refresh this campaign's pool stats +
-  // claim scan so Distributed/Remaining and the revisit state update instantly.
+  // On confirmation, surface the hash and refresh this campaign's pool stats,
+  // claim scan, and the on-chain isClaimed flag so Distributed/Remaining and
+  // the claimed state stay correct after navigating away and back.
   const onClaimConfirmed = (receipt: TransactionReceipt) => {
     setJustClaimedHash(receipt.transactionHash);
     queryClient.invalidateQueries({ queryKey: ["campaignStats", chainId, campaign.drop] });
     queryClient.invalidateQueries({ queryKey: ["claimEvents", chainId, campaign.drop] });
+    void refetchClaimed();
   };
 
   const verified =
@@ -80,9 +83,11 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
   const notStarted = campaign.startTimeUnix > now;
   const ended = now > campaign.deadlineUnix;
   const windowOpen = !notStarted && !ended;
-  const amount = elig?.claim
-    ? `${formatUnits(BigInt(elig.claim.amount), campaign.decimals ?? 18)} ${campaign.tokenSymbol}`
-    : null;
+  // Amount + symbol in the campaign's decimals, formatted once so the
+  // eligibility card, the claim button, and the success panel never disagree.
+  const withSymbol = (raw: bigint) =>
+    `${formatAmount(raw, campaign.decimals ?? 18)} ${campaign.tokenSymbol}`;
+  const amount = elig?.claim ? withSymbol(BigInt(elig.claim.amount)) : null;
 
   // Stay in a loading state until the async checks resolve, so we don't flash
   // "Not eligible" / enable Claim prematurely.
@@ -140,9 +145,7 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
   const claimedHash = justClaimedHash ?? myClaim?.txHash;
   // Amount to celebrate: the eligibility proof's figure (present pre-claim, so
   // it survives a same-session claim), else the on-chain event's amount.
-  const claimedAmount =
-    amount ??
-    (myClaim ? `${formatAmount(myClaim.amount, campaign.decimals ?? 18)} ${campaign.tokenSymbol}` : null);
+  const claimedAmount = amount ?? (myClaim ? withSymbol(myClaim.amount) : null);
 
   const claimLabel = isLoading
     ? "Checking eligibility…"
