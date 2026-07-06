@@ -297,7 +297,7 @@ export default function ToolsPage() {
   };
 
   const confirmExport = () => {
-    downloadCsv("scatter-drop-airdrop.csv", `${buildCsv(includeBalance)}\n`);
+    downloadCsv("scatter-drop-distribution.csv", `${buildCsv(includeBalance)}\n`);
     setExportOpen(false);
   };
   const copyCsv = () => {
@@ -416,11 +416,11 @@ export default function ToolsPage() {
 
       {step === 2 && (
         <div className="space-y-4">
-          {/* Airdrop token */}
+          {/* Distribution token */}
           <div className={`bg-white p-5 space-y-2 ${POP_PANEL}`}>
-            <h2 className="text-sm font-bold text-ink">Airdrop token</h2>
+            <h2 className="text-sm font-bold text-ink">Distribution token</h2>
             <p className="text-[11px] text-ink/50">
-              Choose the token you will distribute — only admin allow-listed tokens can be airdropped
+              Choose the token you will distribute — only admin allow-listed tokens can be distributed
               on-chain. Amounts are entered in whole tokens and scaled by the decimals.
             </p>
             <select
@@ -498,7 +498,7 @@ export default function ToolsPage() {
                 </Field>
                 {perWalletBase !== null && dist.count > 0 && (
                   <p className="text-[11px] text-ink/60">
-                    Total airdrop ={" "}
+                    Total distribution ={" "}
                     <span className="font-mono font-bold text-ink">
                       {human(dist.total)} {unit}
                     </span>{" "}
@@ -542,14 +542,14 @@ export default function ToolsPage() {
 
           </div>
 
-          {/* Airdrop preview */}
+          {/* Distribution preview */}
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-bold text-ink mr-auto">
-              Airdrop
+              Distribution
               <span className="ml-2 text-xs font-normal text-ink/60">
                 {dist.count.toLocaleString()} recipients · total {totalLabel}
                 {!tokenOk ? (
-                  <span className="text-amber-600"> · select the airdrop token above</span>
+                  <span className="text-amber-600"> · select the distribution token above</span>
                 ) : decData == null ? (
                   <span className="text-amber-600"> · reading token decimals…</span>
                 ) : null}
@@ -587,7 +587,7 @@ export default function ToolsPage() {
                   <th className="w-10 px-3 py-2 text-right">#</th>
                   <th className="px-3 py-2">Address</th>
                   <th className="px-3 py-2 w-56">Balance (base units)</th>
-                  <th className="px-3 py-2 w-56 text-right">Airdrop amount</th>
+                  <th className="px-3 py-2 w-56 text-right">Distribution amount</th>
                   <th className="w-10 px-2 py-2"></th>
                 </tr>
               </thead>
