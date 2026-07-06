@@ -155,8 +155,10 @@ function CreationTx({ hash }: { hash: Hex }) {
  * Persistent nag for CSV campaigns whose recipient list has no on-chain
  * anchor — the anchor is the only serverless recovery path for a CSV list,
  * so it's REQUIRED before the claim window opens. Renders nothing while the
- * anchor scan is unresolved (or errored) so it can't false-alarm, and for
- * non-CSV types (their lists are reproducible from their on-chain source).
+ * anchor scan is pending (no false alarm) and for non-CSV types (their lists
+ * are reproducible from their on-chain source). A failed scan still shows an
+ * "unknown status" variant — silence would hide a required step — without
+ * claiming "not anchored".
  */
 function AnchorNag({
   campaign,
@@ -165,20 +167,33 @@ function AnchorNag({
   campaign: Campaign;
   onGoToProofs: () => void;
 }) {
-  const { data: anchoredCid, isSuccess } = useProofsAnchorCid(campaign);
-  if (!anchorRequired(campaign.type) || !isSuccess || anchoredCid) return null;
+  const { data: anchoredCid, isSuccess, isError } = useProofsAnchorCid(campaign);
+  if (!anchorRequired(campaign.type) || (!isSuccess && !isError) || anchoredCid) {
+    return null;
+  }
   return (
     <div className="rounded-2xl border-2 border-amber-500 bg-amber-50 p-4 flex items-start gap-2.5">
       <TriangleAlert className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
       <p className="text-xs font-medium text-amber-700 leading-relaxed">
-        Recipient list not anchored on-chain — required for CSV campaigns, or
-        claimers can&apos;t recover the list without this app&apos;s server.{" "}
+        {isError ? (
+          <>
+            Could not check whether the recipient list is anchored on-chain
+            (RPC error) — anchoring is required for CSV campaigns, so verify in
+            the{" "}
+          </>
+        ) : (
+          <>
+            Recipient list not anchored on-chain — required for CSV campaigns,
+            or claimers can&apos;t recover the list without this app&apos;s
+            server. Anchor it in the{" "}
+          </>
+        )}
         <button
           type="button"
           onClick={onGoToProofs}
           className="underline font-bold hover:text-amber-900 transition"
         >
-          Anchor it in the Proofs tab
+          Proofs tab
         </button>{" "}
         before the claim window opens (you can re-pin and re-anchor an updated
         list until then).
