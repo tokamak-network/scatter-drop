@@ -16,7 +16,15 @@ import {
 } from "lucide-react";
 import { AnnouncementCard } from "@/components/AnnouncementCard";
 import { NetworkFilter, usePickedChain } from "@/components/NetworkFilter";
-import { inkBtnClass, pillClass, POP_CARD, POP_CHIP, POP_PANEL } from "@/components/pop";
+import {
+  inkBtnClass,
+  pillClass,
+  POP_CARD,
+  POP_CHIP,
+  POP_PANEL,
+  popInputClass,
+  whiteBtnClass,
+} from "@/components/pop";
 import { PopHero } from "@/components/PopHero";
 import { EmptyBox } from "@/components/states";
 import { useAnnouncementsWithStatus } from "@/lib/announcements";
@@ -79,7 +87,7 @@ export default function CampaignsPage() {
             placeholder="Search campaigns, tokens, descriptions..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-pop-cream border-2 border-ink/15 focus:border-ink text-ink placeholder-ink/40 pl-10 pr-4 py-2 text-sm rounded-full outline-none transition"
+            className={popInputClass("pl-10 pr-4 py-2 rounded-full")}
           />
         </div>
 
@@ -114,7 +122,7 @@ export default function CampaignsPage() {
 
       {/* List */}
       {isPending ? (
-        <EmptyBox icon={<Loader2 className="w-8 h-8 text-slate-600 animate-spin" />}>
+        <EmptyBox icon={<Loader2 className="w-8 h-8 text-ink/40 animate-spin" />}>
           Loading campaigns…
         </EmptyBox>
       ) : isError ? (
@@ -122,11 +130,11 @@ export default function CampaignsPage() {
           Could not load campaigns. Is the fork running?
         </EmptyBox>
       ) : campaigns.length === 0 ? (
-        <EmptyBox icon={<AlertCircle className="w-8 h-8 text-slate-600" />}>
+        <EmptyBox icon={<AlertCircle className="w-8 h-8 text-ink/40" />}>
           No campaigns on-chain yet. Be the first to launch one.
         </EmptyBox>
       ) : filtered.length === 0 ? (
-        <EmptyBox icon={<Search className="w-8 h-8 text-slate-600" />}>
+        <EmptyBox icon={<Search className="w-8 h-8 text-ink/40" />}>
           No campaigns match your search or filters.
         </EmptyBox>
       ) : (
@@ -157,7 +165,7 @@ function UpcomingStrip({ chainId }: { chainId: number }) {
         </h2>
         <Link
           href="/upcoming"
-          className="text-[11px] font-bold text-ink bg-white border-2 border-ink/20 hover:border-ink rounded-full px-3 py-1 transition flex items-center"
+          className={`text-[11px] flex items-center ${whiteBtnClass("sm")}`}
         >
           View all <ChevronRight className="w-3.5 h-3.5" />
         </Link>

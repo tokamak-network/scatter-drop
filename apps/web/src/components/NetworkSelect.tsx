@@ -3,12 +3,14 @@
 import type { ReactNode } from "react";
 import { useAccount, useChains, useSwitchChain } from "wagmi";
 import { Globe } from "lucide-react";
+import { pillClass } from "@/components/pop";
 
 /**
  * Presentational network pill row — one button per registered chain with the
- * active one highlighted. Behavior is the caller's: NetworkSelect switches
- * the wallet chain; the announcements form sets form state. `children`
- * renders trailing status/warning content inside the row.
+ * active one highlighted (pop look, same accent as the boards' NetworkFilter).
+ * Behavior is the caller's: NetworkSelect switches the wallet chain; the
+ * announcements form sets form state. `children` renders trailing
+ * status/warning content inside the row.
  */
 export function NetworkPills({
   chains,
@@ -27,8 +29,8 @@ export function NetworkPills({
   children?: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 bg-slate-900/50 border border-slate-800/60 rounded-lg px-3 py-2">
-      <span className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider text-slate-400">
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="flex items-center gap-1.5 text-[11px] font-mono font-bold uppercase tracking-wider text-ink/50">
         <Globe className="w-3.5 h-3.5" /> Network
       </span>
       {chains.map((c) => {
@@ -37,14 +39,15 @@ export function NetworkPills({
           <button
             key={c.id}
             type="button"
-            disabled={active || disabled}
-            onClick={() => onSelect(c.id)}
+            aria-pressed={active}
+            // The active pill stays focusable (keyboard users discover the
+            // current selection through it) — its click is just a no-op.
+            disabled={disabled}
+            onClick={() => {
+              if (!active) onSelect(c.id);
+            }}
             title={title?.(c, active)}
-            className={`px-2.5 py-1 rounded text-[11px] font-mono font-semibold border transition ${
-              active
-                ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/30 cursor-default"
-                : "bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-600 disabled:opacity-50"
-            }`}
+            className={pillClass(active, "bg-pop-purple", "disabled:opacity-50")}
           >
             {c.name} · {c.id}
           </button>
@@ -76,7 +79,7 @@ export function NetworkSelect() {
       title={(c, active) => (active ? "Current network" : `Switch wallet to ${c.name}`)}
     >
       {unsupported && (
-        <span className="text-[11px] text-amber-500">
+        <span className="text-[11px] font-medium text-amber-600">
           Wallet is on an unsupported network — pick one above to switch.
         </span>
       )}

@@ -22,10 +22,21 @@ export function inkBtnClass(size: keyof typeof BTN_PAD = "md"): string {
   return `${BTN_PAD[size]} font-bold text-white bg-ink hover:bg-ink/80 rounded-full transition`;
 }
 
-/** White-outline secondary CTA pill — the counterpart to inkBtnClass. */
-export function outlineBtnClass(size: keyof typeof BTN_PAD = "md"): string {
-  return `${BTN_PAD[size]} font-bold text-ink bg-white border-2 border-ink hover:bg-pop-cream rounded-full transition`;
+
+/** Secondary white pill CTA — the outline sibling of inkBtnClass. */
+export function whiteBtnClass(size: "sm" | "md" | "lg" = "md"): string {
+  const pad = size === "sm" ? "px-3 py-1" : size === "md" ? "px-3.5 py-1.5" : "px-4 py-2";
+  return `${pad} font-bold text-ink bg-white border-2 border-ink/20 hover:border-ink rounded-full transition`;
 }
+
+/** Form text-field skin. Shape (radius/padding) composes via `extra`. */
+export function popInputClass(extra = ""): string {
+  return `w-full bg-pop-cream border-2 border-ink/15 focus:border-ink text-ink placeholder-ink/40 text-sm outline-none transition ${extra}`;
+}
+
+/** Form field label. */
+export const POP_LABEL =
+  "block text-[11px] font-mono font-bold uppercase tracking-wider text-ink/50 mb-1.5";
 
 /** Tiny status/type chip core — skin (colors) composes on top, e.g. STATUS_STYLES. */
 export const POP_CHIP = "text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border";

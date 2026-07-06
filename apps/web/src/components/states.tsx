@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { POP_PANEL } from "@/components/pop";
 
 export function EmptyState({
   title,
@@ -39,9 +40,9 @@ export function EmptyBox({
   icon?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center p-12 bg-slate-950 border border-slate-800 rounded-xl text-center space-y-3">
+    <div className={`flex flex-col items-center justify-center p-12 bg-white text-center space-y-3 ${POP_PANEL}`}>
       {icon}
-      <p className="text-slate-400 text-sm max-w-sm">{children}</p>
+      <p className="text-ink/60 text-sm max-w-sm">{children}</p>
     </div>
   );
 }

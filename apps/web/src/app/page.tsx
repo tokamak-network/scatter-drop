@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { inkBtnClass, outlineBtnClass, POP_PANEL } from "@/components/pop";
+import { inkBtnClass, whiteBtnClass, POP_PANEL } from "@/components/pop";
 import {
   ShieldCheck,
   Fingerprint,
@@ -254,7 +254,7 @@ function CtaButtons({ className = "" }: { className?: string }) {
       </Link>
       <Link
         href="/manage/new"
-        className={`inline-flex items-center gap-2 text-sm ${outlineBtnClass("lg")}`}
+        className={`inline-flex items-center gap-2 text-sm ${whiteBtnClass("lg")}`}
       >
         Create a campaign
       </Link>
