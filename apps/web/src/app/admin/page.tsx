@@ -415,7 +415,7 @@ function NativeEthToggle({ factory }: { factory: Address }) {
               {loading ? "…" : enabled ? "ON" : "OFF"}
             </span>
           </div>
-          <p className="text-[11px] text-ink0 mt-1 max-w-md">
+          <p className="text-[11px] text-ink/50 mt-1 max-w-md">
             When on, operators can distribute native ETH (funded from their wallet,
             no wrapper) and ETH is selectable in the campaign wizard.
           </p>
@@ -461,14 +461,14 @@ function Tokens({ factory }: { factory: Address }) {
     <div className="space-y-4">
       <NativeEthToggle factory={factory} />
       <Card title="Allowed ERC-20 curation (admin)">
-      <p className="text-[11px] text-ink0">
+      <p className="text-[11px] text-ink/50">
         Curate which established assets (e.g. WETH, USDC, USDT) operators may use.
         The platform is neutral infrastructure — this is a suitability decision,
         not a securities determination.
       </p>
 
       {/* Currently allowed */}
-      <div className="rounded-lg bg-pop-cream border-2 border-ink/15/60 p-3 space-y-2">
+      <div className="rounded-lg bg-pop-cream border-2 border-ink/15 p-3 space-y-2">
         <div className="text-[10px] font-mono uppercase tracking-wider text-ink/60">
           Currently allowed ({allowedList?.length ?? 0})
         </div>
@@ -497,7 +497,7 @@ function Tokens({ factory }: { factory: Address }) {
             ))}
           </div>
         ) : (
-          <p className="text-[11px] text-ink0">
+          <p className="text-[11px] text-ink/50">
             No tokens allow-listed yet. Add one below.
           </p>
         )}
@@ -508,7 +508,7 @@ function Tokens({ factory }: { factory: Address }) {
         Add a token
       </div>
       <div className="space-y-1.5">
-        <div className="text-[10px] font-mono uppercase tracking-wider text-ink0">
+        <div className="text-[10px] font-mono uppercase tracking-wider text-ink/50">
           Quick pick (Sepolia)
         </div>
         <div className="flex flex-wrap gap-2">
@@ -548,7 +548,7 @@ function Tokens({ factory }: { factory: Address }) {
               {allowed ? "ALLOWED" : "NOT ALLOWED"}
             </span>
             {decimals !== undefined && (
-              <span className="text-ink0">· {decimals} dp</span>
+              <span className="text-ink/50">· {decimals} dp</span>
             )}
           </div>
 
@@ -589,7 +589,7 @@ function Campaigns() {
   const { data, isPending } = useCampaigns();
   if (isPending) {
     return (
-      <div className="flex items-center justify-center p-12 text-ink0">
+      <div className="flex items-center justify-center p-12 text-ink/50">
         <Loader2 className="w-6 h-6 animate-spin" />
       </div>
     );
@@ -605,13 +605,13 @@ function Campaigns() {
             className="flex justify-between items-center bg-pop-cream border-2 border-ink/15 rounded-lg p-3 text-xs hover:border-ink"
           >
             <span className="text-ink">{c.name}</span>
-            <span className="font-mono text-ink0">
+            <span className="font-mono text-ink/50">
               {airdropTypeLabel(c.type)} · {c.status}
             </span>
           </Link>
         ))}
         {campaigns.length === 0 && (
-          <p className="text-ink0 text-xs">No campaigns on-chain yet.</p>
+          <p className="text-ink/50 text-xs">No campaigns on-chain yet.</p>
         )}
       </div>
     </Card>
