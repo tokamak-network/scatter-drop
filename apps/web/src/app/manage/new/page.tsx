@@ -653,9 +653,11 @@ export default function NewCampaignPage() {
                   ))}
                 </div>
                 <p className="text-xs text-ink/50 font-mono">
-                  Eligibility is one Merkle list; the type is how the list is
-                  built (CSV, identity-gated, …). The platform fee is charged
-                  on the distribution token and shown at the final step.
+                  Recipients always come from the CSV list on the next step;
+                  the type labels how eligibility was decided (fixed list,
+                  identity-gated claims, completed tasks). The platform fee is
+                  charged on the distribution token and shown at the final
+                  step.
                 </p>
               </div>
             )}
