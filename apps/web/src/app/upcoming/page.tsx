@@ -54,7 +54,7 @@ export default function UpcomingPage() {
       </div>
 
       {isPending ? (
-        <EmptyBox icon={<Loader2 className="w-8 h-8 text-slate-600 animate-spin" />}>
+        <EmptyBox icon={<Loader2 className="w-8 h-8 text-ink/40 animate-spin" />}>
           Loading announcements…
         </EmptyBox>
       ) : isError ? (
@@ -62,7 +62,7 @@ export default function UpcomingPage() {
           Could not load announcements.
         </EmptyBox>
       ) : filtered.length === 0 ? (
-        <EmptyBox icon={<Megaphone className="w-8 h-8 text-slate-600" />}>
+        <EmptyBox icon={<Megaphone className="w-8 h-8 text-ink/40" />}>
           {items.length === 0
             ? "No drops announced yet. Operators can post one from Manage."
             : "No announcements match this filter."}
