@@ -64,6 +64,11 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
+  // req.json() accepts the literal `null` (and other non-objects) — guard so
+  // `b.chainId` can't throw a 500 on a hostile body.
+  if (typeof body !== "object" || body === null) {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
   const b = body as {
     chainId?: unknown;
     drop?: unknown;
