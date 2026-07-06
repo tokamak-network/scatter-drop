@@ -19,8 +19,14 @@ export function CopyButton({ value, label }: { value: string; label: string }) {
       type="button"
       aria-label={label}
       title={copied ? "Copied" : label}
-      onClick={() => {
-        navigator.clipboard?.writeText(value);
+      onClick={async () => {
+        // Only report "copied" when the write actually succeeded — it can
+        // reject (or clipboard can be absent) in non-secure contexts.
+        try {
+          await navigator.clipboard.writeText(value);
+        } catch {
+          return;
+        }
         setCopied(true);
         clearTimeout(timer.current);
         timer.current = setTimeout(() => setCopied(false), 1200);
