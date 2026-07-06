@@ -80,19 +80,22 @@ export async function POST(req: NextRequest) {
   for (const [k, v] of entries) {
     const key = k.toLowerCase();
     if (!LOWER_ADDR_RE.test(key)) continue;
-    if (!isValidClaim(v) || v.account.toLowerCase() !== key) {
+    // isValidClaim already bounds index/amount, so verifyClaim's leaf encoding
+    // can't throw on range — but keep it in the guard: an uncaught throw here
+    // would 500 and leak a claim-shape oracle on this unauthenticated route.
+    let ok = false;
+    try {
+      ok = isValidClaim(v) && v.account.toLowerCase() === key && verifyClaim(root as Hex, v);
+    } catch {
+      ok = false;
+    }
+    if (!ok) {
       return NextResponse.json(
-        { error: `Malformed claim for ${key}` },
+        { error: `Claim for ${key} is malformed or does not verify against the merkle root` },
         { status: 400 },
       );
     }
-    if (!verifyClaim(root as Hex, v)) {
-      return NextResponse.json(
-        { error: `Claim for ${key} does not verify against the merkle root` },
-        { status: 400 },
-      );
-    }
-    norm[key] = v;
+    norm[key] = v as ClaimProof;
   }
   const count = Object.keys(norm).length;
   // All keys were junk → nothing claimable; storing it would only let junk
@@ -101,7 +104,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No valid claims" }, { status: 400 });
   }
   const serialized = JSON.stringify(norm);
-  if (serialized.length > MAX_CLAIMS_BYTES) {
+  // Byte length as stored (UTF-8), not UTF-16 code units — .length would
+  // undercount multi-byte data and weaken the ceiling.
+  if (Buffer.byteLength(serialized, "utf8") > MAX_CLAIMS_BYTES) {
     return NextResponse.json({ error: "Claims payload too large" }, { status: 413 });
   }
   try {

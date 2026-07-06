@@ -1,6 +1,9 @@
 import { getAddress, isAddress, parseUnits } from "viem";
 import type { AirdropEntry } from "./types.js";
 
+/** Solidity uint256 ceiling — token amounts can't exceed it on-chain. */
+const UINT256_MAX = (1n << 256n) - 1n;
+
 /**
  * Parse a `(address, amount)` CSV into normalized entries.
  *
@@ -38,7 +41,11 @@ export function parseHumanAmount(amount: string, decimals: number): bigint {
   if (fraction && fraction.length > decimals) {
     throw new Error(`amount "${amount}" has more than ${decimals} decimal places`);
   }
-  return parseUnits(amount, decimals);
+  const scaled = parseUnits(amount, decimals);
+  if (scaled > UINT256_MAX) {
+    throw new Error(`amount "${amount}" exceeds uint256 max at ${decimals} decimals`);
+  }
+  return scaled;
 }
 
 export function parseCsv(text: string, opts?: { decimals?: number }): AirdropEntry[] {
@@ -75,6 +82,10 @@ export function parseCsv(text: string, opts?: { decimals?: number }): AirdropEnt
         );
       }
       amount = BigInt(amountStr!);
+      // 78 digits can still exceed 2^256-1; reject overflow explicitly.
+      if (amount > UINT256_MAX) {
+        throw new Error(`CSV line ${i + 1}: amount "${amountStr}" exceeds uint256 max`);
+      }
     } else {
       try {
         amount = parseHumanAmount(amountStr!, decimals);
