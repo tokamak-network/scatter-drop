@@ -77,11 +77,12 @@ export function ProofsPanel({
       }
       // Update in place when cached; otherwise refetch rather than seeding a
       // possibly-wrong count.
-      const prev = queryClient.getQueryData<ProofsMeta | null>(["proofsMeta", root]);
+      const metaKey = ["proofsMeta", chainId, campaign.drop] as const;
+      const prev = queryClient.getQueryData<ProofsMeta | null>(metaKey);
       if (prev) {
-        queryClient.setQueryData(["proofsMeta", root], { ...prev, cid: data.cid! });
+        queryClient.setQueryData(metaKey, { ...prev, cid: data.cid! });
       } else {
-        void queryClient.invalidateQueries({ queryKey: ["proofsMeta", root] });
+        void queryClient.invalidateQueries({ queryKey: metaKey });
       }
     } catch {
       setRepinError("Re-pin failed — please retry.");
