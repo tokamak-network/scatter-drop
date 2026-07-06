@@ -6,11 +6,10 @@ import { useAccount } from "wagmi";
 import { encodeFunctionData, type Hex } from "viem";
 import { merkleDropAbi } from "@tokamak-network/scatter-drop-sdk";
 import { AlertCircle, ArrowLeft, Download, TriangleAlert, Users } from "lucide-react";
-import { CopyButton } from "@/components/CopyButton";
+import { CopyableTxHash } from "@/components/CopyableTxHash";
 import { pillClass, POP_HEADING, POP_PANEL, whiteBtnClass } from "@/components/pop";
 import { EmptyBox, PageSpinner } from "@/components/states";
 import { TxButton } from "@/components/TxButton";
-import { TxHashLink } from "@/components/TxHashLink";
 import { anchorRequired, useCampaign, useCampaignStats } from "@/lib/campaigns";
 import { useProofsAnchorCid, useProofsMeta } from "@/lib/proofs";
 import { MetaEditor } from "./MetaEditor";
@@ -145,8 +144,7 @@ export default function ManageCampaignPage({
 function CreationTx({ hash }: { hash: Hex }) {
   return (
     <p className="text-xs text-ink/50 font-mono mt-1 flex items-center gap-1.5">
-      Created in tx <TxHashLink hash={hash} />
-      <CopyButton value={hash} label="Copy transaction hash" />
+      Created in tx <CopyableTxHash hash={hash} />
     </p>
   );
 }

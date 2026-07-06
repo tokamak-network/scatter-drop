@@ -1,20 +1,23 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useAccount } from "wagmi";
+import { useAccount, useChainId } from "wagmi";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEligibility } from "@/lib/proofs";
-import { formatUnits, zeroAddress } from "viem";
+import { zeroAddress, type TransactionReceipt } from "viem";
 import {
   buildClaimRequest,
   isVerificationValid,
 } from "@tokamak-network/scatter-drop-sdk";
-import { Check, CheckCircle2, Gift, Loader2, Minus, XCircle } from "lucide-react";
+import { Check, CheckCircle2, Gift, Loader2, Minus, PartyPopper, XCircle } from "lucide-react";
 import { ConnectGate } from "@/components/ConnectGate";
+import { CopyableTxHash } from "@/components/CopyableTxHash";
 import { POP_HEADING, POP_PANEL } from "@/components/pop";
 import { StatBox } from "@/components/popUi";
 import { TxButton } from "@/components/TxButton";
 import { useIsClaimed, useVerifiedUntil } from "@/lib/contracts";
-import { fmtUnixDateTime, useCampaignStats } from "@/lib/campaigns";
+import { formatAmount, fmtUnixDateTime, useCampaignStats, useClaimEvents } from "@/lib/campaigns";
 import type { Campaign } from "@/lib/stub";
 
 /**
@@ -25,11 +28,18 @@ import type { Campaign } from "@/lib/stub";
  */
 export function ClaimPanel({ campaign }: { campaign: Campaign }) {
   const { address } = useAccount();
+  const chainId = useChainId();
+  const queryClient = useQueryClient();
   const now = BigInt(Math.floor(Date.now() / 1000));
   const { data: stats } = useCampaignStats(campaign);
   const pct = stats?.pct ?? campaign.claimedPct;
   const startDate =
     campaign.startTimeUnix > 0n ? fmtUnixDateTime(campaign.startTimeUnix) : "now";
+
+  // Hash of the claim just confirmed this session — shows the success panel
+  // instantly, before the on-chain isClaimed read and the Claimed-event scan
+  // catch up.
+  const [justClaimedHash, setJustClaimedHash] = useState<`0x${string}` | null>(null);
 
   const { data: elig, isPending: eligLoading } = useEligibility(campaign, address);
   // W24: identityRegistry == 0 means an open campaign — no identity check.
@@ -38,10 +48,34 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
     gateOff ? undefined : campaign.identityRegistry,
     address,
   );
-  const { data: claimedOnChain, isLoading: claimLoading } = useIsClaimed(
-    campaign.drop,
-    elig?.claim?.index,
-  );
+  const {
+    data: claimedOnChain,
+    isLoading: claimLoading,
+    refetch: refetchClaimed,
+  } = useIsClaimed(campaign.drop, elig?.claim?.index);
+
+  // The connected wallet's own Claimed event supplies the revisit state's
+  // amount/timestamp/hash. Gate the (RPC-heavy) log scan on having actually
+  // claimed — the common never-claimed visit stays a single isClaimed read.
+  const { data: claimEvents } = useClaimEvents(campaign, {
+    enabled: claimedOnChain === true || justClaimedHash !== null,
+  });
+  const myClaim = useMemo(() => {
+    const me = address?.toLowerCase();
+    if (!me || !claimEvents) return undefined;
+    // Most recent matching log; self-claim means there is only one.
+    return claimEvents.findLast((e) => e.account === me);
+  }, [claimEvents, address]);
+
+  // On confirmation, surface the hash and refresh this campaign's pool stats,
+  // claim scan, and the on-chain isClaimed flag so Distributed/Remaining and
+  // the claimed state stay correct after navigating away and back.
+  const onClaimConfirmed = (receipt: TransactionReceipt) => {
+    setJustClaimedHash(receipt.transactionHash);
+    queryClient.invalidateQueries({ queryKey: ["campaignStats", chainId, campaign.drop] });
+    queryClient.invalidateQueries({ queryKey: ["claimEvents", chainId, campaign.drop] });
+    void refetchClaimed();
+  };
 
   const verified =
     gateOff ||
@@ -49,9 +83,11 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
   const notStarted = campaign.startTimeUnix > now;
   const ended = now > campaign.deadlineUnix;
   const windowOpen = !notStarted && !ended;
-  const amount = elig?.claim
-    ? `${formatUnits(BigInt(elig.claim.amount), campaign.decimals ?? 18)} ${campaign.tokenSymbol}`
-    : null;
+  // Amount + symbol in the campaign's decimals, formatted once so the
+  // eligibility card, the claim button, and the success panel never disagree.
+  const withSymbol = (raw: bigint) =>
+    `${formatAmount(raw, campaign.decimals ?? 18)} ${campaign.tokenSymbol}`;
+  const amount = elig?.claim ? withSymbol(BigInt(elig.claim.amount)) : null;
 
   // Stay in a loading state until the async checks resolve, so we don't flash
   // "Not eligible" / enable Claim prematurely.
@@ -102,6 +138,14 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
       detail: "This wallet is not in the distribution list for this campaign.",
     },
   };
+
+  // Claimed = the on-chain flag, a live confirmation this session, or the
+  // wallet's own past Claimed event (revisit after a reload / new device).
+  const claimed = claimedOnChain === true || justClaimedHash !== null || myClaim !== undefined;
+  const claimedHash = justClaimedHash ?? myClaim?.txHash;
+  // Amount to celebrate: the eligibility proof's figure (present pre-claim, so
+  // it survives a same-session claim), else the on-chain event's amount.
+  const claimedAmount = amount ?? (myClaim ? withSymbol(myClaim.amount) : null);
 
   const claimLabel = isLoading
     ? "Checking eligibility…"
@@ -156,61 +200,64 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
         </div>
       </div>
 
-      {/* Eligibility + claim */}
+      {/* Eligibility + claim — becomes a success panel once claimed. */}
       <div className={`bg-white p-6 space-y-5 ${POP_PANEL}`}>
         <h3 className={`${POP_HEADING} flex items-center gap-1.5`}>
           <Gift className="w-4 h-4 text-ink" />
-          Eligibility check
+          {claimed ? "Your claim" : "Eligibility check"}
         </h3>
 
         <ConnectGate prompt="Connect a wallet to check your eligibility.">
-          <div
-            className={`p-4 rounded-2xl border border-ink/15 flex gap-2 items-start ${
-              elig?.eligible ? "bg-pop-mint/40" : "bg-pop-cream"
-            }`}
-          >
-            {eligLoading ? (
-              <Loader2 className="w-4 h-4 text-ink/50 animate-spin shrink-0 mt-0.5" />
-            ) : elig?.eligible ? (
-              <CheckCircle2 className="w-4 h-4 text-ink shrink-0 mt-0.5" />
-            ) : (
-              <XCircle className="w-4 h-4 text-ink/40 shrink-0 mt-0.5" />
-            )}
-            <div className="text-xs space-y-0.5">
-              <div className="font-bold text-ink">
-                {ELIG_COPY[eligState].title}
-              </div>
-              <div className="text-ink/60 text-[11px] leading-snug">
-                {ELIG_COPY[eligState].detail}
-              </div>
-            </div>
-          </div>
-
-          <div className="pt-1">
-            <TxButton
-              request={claimRequest}
-              label={claimLabel}
-              primary
-              disabled={!canClaim}
-              disableWhenConfirmed
+          {claimed ? (
+            <ClaimedSuccess
+              amount={claimedAmount}
+              txHash={claimedHash}
+              claimedAt={myClaim?.timestamp}
+              justNow={justClaimedHash !== null}
+              receiptHref={`/c/${campaign.id}/receipt`}
             />
-            <ul className="mt-3 space-y-1.5 text-[11px]">
-              {!gateOff && <ReqRow ok={verified} label="Identity verified" />}
-              <ReqRow ok={!!elig?.eligible} label="On the distribution list" />
-              <ReqRow ok={windowOpen} label="Claim window open" />
-            </ul>
-            <p className="text-[11px] text-ink/50 mt-2">
-              Self-claim only — one claim per eligible wallet.
-            </p>
-            {claimedOnChain && (
-              <Link
-                href={`/c/${campaign.id}/receipt`}
-                className="text-[11px] text-ink font-bold underline mt-2 inline-block"
+          ) : (
+            <>
+              <div
+                className={`p-4 rounded-2xl border border-ink/15 flex gap-2 items-start ${
+                  elig?.eligible ? "bg-pop-mint/40" : "bg-pop-cream"
+                }`}
               >
-                Tax receipt →
-              </Link>
-            )}
-          </div>
+                {eligLoading ? (
+                  <Loader2 className="w-4 h-4 text-ink/50 animate-spin shrink-0 mt-0.5" />
+                ) : elig?.eligible ? (
+                  <CheckCircle2 className="w-4 h-4 text-ink shrink-0 mt-0.5" />
+                ) : (
+                  <XCircle className="w-4 h-4 text-ink/40 shrink-0 mt-0.5" />
+                )}
+                <div className="text-xs space-y-0.5">
+                  <div className="font-bold text-ink">{ELIG_COPY[eligState].title}</div>
+                  <div className="text-ink/60 text-[11px] leading-snug">
+                    {ELIG_COPY[eligState].detail}
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-1">
+                <TxButton
+                  request={claimRequest}
+                  label={claimLabel}
+                  primary
+                  disabled={!canClaim}
+                  disableWhenConfirmed
+                  onConfirmed={onClaimConfirmed}
+                />
+                <ul className="mt-3 space-y-1.5 text-[11px]">
+                  {!gateOff && <ReqRow ok={verified} label="Identity verified" />}
+                  <ReqRow ok={!!elig?.eligible} label="On the distribution list" />
+                  <ReqRow ok={windowOpen} label="Claim window open" />
+                </ul>
+                <p className="text-[11px] text-ink/50 mt-2">
+                  Self-claim only — one claim per eligible wallet.
+                </p>
+              </div>
+            </>
+          )}
         </ConnectGate>
       </div>
 
@@ -240,6 +287,62 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
           check other campaigns on Explore.
         </p>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Post-claim success panel: the celebratory amount, the claim's tx hash (as an
+ * explorer link plus a copy button — the local fork has no explorer, so copy is
+ * the fallback), and a receipt link. Reused for both the just-confirmed moment
+ * and the revisit state (an earlier claim, resolved from the Claimed event).
+ */
+function ClaimedSuccess({
+  amount,
+  txHash,
+  claimedAt,
+  justNow,
+  receiptHref,
+}: {
+  amount: string | null;
+  txHash?: `0x${string}`;
+  /** Unix seconds of the claim block; 0/undefined when not resolved. */
+  claimedAt?: number;
+  justNow: boolean;
+  receiptHref: string;
+}) {
+  const when = claimedAt ? fmtUnixDateTime(BigInt(claimedAt)) : null;
+  return (
+    <div className="bg-pop-mint/50 border border-ink/15 rounded-2xl p-4 space-y-3">
+      <div className="flex items-start gap-2">
+        <PartyPopper className="w-5 h-5 text-ink shrink-0 mt-0.5" />
+        <div className="space-y-0.5">
+          <div className="font-bold text-ink text-sm">
+            {amount ? `Claimed ${amount}` : "Claimed"} <Check className="inline w-4 h-4" />
+          </div>
+          <div className="text-[11px] text-ink/60 leading-snug">
+            {justNow
+              ? "The tokens are in your wallet."
+              : when
+                ? `You claimed on ${when}.`
+                : "You already claimed this drop."}
+          </div>
+        </div>
+      </div>
+
+      {txHash && (
+        <div className="flex items-center gap-2 text-[11px] bg-white/70 border border-ink/15 rounded-xl px-3 py-2">
+          <span className="text-ink/50 font-mono shrink-0">tx</span>
+          <CopyableTxHash hash={txHash} />
+        </div>
+      )}
+
+      <Link
+        href={receiptHref}
+        className="text-[11px] text-ink font-bold underline inline-block"
+      >
+        Tax receipt →
+      </Link>
     </div>
   );
 }
