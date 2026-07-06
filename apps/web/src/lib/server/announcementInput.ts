@@ -102,7 +102,12 @@ export function parseAnnouncementPatch(body: unknown): Result<AnnouncementPatch>
     patch.tokenSymbol = s || null;
   }
   if (b.tokenAddress !== undefined) {
-    const s = typeof b.tokenAddress === "string" ? b.tokenAddress.trim().toLowerCase() : "";
+    // Only a string (or explicit null to clear) is accepted — coercing a
+    // non-string to "clear" would silently mask client bugs on PATCH.
+    if (b.tokenAddress !== null && typeof b.tokenAddress !== "string") {
+      return { error: "Invalid tokenAddress" };
+    }
+    const s = (b.tokenAddress ?? "").trim().toLowerCase();
     if (s && !LOWER_ADDR_RE.test(s)) return { error: "Invalid tokenAddress" };
     patch.tokenAddress = s || null;
   }
