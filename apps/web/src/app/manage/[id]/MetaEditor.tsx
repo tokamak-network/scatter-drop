@@ -84,25 +84,31 @@ export function MetaEditor({ campaign }: { campaign: Campaign }) {
 
   return (
     <div className={`bg-white p-5 space-y-3 max-w-xl ${POP_PANEL}`}>
-      <label className={POP_LABEL}>
-        Name
+      <div>
+        <label htmlFor="meta-name" className={POP_LABEL}>
+          Name
+        </label>
         <input
+          id="meta-name"
           value={name}
           onChange={(e) => setName(e.target.value)}
           maxLength={80}
-          className={popInputClass("mt-1 px-3 py-2 rounded-xl")}
+          className={popInputClass("px-3 py-2 rounded-xl")}
         />
-      </label>
-      <label className={POP_LABEL}>
-        Description
+      </div>
+      <div>
+        <label htmlFor="meta-description" className={POP_LABEL}>
+          Description
+        </label>
         <textarea
+          id="meta-description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           maxLength={400}
           rows={2}
-          className={popInputClass("mt-1 px-3 py-2 rounded-xl")}
+          className={popInputClass("px-3 py-2 rounded-xl")}
         />
-      </label>
+      </div>
       <div className="flex items-center gap-2">
         <button
           type="button"
