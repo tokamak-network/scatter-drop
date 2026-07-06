@@ -21,6 +21,13 @@ import {
 } from "lucide-react";
 import { AnnouncementStatusChip } from "@/components/AnnouncementCard";
 import { Markdown } from "@/components/Markdown";
+import {
+  inkBtnClass,
+  whiteBtnClass,
+  POP_CHIP,
+  POP_PANEL,
+  POP_HEADING,
+} from "@/components/pop";
 import { ShareCard } from "@/components/ShareCard";
 import {
   announcementStatus,
@@ -50,7 +57,7 @@ export default function AnnouncementPage() {
 
   if (isPending) {
     return (
-      <div className="flex items-center justify-center gap-2 p-16 text-slate-500 text-sm font-mono">
+      <div className="flex items-center justify-center gap-2 p-16 text-ink/50 text-sm font-mono">
         <Loader2 className="w-5 h-5 animate-spin" /> Loading announcement…
       </div>
     );
@@ -58,9 +65,9 @@ export default function AnnouncementPage() {
   if (isError || !a) {
     return (
       <div className="flex flex-col items-center justify-center p-16 space-y-4 text-center">
-        <AlertCircle className="w-8 h-8 text-red-500" />
-        <p className="text-slate-400 text-sm">Announcement not found.</p>
-        <Link href="/upcoming" className="text-sky-500 text-xs font-mono hover:underline">
+        <AlertCircle className="w-8 h-8 text-rose-500" />
+        <p className="text-ink/60 text-sm">Announcement not found.</p>
+        <Link href="/upcoming" className={`text-xs ${inkBtnClass("md")}`}>
           ← Back to Upcoming Drops
         </Link>
       </div>
@@ -73,7 +80,7 @@ export default function AnnouncementPage() {
     <div className="space-y-6 animate-fade-in">
       <Link
         href="/upcoming"
-        className="inline-flex items-center gap-1.5 text-xs font-mono text-slate-400 hover:text-slate-200 transition"
+        className="inline-flex items-center gap-1.5 text-xs font-mono font-bold text-ink/60 hover:text-ink transition"
       >
         <ArrowLeft className="w-3.5 h-3.5" /> Upcoming Drops
       </Link>
@@ -81,20 +88,21 @@ export default function AnnouncementPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         {/* Main column */}
         <div className="lg:col-span-2 space-y-6">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
+          {/* Sky is the announcement accent (matches the board's UPCOMING tone). */}
+          <div className={`bg-pop-sky p-6 space-y-4 ${POP_PANEL}`}>
             <div className="flex items-center justify-between gap-3">
               <AnnouncementStatusChip status={status} />
               <div className="flex items-center gap-2">
                 {a.tokenSymbol && (
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded border uppercase tracking-wide bg-slate-950 text-slate-400 border-slate-800">
+                  <span className={`${POP_CHIP} uppercase tracking-wide bg-white/80 text-ink border-ink/25`}>
                     {a.tokenSymbol}
                   </span>
                 )}
                 <TokenAddressChip tokenAddress={a.tokenAddress} chain={announcementChain} />
               </div>
             </div>
-            <h1 className="text-xl font-bold text-slate-50 leading-tight">{a.title}</h1>
-            <div className="flex flex-wrap gap-x-6 gap-y-2 text-[11px] text-slate-400 font-mono">
+            <h1 className="font-chunk text-2xl md:text-3xl text-ink leading-tight">{a.title}</h1>
+            <div className="flex flex-wrap gap-x-6 gap-y-2 text-[11px] text-ink/70 font-mono">
               <span className="flex items-center gap-1.5">
                 <CalendarClock className="w-3.5 h-3.5" /> Expected: {fmtExpectedWindow(a)}
               </span>
@@ -108,7 +116,9 @@ export default function AnnouncementPage() {
               </span>
               <AddToCalendar a={a} />
             </div>
-            <div className="border-t border-slate-800/80 pt-4">
+            {/* Body sits on its own white card so the markdown text keeps full
+                contrast on the sky panel. */}
+            <div className="bg-white/80 border border-ink/15 rounded-2xl p-4">
               <Markdown>{a.body}</Markdown>
             </div>
             {a.links.length > 0 && (
@@ -119,9 +129,9 @@ export default function AnnouncementPage() {
                     href={l.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-200 text-xs font-semibold px-3 py-1.5 rounded-lg transition"
+                    className={`inline-flex items-center gap-1.5 text-xs ${whiteBtnClass("md")}`}
                   >
-                    <ExternalLink className="w-3.5 h-3.5 text-slate-400" /> {l.label}
+                    <ExternalLink className="w-3.5 h-3.5 text-ink/50" /> {l.label}
                   </a>
                 ))}
               </div>
@@ -132,18 +142,16 @@ export default function AnnouncementPage() {
               from the announcement's chain regardless of the wallet; only the
               claim CTA needs the wallet on the right network. */}
           {a.drop && (
-            <div className="bg-slate-900 border border-emerald-500/20 rounded-xl p-6 space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">
-                Campaign is on-chain
-              </h3>
+            <div className={`bg-pop-mint p-6 space-y-3 ${POP_PANEL}`}>
+              <h3 className={POP_HEADING}>Campaign is on-chain</h3>
               {campaign ? (
-                <p className="text-xs text-slate-400 leading-relaxed">
+                <p className="text-xs text-ink/70 leading-relaxed">
                   Claim window:{" "}
                   {campaign.startTimeUnix === 0n ? "open" : fmtUnixDateTime(campaign.startTimeUnix)} →{" "}
                   {campaign.deadline}
                 </p>
               ) : (
-                <p className="text-xs text-slate-500 font-mono">
+                <p className="text-xs text-ink/60 font-mono">
                   Resolving campaign {a.drop.slice(0, 10)}…
                 </p>
               )}
@@ -152,7 +160,7 @@ export default function AnnouncementPage() {
               ) : (
                 <Link
                   href={`/c/${a.drop}`}
-                  className="inline-flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-400 text-white font-semibold px-4 py-2 rounded-lg text-xs transition"
+                  className={`inline-flex items-center gap-1.5 text-xs ${inkBtnClass("md")}`}
                 >
                   View campaign & claim <ArrowUpRight className="w-3.5 h-3.5" />
                 </Link>
@@ -229,7 +237,7 @@ function AddToCalendar({ a }: { a: Announcement }) {
     : undefined;
 
   const itemCls =
-    "w-full flex items-center px-3 py-1.5 text-left text-[11px] text-slate-200 hover:bg-slate-800 transition";
+    "w-full flex items-center px-3 py-1.5 text-left text-[11px] font-semibold text-ink hover:bg-pop-sky/40 transition";
 
   return (
     <div ref={menuRef} className="relative">
@@ -240,13 +248,13 @@ function AddToCalendar({ a }: { a: Announcement }) {
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex items-center gap-1.5 text-emerald-600 hover:text-emerald-500 transition"
+        className="flex items-center gap-1.5 font-bold text-ink/70 hover:text-ink transition"
         title="Add the expected claim window to your calendar"
       >
         <CalendarPlus className="w-3.5 h-3.5" /> Add to calendar
       </button>
       {event && (
-        <div className="absolute left-0 top-full mt-1.5 z-20 min-w-44 bg-slate-900 border border-slate-800 rounded-lg shadow-xl py-1">
+        <div className="absolute left-0 top-full mt-1.5 z-20 min-w-44 bg-white border-2 border-ink rounded-2xl pop-shadow-sm py-1.5 overflow-hidden">
           <a
             href={googleCalendarUrl(event)}
             target="_blank"
@@ -294,8 +302,7 @@ function TokenAddressChip({
   chain: Chain | undefined;
 }) {
   if (!tokenAddress) return null;
-  const chipCls =
-    "text-[10px] font-mono px-2 py-0.5 rounded border bg-slate-950 text-slate-400 border-slate-800";
+  const chipCls = `${POP_CHIP} bg-white/80 text-ink/70 border-ink/25`;
   const href = explorerUrl(chain, "address", tokenAddress);
   return href ? (
     <a
@@ -303,7 +310,7 @@ function TokenAddressChip({
       target="_blank"
       rel="noopener noreferrer"
       title={tokenAddress}
-      className={`${chipCls} hover:border-slate-600 hover:text-slate-200 transition`}
+      className={`${chipCls} hover:border-ink hover:text-ink transition`}
     >
       {shortAddr(tokenAddress)}
     </a>
@@ -332,11 +339,11 @@ function SwitchNetworkCard({
   const target = chains.find((c) => c.id === targetChainId);
 
   return (
-    <div className="bg-slate-900 border border-amber-500/30 rounded-xl p-6 space-y-3">
-      <h3 className="text-xs font-bold uppercase tracking-wider text-amber-500 font-mono">
+    <div className={`bg-pop-yellow p-6 space-y-3 ${POP_PANEL}`}>
+      <h3 className="text-xs font-bold uppercase tracking-wider text-ink font-mono">
         Different network
       </h3>
-      <p className="text-xs text-slate-400 leading-relaxed">
+      <p className="text-xs text-ink/70 leading-relaxed">
         This {hasDrop ? "campaign runs" : "announcement is"} on{" "}
         {target?.name ?? `chain ${targetChainId}`}
         {hasDrop
@@ -350,7 +357,7 @@ function SwitchNetworkCard({
           // Switching needs a connected wallet (matches NetworkSelect's guard).
           disabled={isPending || !isConnected}
           title={isConnected ? undefined : "Connect a wallet first"}
-          className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-amber-950 font-semibold px-4 py-2 rounded-lg text-xs transition disabled:opacity-60"
+          className={`inline-flex items-center gap-1.5 text-xs disabled:opacity-60 disabled:pointer-events-none ${inkBtnClass("md")}`}
         >
           {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
           Switch to {target.name}
@@ -400,19 +407,16 @@ function OperatorActions({
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-3">
-      <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">
-        Operator actions
-      </h3>
+    <div className={`bg-white p-6 space-y-3 ${POP_PANEL}`}>
+      <h3 className={POP_HEADING}>Operator actions</h3>
       <button
         type="button"
         onClick={() => void act()}
         disabled={busy || saving}
-        className={`w-full flex items-center justify-center gap-2 text-xs font-semibold px-4 py-2.5 rounded-lg border transition disabled:opacity-60 ${
-          canceled
-            ? "bg-slate-950 border-slate-800 hover:border-slate-700 text-slate-200"
-            : "bg-rose-500/10 border-rose-500/30 hover:border-rose-500/60 text-rose-400"
-        }`}
+        className={`w-full flex items-center justify-center gap-2 text-xs disabled:opacity-60 disabled:pointer-events-none ${whiteBtnClass(
+          "lg",
+          canceled ? "bg-white" : "bg-pop-pink/40",
+        )}`}
       >
         {busy || saving ? (
           <Loader2 className="w-4 h-4 animate-spin" />
@@ -426,7 +430,7 @@ function OperatorActions({
           </>
         )}
       </button>
-      {error && <p className="text-[11px] text-rose-400">{error}</p>}
+      {error && <p className="text-[11px] text-rose-500">{error}</p>}
     </div>
   );
 }

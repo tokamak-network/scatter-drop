@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { useAccount } from "wagmi";
 import { WalletConnect } from "./WalletConnect";
+import { POP_PANEL } from "@/components/pop";
 import { useMounted } from "@/lib/useMounted";
 
 /**
@@ -27,8 +28,8 @@ export function ConnectGate({
   }
 
   return (
-    <div className="card" style={{ textAlign: "center" }}>
-      <p className="muted">{prompt}</p>
+    <div className={`bg-white p-8 text-center space-y-4 ${POP_PANEL}`}>
+      <p className="text-sm text-ink/60">{prompt}</p>
       <WalletConnect />
     </div>
   );
