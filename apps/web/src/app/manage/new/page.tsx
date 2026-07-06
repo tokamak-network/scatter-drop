@@ -43,6 +43,7 @@ import { anchorRequired, useAllowedTokens } from "@/lib/campaigns";
 import { findDropCreated } from "@/lib/dropScan";
 import { DRAFT_CSV_KEY } from "@/lib/draftCsv";
 import { downloadCsv } from "@/lib/download";
+import { toCsv } from "@/lib/reports";
 import { explorerUrl, shortHash } from "@/lib/explorer";
 import { patchAnnouncement, useAnnouncements } from "@/lib/announcements";
 import { publishCampaignMeta } from "@/lib/campaignMeta";
@@ -382,13 +383,17 @@ export default function NewCampaignPage() {
   const downloadRecipients = () => {
     if (!manifest || decimals === undefined) return;
     const claims = Object.values(manifest.claims) as { account: string; amount: string }[];
-    const body = claims.map((c) => `${c.account},${humanAmount(BigInt(c.amount))}`).join("\n");
-    // Printable-ASCII symbol only — an exotic on-chain symbol must not break
-    // the CSV structure or inject rows.
-    const safeUnit = unit.replace(/[^ -~]/g, "").trim() || "tokens";
+    const dataRows = claims.map((c) => [c.account, humanAmount(BigInt(c.amount))]);
+    // Data cells go through toCsv (RFC-4180 quote + formula-injection guard).
+    // The '#' note stays a plain comment (skippable on re-import); the on-chain
+    // symbol is stripped of commas/quotes/control chars so the note never needs
+    // quoting (which would drop the leading '#') and a formula char stays
+    // mid-cell after '# amounts in ' — never at a cell start.
+    const noteUnit = unit.replace(/[^ -~]/g, "").replace(/[",]/g, "").trim() || "tokens";
+    const note = `# amounts in ${noteUnit} - token units with decimals applied (not wei/base units)`;
     downloadCsv(
       `${name.trim() || "drop"}-recipients.csv`,
-      `# amounts in ${safeUnit} - token units with decimals applied (not wei/base units)\naddress,amount\n${body}\n`,
+      `${note}\r\n${toCsv(["address", "amount"], dataRows)}`,
     );
   };
 
