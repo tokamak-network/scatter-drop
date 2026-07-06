@@ -147,7 +147,14 @@ describe("parseCsv", () => {
   });
 
   it("rejects a malformed decimals option", () => {
-    expect(() => parseCsv(`${A(1)},1`, { decimals: 1.5 })).toThrow(/non-negative integer/);
-    expect(() => parseCsv(`${A(1)},1`, { decimals: -1 })).toThrow(/non-negative integer/);
+    expect(() => parseCsv(`${A(1)},1`, { decimals: 1.5 })).toThrow(/\[0, 255\]/);
+    expect(() => parseCsv(`${A(1)},1`, { decimals: -1 })).toThrow(/\[0, 255\]/);
+    expect(() => parseCsv(`${A(1)},1`, { decimals: 256 })).toThrow(/\[0, 255\]/);
+  });
+
+  it("rejects absurdly long amount digit strings (DoS guard)", () => {
+    const long = "9".repeat(79);
+    expect(() => parseCsv(`${A(1)},${long}`)).toThrow(/78 digits/);
+    expect(() => parseCsv(`${A(1)},${long}`, { decimals: 18 })).toThrow(/too many digits/);
   });
 });

@@ -19,13 +19,22 @@ import type { AirdropEntry } from "./types.js";
  * delegate to it so inputs and CSVs accept the same strings).
  */
 export function parseHumanAmount(amount: string, decimals: number): bigint {
-  if (!Number.isInteger(decimals) || decimals < 0) {
-    throw new Error(`decimals must be a non-negative integer, got ${decimals}`);
+  // Cap decimals: parseUnits pads the fraction to `decimals` chars, so an
+  // absurd value would allocate a huge string. 255 covers every real ERC-20
+  // (decimals is a uint8 on-chain).
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
+    throw new Error(`decimals must be an integer in [0, 255], got ${decimals}`);
   }
   if (!/^\d+(\.\d+)?$/.test(amount)) {
     throw new Error(`amount must be a token amount like "120" or "1.5", got "${amount}"`);
   }
-  const fraction = amount.split(".")[1];
+  const [whole, fraction] = amount.split(".");
+  // Bound the digit count: the regex is linear but a multi-million-digit
+  // integer would make the decimal→BigInt conversion (superlinear in V8) a
+  // DoS. uint256 max is 78 digits; nothing legitimate exceeds that.
+  if (whole!.length > 78) {
+    throw new Error(`amount "${amount}" has too many digits`);
+  }
   if (fraction && fraction.length > decimals) {
     throw new Error(`amount "${amount}" has more than ${decimals} decimal places`);
   }
@@ -58,9 +67,11 @@ export function parseCsv(text: string, opts?: { decimals?: number }): AirdropEnt
 
     let amount: bigint;
     if (decimals === undefined) {
-      if (!/^\d+$/.test(amountStr!)) {
+      // {1,78}: uint256 max is 78 digits; bounding the count keeps the
+      // decimal→BigInt conversion (superlinear) from being a DoS on huge input.
+      if (!/^\d{1,78}$/.test(amountStr!)) {
         throw new Error(
-          `CSV line ${i + 1}: amount must be a base-unit integer, got "${amountStr}"`,
+          `CSV line ${i + 1}: amount must be a base-unit integer (up to 78 digits), got "${amountStr}"`,
         );
       }
       amount = BigInt(amountStr!);

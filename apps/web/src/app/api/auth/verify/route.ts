@@ -17,6 +17,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "message and signature required" }, { status: 400 });
   }
   try {
+    // A signed message is only single-use if we issued a nonce and enforce it.
+    // siwe.verify silently skips the nonce check when the expected value is
+    // undefined, so a fresh (nonce-less) session would accept a captured
+    // message+signature indefinitely (replay). Require the nonce to exist.
+    if (!session.nonce) {
+      return NextResponse.json(
+        { error: "No sign-in challenge in progress — request a nonce first" },
+        { status: 401 },
+      );
+    }
     const siwe = new SiweMessage(message);
     // Bind the signed message to this app's domain (the client signs
     // window.location.host) so a message signed on another site can't be
