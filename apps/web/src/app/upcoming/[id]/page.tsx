@@ -19,6 +19,7 @@ import {
   User,
 } from "lucide-react";
 import { AnnouncementStatusChip } from "@/components/AnnouncementCard";
+import { Markdown } from "@/components/Markdown";
 import { ShareCard } from "@/components/ShareCard";
 import {
   announcementStatus,
@@ -102,9 +103,9 @@ export default function AnnouncementPage() {
               </span>
               <AddToCalendar a={a} />
             </div>
-            <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-line border-t border-slate-800/80 pt-4">
-              {a.body}
-            </p>
+            <div className="border-t border-slate-800/80 pt-4">
+              <Markdown>{a.body}</Markdown>
+            </div>
             {a.links.length > 0 && (
               <div className="flex flex-wrap gap-2 pt-1">
                 {a.links.map((l) => (

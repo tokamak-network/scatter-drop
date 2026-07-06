@@ -212,6 +212,9 @@ export default function NewAnnouncementPage() {
               value={body}
               onChange={(e) => setBody(e.target.value)}
             />
+            <p className="text-[10px] text-slate-500 mt-1">
+              Markdown supported — headings, lists, links, **bold**.
+            </p>
           </div>
 
           <div className="space-y-2">
