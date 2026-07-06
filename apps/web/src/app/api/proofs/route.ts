@@ -4,7 +4,9 @@ import { verifyClaim, type ClaimProof } from "@tokamak-network/scatter-drop-sdk"
 import type { Hex } from "viem";
 import { prisma } from "@/lib/db";
 import { isChainId, LOWER_ADDR_RE, ROOT_RE } from "@/lib/server/apiInput";
+import { verifyDropOperator } from "@/lib/server/dropVerify";
 import { pinJson } from "@/lib/server/pinning";
+import { requireWallet } from "@/lib/server/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,13 +49,28 @@ function isValidClaim(c: unknown): c is ClaimProof {
 }
 
 export async function POST(req: NextRequest) {
+  // Operator-authenticated (SIWE + on-chain DropCreated ownership), like repin.
+  // Without this the store was an open write: an attacker could fill the
+  // MAX_ROOTS cap with self-consistent 1-leaf roots (availability DoS) or, now
+  // that rows are keyed by (chainId, drop), squat a victim's slot before they
+  // publish. Requiring the drop's operator closes both.
+  const wallet = await requireWallet();
+  if (!wallet) {
+    return NextResponse.json({ error: "Sign-in required" }, { status: 401 });
+  }
   let body: unknown;
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const b = body as { chainId?: unknown; drop?: unknown; root?: unknown; claims?: unknown };
+  const b = body as {
+    chainId?: unknown;
+    drop?: unknown;
+    root?: unknown;
+    txHash?: unknown;
+    claims?: unknown;
+  };
   const chainId = isChainId(b.chainId) ? b.chainId : null;
   const drop = typeof b.drop === "string" ? b.drop.toLowerCase() : null;
   const root = typeof b.root === "string" ? b.root.toLowerCase() : null;
@@ -64,6 +81,11 @@ export async function POST(req: NextRequest) {
   if (!root || !ROOT_RE.test(root)) {
     return NextResponse.json({ error: "Invalid merkleRoot" }, { status: 400 });
   }
+  // Prove the signed-in wallet is the drop's operator AND that `root` is the
+  // drop's own on-chain merkleRoot (verifyDropOperator binds both) before
+  // writing this (chainId, drop) row.
+  const rejection = await verifyDropOperator(chainId, drop, wallet, b.txHash, root);
+  if (rejection) return NextResponse.json({ error: rejection }, { status: 422 });
   // Reject arrays (typeof [] === "object") and non-objects.
   if (typeof b.claims !== "object" || b.claims === null || Array.isArray(b.claims)) {
     return NextResponse.json({ error: "Invalid claims" }, { status: 400 });
@@ -78,11 +100,9 @@ export async function POST(req: NextRequest) {
   // Null-prototype object + address-only keys: blocks prototype pollution
   // (__proto__/constructor aren't valid addresses) and junk keys. Each value
   // must be a well-formed claim whose account matches its key AND that
-  // merkle-verifies against `root`. The last check is the real defense: this
-  // endpoint is unauthenticated and first-writer-wins, so without it an
-  // attacker who sees a fresh DropCreated root could squat the immutable slot
-  // with shape-valid junk. Only the operator holds proofs that hash to their
-  // own root, so a poisoner literally cannot produce an accepted entry.
+  // merkle-verifies against `root` — defense in depth on top of the operator
+  // auth above, so even the real operator can't store a list that doesn't
+  // hash to the drop's committed root.
   const norm: Record<string, ClaimProof> = Object.create(null);
   for (const [k, v] of entries) {
     const key = k.toLowerCase();

@@ -329,20 +329,42 @@ export default function NewCampaignPage() {
     setCreatedTx(receipt.transactionHash);
     const drop = dep && findDropCreated(receipt.logs, dep.dropFactory)?.drop;
     if (drop) setCreatedDrop(drop);
-    if (manifest && dep && drop) {
-      // The returned CID (when server-side pinning is configured) feeds the
-      // anchor tx in the success checklist. The store is keyed by the vault
-      // (chainId, drop), so publish with the just-created drop address.
-      void publishProofs(dep.chainId, drop, merkleRoot, manifest.claims)
-        .then(setProofsCid)
-        .finally(() => setPinSettled(true));
-    } else {
+    // Proofs publish is now operator-authenticated (the store no longer takes
+    // anonymous writes), so it rides the same SIWE session as the meta and
+    // announcement writes below — nothing here happens before ensureSession.
+    if (!drop) {
       setPinSettled(true);
+      return;
     }
     const trimmedName = name.trim();
-    if (!drop || (!trimmedName && !linkedAnnouncementId)) return;
+    // Nothing operator-authenticated to do → don't prompt for a signature.
+    if (!manifest && !trimmedName && !linkedAnnouncementId) {
+      setPinSettled(true);
+      return;
+    }
     void ensureSession(account).then((session) => {
-      if (!session) return;
+      if (!session) {
+        // No session (user declined the signature) → the list can't be
+        // published now; the success checklist offers doing it later.
+        setPinSettled(true);
+        return;
+      }
+      if (manifest && dep) {
+        // The returned CID (when pinning is configured) feeds the anchor tx in
+        // the success checklist. Keyed by the vault (chainId, drop); the
+        // creation txHash lets the server verify ownership with one receipt read.
+        void publishProofs(
+          dep.chainId,
+          drop,
+          merkleRoot,
+          manifest.claims,
+          receipt.transactionHash,
+        )
+          .then(setProofsCid)
+          .finally(() => setPinSettled(true));
+      } else {
+        setPinSettled(true);
+      }
       if (trimmedName) {
         void publishCampaignMeta({
           chainId,

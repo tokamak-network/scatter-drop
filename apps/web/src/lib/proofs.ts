@@ -41,12 +41,13 @@ export async function publishProofs(
   drop: Address,
   root: Hex,
   claims: Record<string, unknown>,
+  txHash?: Hex,
 ): Promise<string | null> {
   try {
     const res = await fetch("/api/proofs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chainId, drop, root, claims }),
+      body: JSON.stringify({ chainId, drop, root, claims, txHash }),
     });
     if (!res.ok) return null;
     const data = (await res.json()) as { cid?: string | null };
