@@ -723,6 +723,7 @@ export default function NewCampaignPage() {
                     >
                       <input
                         type="radio"
+                        name="airdrop-type"
                         className="mt-0.5"
                         checked={type === t.value}
                         onChange={() => setType(t.value)}
@@ -760,12 +761,13 @@ export default function NewCampaignPage() {
                 )}
                 {type === AirdropType.SOCIAL && (
                   <p className="text-xs font-medium text-ink/70 bg-pop-mint/30 border-2 border-ink/10 rounded-xl px-3 py-2 leading-relaxed">
-                    Paste the quest winners exported from your platform
-                    (Galxe/Zealy). {identityRequiredEff
+                    From your quest platform (Galxe/Zealy) winners list — for now
+                    enter one <span className="font-mono">address,amount</span> per
+                    line below (assign the reward each winner gets). {identityRequiredEff
                       ? "The identity gate keeps it Sybil-resistant."
                       : "Consider keeping the identity gate on for Sybil-resistance."}{" "}
-                    A dedicated importer with per-winner amounts is coming to this
-                    step.
+                    A dedicated importer that takes an address-only winners list and
+                    assigns amounts is coming to this step.
                   </p>
                 )}
                 <Field label="Recipients CSV (address,amount per line)">
