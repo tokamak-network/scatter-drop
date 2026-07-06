@@ -42,7 +42,7 @@ export default function CampaignDetailPage({
   const chainId = useChainId();
   const chains = useChains();
   const currentChain = chains.find((c) => c.id === chainId);
-  const { data: proofsCid } = useProofsAnchorCid(campaign);
+  const { data: proofsCid } = useProofsAnchorCid(campaign ?? undefined);
 
   if (isPending) {
     return (
