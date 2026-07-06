@@ -40,12 +40,14 @@ export function NetworkPills({
             key={c.id}
             type="button"
             aria-pressed={active}
-            disabled={active || disabled}
-            onClick={() => onSelect(c.id)}
+            // The active pill stays focusable (keyboard users discover the
+            // current selection through it) — its click is just a no-op.
+            disabled={disabled}
+            onClick={() => {
+              if (!active) onSelect(c.id);
+            }}
             title={title?.(c, active)}
-            // Only inactive pills dim when disabled — the active one is a
-            // legitimate "current" marker, not an unavailable action.
-            className={pillClass(active, "bg-pop-purple", active ? "" : "disabled:opacity-50")}
+            className={pillClass(active, "bg-pop-purple", "disabled:opacity-50")}
           >
             {c.name} · {c.id}
           </button>
