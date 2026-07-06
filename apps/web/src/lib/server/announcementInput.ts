@@ -6,6 +6,7 @@ import {
   MAX_LINKS,
   MAX_SYMBOL,
   MAX_TITLE,
+  sanitizeSymbol,
 } from "@/lib/announcementLimits";
 import { isChainId, LOWER_ADDR_RE } from "./apiInput";
 
@@ -97,7 +98,10 @@ export function parseAnnouncementPatch(body: unknown): Result<AnnouncementPatch>
     patch.body = text.value;
   }
   if (b.tokenSymbol !== undefined) {
-    const s = typeof b.tokenSymbol === "string" ? b.tokenSymbol.trim() : "";
+    // Sanitize BEFORE the length check: stripping zero-width/bidi padding is
+    // what makes the cap meaningful (else a symbol could pad under the limit
+    // with invisible chars, or overflow it with them).
+    const s = typeof b.tokenSymbol === "string" ? sanitizeSymbol(b.tokenSymbol) : "";
     if (s.length > MAX_SYMBOL) return { error: `tokenSymbol too long (max ${MAX_SYMBOL} chars)` };
     patch.tokenSymbol = s || null;
   }

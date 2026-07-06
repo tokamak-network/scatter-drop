@@ -22,6 +22,7 @@ import {
   MAX_LINKS,
   MAX_SYMBOL,
   MAX_TITLE,
+  sanitizeSymbol,
 } from "@/lib/announcementLimits";
 import { useWalletSession } from "@/lib/useWalletSession";
 
@@ -107,13 +108,13 @@ export default function NewAnnouncementPage() {
         chainId,
         title: title.trim(),
         body: body.trim(),
-        // The resolved on-chain symbol (trimmed/capped like manual entry used
-        // to be); no address or no symbol() on the contract → omitted. Gated
+        // The resolved on-chain symbol (sanitized/capped, same rule the server
+        // applies); no address or no symbol() on the contract → omitted. Gated
         // on hasTokenAddress: the query cache keeps the previous address's
         // symbol alive after the field is cleared.
         tokenSymbol:
           hasTokenAddress && liveSymbol
-            ? liveSymbol.trim().slice(0, MAX_SYMBOL) || undefined
+            ? sanitizeSymbol(liveSymbol).slice(0, MAX_SYMBOL) || undefined
             : undefined,
         tokenAddress: trimmedTokenAddress || undefined,
         expectedStart: toIso(expectedStart),
@@ -215,10 +216,15 @@ export default function NewAnnouncementPage() {
                 </p>
               ) : tokenName || liveSymbol ? (
                 // Tolerate partial ERC-20s — either read alone still
-                // confirms a token lives at the address. The symbol shown
-                // here is what the announcement will carry.
+                // confirms a token lives at the address. Sanitize both here
+                // too so the preview matches the value that will be stored.
                 <p className="text-[11px] font-bold text-emerald-600 mt-1">
-                  ✓ {[tokenName, liveSymbol && `(${liveSymbol})`].filter(Boolean).join(" ")}
+                  ✓ {[
+                    tokenName && sanitizeSymbol(tokenName),
+                    liveSymbol && `(${sanitizeSymbol(liveSymbol)})`,
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
                 </p>
               ) : (
                 <p className="text-[11px] font-medium text-amber-600 mt-1">
