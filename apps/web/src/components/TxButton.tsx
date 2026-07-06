@@ -8,8 +8,18 @@ import {
   useWaitForTransactionReceipt,
 } from "wagmi";
 import type { Address, Hex, TransactionReceipt } from "viem";
-import { inkBtnClass, whiteBtnClass } from "@/components/pop";
+import { Check, Loader2, X } from "lucide-react";
+import { CopyButton } from "@/components/CopyButton";
+import { inkBtnClass, POP_STATUS_CHIP, whiteBtnClass } from "@/components/pop";
 import { TxHashLink } from "@/components/TxHashLink";
+
+type TxStatus = {
+  tone: string;
+  icon: React.ReactNode;
+  text: string;
+  /** Extra line beside the chip (the failure reason). */
+  detail?: string;
+};
 
 /**
  * Sends a prepared SDK calldata request ({to,data}) as a real transaction and
@@ -66,18 +76,56 @@ export function TxButton({
   }, [confirmed, receipt]);
 
   const busy = isPending || mining;
-  const text = isPending
-    ? "Confirm in wallet…"
-    : mining
-      ? "Pending…"
-      : confirmed
-        ? `${label} ✓`
-        : label;
+
+  // The promoted status chip: the five states are mutually exclusive (a send
+  // resolves to a hash or rejects to an error, never both, and a new send
+  // resets both), so one priority list covers them. The "✓" joins the button
+  // label only after on-chain confirmation.
+  const status = ((): TxStatus | null => {
+    const spinner = <Loader2 aria-hidden="true" className="w-4 h-4 animate-spin" />;
+    if (isPending) {
+      return {
+        tone: "bg-white border-ink/30 text-ink/70",
+        icon: spinner,
+        text: "Waiting for wallet…",
+      };
+    }
+    if (error) {
+      return {
+        tone: "bg-white border-rose-500 text-rose-600",
+        icon: <X aria-hidden="true" className="w-4 h-4" />,
+        text: "Failed",
+        detail: error.message.split("\n")[0],
+      };
+    }
+    if (reverted) {
+      return {
+        tone: "bg-white border-rose-500 text-rose-600",
+        icon: <X aria-hidden="true" className="w-4 h-4" />,
+        text: "Reverted",
+      };
+    }
+    if (confirmed) {
+      return {
+        tone: "bg-pop-mint border-ink text-ink",
+        icon: <Check aria-hidden="true" className="w-4 h-4" />,
+        text: "Confirmed",
+      };
+    }
+    if (hash) {
+      return {
+        tone: "bg-pop-sky border-ink text-ink",
+        icon: spinner,
+        text: mining ? "Pending confirmation…" : "Submitted",
+      };
+    }
+    return null;
+  })();
 
   return (
     <div>
       <button
-        className={`text-sm disabled:opacity-50 disabled:pointer-events-none ${
+        className={`inline-flex items-center gap-1.5 text-sm disabled:opacity-50 disabled:pointer-events-none ${
           primary ? inkBtnClass("md") : whiteBtnClass("md")
         }`}
         disabled={
@@ -96,31 +144,24 @@ export function TxButton({
           });
         }}
       >
-        {text}
+        {confirmed ? `${label} ✓` : label}
       </button>
-      {/* Live tx status + explorer link, shown as soon as a hash exists so the
-          user can track progress and keep the result's transaction link. */}
-      {hash && (
-        <div className="text-xs text-ink/60 mt-1">
-          <span
-            className={
-              confirmed ? "text-ink font-semibold" : reverted ? "text-rose-500 font-semibold" : undefined
-            }
-          >
-            {mining
-              ? "Pending confirmation…"
-              : confirmed
-                ? "Confirmed ✓"
-                : reverted
-                  ? "Reverted ✗"
-                  : "Submitted"}
+      {/* Live status chip + tx hash link AND copy — on explorer-less chains
+          (e.g. the local fork) copying is the only way to keep the tx id. */}
+      {status && (
+        <div role="status" className="mt-2 flex flex-wrap items-center gap-2">
+          <span className={`${POP_STATUS_CHIP} ${status.tone}`}>
+            {status.icon}
+            {status.text}
           </span>
-          {" · "}
-          <TxHashLink hash={hash} chain={currentChain} />
+          {hash && (
+            <span className="flex items-center gap-1 text-sm text-ink/70 font-mono">
+              <TxHashLink hash={hash} chain={currentChain} />
+              <CopyButton value={hash} label="Copy transaction hash" />
+            </span>
+          )}
+          {status.detail && <p className="text-sm text-rose-600">{status.detail}</p>}
         </div>
-      )}
-      {error && (
-        <div className="text-xs text-rose-500 mt-1">{error.message.split("\n")[0]}</div>
       )}
     </div>
   );
