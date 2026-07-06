@@ -384,14 +384,16 @@ export default function NewCampaignPage() {
     if (!manifest || decimals === undefined) return;
     const claims = Object.values(manifest.claims) as { account: string; amount: string }[];
     const dataRows = claims.map((c) => [c.account, humanAmount(BigInt(c.amount))]);
-    // toCsv escapes every cell (RFC-4180 quote + formula-injection guard), so
-    // the on-chain token symbol in the note — untrusted — can't break the CSV
-    // structure or execute in a spreadsheet. The '#' note stays skippable on
-    // re-import.
-    const note = `# amounts in ${unit} - token units with decimals applied (not wei/base units)`;
+    // Data cells go through toCsv (RFC-4180 quote + formula-injection guard).
+    // The '#' note stays a plain comment (skippable on re-import); the on-chain
+    // symbol is stripped of commas/quotes/control chars so the note never needs
+    // quoting (which would drop the leading '#') and a formula char stays
+    // mid-cell after '# amounts in ' — never at a cell start.
+    const noteUnit = unit.replace(/[^ -~]/g, "").replace(/[",]/g, "").trim() || "tokens";
+    const note = `# amounts in ${noteUnit} - token units with decimals applied (not wei/base units)`;
     downloadCsv(
       `${name.trim() || "drop"}-recipients.csv`,
-      `${toCsv([note], [])}\r\n${toCsv(["address", "amount"], dataRows)}`,
+      `${note}\r\n${toCsv(["address", "amount"], dataRows)}`,
     );
   };
 

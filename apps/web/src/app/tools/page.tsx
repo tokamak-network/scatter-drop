@@ -289,13 +289,17 @@ export default function ToolsPage() {
       })
       .filter((row): row is string[] => row !== null);
     const headers = withBalance ? ["address", "amount", "balance"] : ["address", "amount"];
-    // The unit note stays a leading '#' line so parseCsv/csvToRows skip it on
-    // re-import; toCsv escapes it as a single cell so the symbol's commas or
-    // formula chars can't split it into extra columns or execute.
-    const note = `# amounts in ${unit} - token units with decimals applied (not wei/base units)${
+    // The unit note stays a plain leading '#' comment so parseCsv/csvToRows
+    // skip it on re-import. The on-chain symbol is stripped of commas, quotes,
+    // and control chars, so the note never needs CSV-quoting (which would drop
+    // the leading '#') and can't split into extra cells; a formula char stays
+    // mid-cell after '# amounts in ', so no spreadsheet treats it as a formula.
+    const noteUnit = unit.replace(/[^ -~]/g, "").replace(/[",]/g, "").trim() || "tokens";
+    const note = `# amounts in ${noteUnit} - token units with decimals applied (not wei/base units)${
       withBalance ? "; balance column = source balances in base units" : ""
     }`;
-    return `${toCsv([note], [])}\r\n${toCsv(headers, dataRows)}`;
+    // Data cells still go through toCsv (RFC-4180 quote + formula-injection guard).
+    return `${note}\r\n${toCsv(headers, dataRows)}`;
   };
 
   const confirmExport = () => {
