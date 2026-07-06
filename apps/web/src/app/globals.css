@@ -1,10 +1,23 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Archivo+Black&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Space Grotesk", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  /* Chunky display face for the playful-pilot heroes (Explore/Upcoming). */
+  --font-chunk: "Archivo Black", "Space Grotesk", sans-serif;
+
+  /* Playful-pilot "pop" palette (Explore/Upcoming redesign pilot): vivid
+     pastel blocks + near-black ink, used alongside the slate/emerald system
+     until the look is rolled out (or rolled back) app-wide. */
+  --color-ink: #1a1723;
+  --color-pop-yellow: #ffd84d;
+  --color-pop-mint: #8ce8b0;
+  --color-pop-sky: #8fd3f6;
+  --color-pop-purple: #cfa9f7;
+  --color-pop-pink: #f9b8dd;
+  --color-pop-cream: #fffdf6;
 
   /* Slate palette inverted for a light theme (design spec). */
   --color-slate-50: #0f172a;
@@ -42,6 +55,14 @@ body {
 
 .animate-fade-in {
   animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Playful-pilot offset shadows — flat "sticker" depth instead of blur. */
+.pop-shadow {
+  box-shadow: 4px 4px 0 0 var(--color-ink);
+}
+.pop-shadow-sm {
+  box-shadow: 3px 3px 0 0 var(--color-ink);
 }
 
 input, select, textarea {
