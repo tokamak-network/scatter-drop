@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from "react";
 
+/** Chunky pop page header for pages that don't warrant a full PopHero. */
 export function PageHeader({
   title,
   subtitle,
@@ -10,22 +11,12 @@ export function PageHeader({
   action?: ReactNode;
 }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "flex-end",
-        justifyContent: "space-between",
-        marginBottom: 24,
-        gap: 16,
-      }}
-    >
+    <div className="flex items-end justify-between gap-4">
       <div>
-        <h1 style={{ margin: 0, fontSize: 26 }}>{title}</h1>
-        {subtitle && (
-          <p className="muted" style={{ margin: "4px 0 0" }}>
-            {subtitle}
-          </p>
-        )}
+        <h1 className="font-chunk uppercase text-3xl md:text-4xl text-ink tracking-tight">
+          {title}
+        </h1>
+        {subtitle && <p className="text-sm text-ink/60 mt-1.5">{subtitle}</p>}
       </div>
       {action}
     </div>

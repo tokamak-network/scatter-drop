@@ -1,11 +1,14 @@
 "use client";
 
 import { useAccount, useConnect, useDisconnect } from "wagmi";
+import { inkBtnClass, whiteBtnClass } from "@/components/pop";
 import { useMounted } from "@/lib/useMounted";
 
 function short(addr: string) {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 }
+
+const connectCls = `text-sm disabled:opacity-50 disabled:pointer-events-none ${inkBtnClass("md")}`;
 
 export function WalletConnect() {
   const { address, isConnected } = useAccount();
@@ -17,7 +20,7 @@ export function WalletConnect() {
   // matches the first client paint (avoids hydration mismatch).
   if (!mounted) {
     return (
-      <button className="btn btn-primary" disabled>
+      <button className={connectCls} disabled>
         Connect Wallet
       </button>
     );
@@ -25,7 +28,10 @@ export function WalletConnect() {
 
   if (isConnected && address) {
     return (
-      <button className="btn" onClick={() => disconnect()}>
+      <button
+        className={`text-sm font-mono ${whiteBtnClass("md")}`}
+        onClick={() => disconnect()}
+      >
         {short(address)}
       </button>
     );
@@ -35,7 +41,7 @@ export function WalletConnect() {
 
   return (
     <button
-      className="btn btn-primary"
+      className={connectCls}
       disabled={!injectedConnector || isPending}
       onClick={() => injectedConnector && connect({ connector: injectedConnector })}
     >

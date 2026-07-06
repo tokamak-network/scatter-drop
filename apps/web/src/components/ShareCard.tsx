@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { Check, Link as LinkIcon, Send, Share2, Twitter } from "lucide-react";
+import { POP_HEADING, POP_PANEL, whiteBtnClass } from "@/components/pop";
 
 /**
  * Share / promote the current page — copy link + one-tap social intents.
- * Standalone twin of the campaign page's inline ShareCard (that file is owned
- * by the campaign-detail stream); new surfaces should import this one.
+ * The single share surface app-wide (the campaign page's former inline twin
+ * was folded into this one during the pop rollout).
  */
 export function ShareCard({
   heading,
@@ -27,14 +28,16 @@ export function ShareCard({
     if (typeof window !== "undefined") window.open(url, "_blank", "noopener");
   }
 
+  const shareBtnCls = "flex items-center justify-center gap-2";
+
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
+    <div className={`bg-white p-6 space-y-4 ${POP_PANEL}`}>
       <div>
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono flex items-center gap-1.5">
-          <Share2 className="w-4 h-4 text-emerald-600" />
+        <h3 className={`${POP_HEADING} flex items-center gap-1.5`}>
+          <Share2 className="w-4 h-4 text-ink" />
           {heading}
         </h3>
-        <p className="text-[11px] text-slate-400 mt-1.5 leading-snug">{description}</p>
+        <p className="text-[11px] text-ink/60 mt-1.5 leading-snug">{description}</p>
       </div>
 
       <button
@@ -50,15 +53,15 @@ export function ShareCard({
             /* leave the button in its default state */
           }
         }}
-        className="w-full flex items-center justify-center gap-2 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-100 text-sm font-semibold px-4 py-2.5 rounded-lg transition"
+        className={`w-full text-sm ${shareBtnCls} ${whiteBtnClass("lg", "bg-pop-cream")}`}
       >
         {copied ? (
           <>
-            <Check className="w-4 h-4 text-emerald-600" /> Link copied
+            <Check className="w-4 h-4 text-ink" /> Link copied
           </>
         ) : (
           <>
-            <LinkIcon className="w-4 h-4 text-slate-400" /> Copy link
+            <LinkIcon className="w-4 h-4 text-ink/50" /> Copy link
           </>
         )}
       </button>
@@ -73,7 +76,7 @@ export function ShareCard({
               )}&url=${encodeURIComponent(href())}`,
             )
           }
-          className="flex items-center justify-center gap-2 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-200 text-xs font-semibold px-3 py-2 rounded-lg transition"
+          className={`text-xs ${shareBtnCls} ${whiteBtnClass("md", "bg-pop-cream")}`}
         >
           <Twitter className="w-3.5 h-3.5" /> Post on X
         </button>
@@ -86,7 +89,7 @@ export function ShareCard({
               )}&text=${encodeURIComponent(shareText)}`,
             )
           }
-          className="flex items-center justify-center gap-2 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-200 text-xs font-semibold px-3 py-2 rounded-lg transition"
+          className={`text-xs ${shareBtnCls} ${whiteBtnClass("md", "bg-pop-cream")}`}
         >
           <Send className="w-3.5 h-3.5" /> Telegram
         </button>

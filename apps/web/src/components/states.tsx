@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
-import { POP_PANEL } from "@/components/pop";
+import { inkBtnClass, POP_PANEL } from "@/components/pop";
 
 export function EmptyState({
   title,
@@ -13,20 +13,15 @@ export function EmptyState({
   action?: { href: string; label: string };
 }) {
   return (
-    <div
-      className="card"
-      style={{ textAlign: "center", padding: "48px 24px" }}
-    >
-      <h3 style={{ margin: "0 0 8px" }}>{title}</h3>
-      {description && (
-        <p className="muted" style={{ margin: "0 0 16px" }}>
-          {description}
-        </p>
-      )}
+    <div className={`bg-white px-6 py-12 text-center space-y-3 ${POP_PANEL}`}>
+      <h3 className="font-bold text-ink">{title}</h3>
+      {description && <p className="text-sm text-ink/60">{description}</p>}
       {action && (
-        <Link className="btn btn-primary" href={action.href}>
-          {action.label}
-        </Link>
+        <div className="pt-1">
+          <Link className={`inline-block text-xs ${inkBtnClass("md")}`} href={action.href}>
+            {action.label}
+          </Link>
+        </div>
       )}
     </div>
   );
@@ -67,7 +62,7 @@ export function PageSpinner() {
 
 export function Loading({ label = "Loading…" }: { label?: string }) {
   return (
-    <div className="card muted" style={{ textAlign: "center" }}>
+    <div className={`bg-white p-8 text-center text-sm text-ink/60 ${POP_PANEL}`}>
       {label}
     </div>
   );
@@ -81,12 +76,9 @@ export function ErrorState({
   children?: ReactNode;
 }) {
   return (
-    <div
-      className="card"
-      style={{ borderColor: "var(--color-danger)" }}
-    >
-      <h3 style={{ margin: "0 0 8px", color: "var(--color-danger)" }}>{title}</h3>
-      {children && <div className="muted">{children}</div>}
+    <div className={`bg-pop-pink/40 p-6 space-y-2 ${POP_PANEL}`}>
+      <h3 className="font-bold text-ink">{title}</h3>
+      {children && <div className="text-sm text-ink/70">{children}</div>}
     </div>
   );
 }

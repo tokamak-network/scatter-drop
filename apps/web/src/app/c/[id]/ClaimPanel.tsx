@@ -10,6 +10,8 @@ import {
 } from "@tokamak-network/scatter-drop-sdk";
 import { Check, CheckCircle2, Gift, Loader2, Minus, XCircle } from "lucide-react";
 import { ConnectGate } from "@/components/ConnectGate";
+import { POP_HEADING, POP_PANEL } from "@/components/pop";
+import { StatBox } from "@/components/popUi";
 import { TxButton } from "@/components/TxButton";
 import { useIsClaimed, useVerifiedUntil } from "@/lib/contracts";
 import { fmtUnixDateTime, useCampaignStats } from "@/lib/campaigns";
@@ -119,21 +121,19 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
 
   return (
     <div className="space-y-6">
-      {/* Pool */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">
-          Campaign Pool
-        </h3>
-        <div className="text-2xl font-bold text-slate-100">
+      {/* Pool — mint is the claim-group accent (matches the LIVE tone). */}
+      <div className={`bg-pop-mint p-6 space-y-4 ${POP_PANEL}`}>
+        <h3 className={POP_HEADING}>Campaign Pool</h3>
+        <div className="text-2xl font-chunk text-ink">
           {campaign.totalAmount}
         </div>
-        <div className="h-2 w-full bg-slate-950 rounded-full overflow-hidden border border-slate-800/50">
+        <div className="h-2.5 w-full bg-white/70 rounded-full overflow-hidden border border-ink/20">
           <div
-            className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all"
+            className="h-full bg-ink rounded-full transition-all"
             style={{ width: `${Math.min(100, pct)}%` }}
           />
         </div>
-        <div className="flex justify-between text-xs font-mono text-slate-500">
+        <div className="flex justify-between text-xs font-mono text-ink/60">
           <span>{pct.toFixed(pct > 0 && pct < 10 ? 1 : 0)}% distributed</span>
           <span>
             {stats
@@ -143,25 +143,11 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-lg bg-slate-950 border border-slate-800/60 px-3 py-2">
-            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500">
-              Distributed
-            </div>
-            <div className="text-sm font-semibold text-slate-100 truncate">
-              {stats?.distributed ?? "…"}
-            </div>
-          </div>
-          <div className="rounded-lg bg-slate-950 border border-slate-800/60 px-3 py-2">
-            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500">
-              Remaining
-            </div>
-            <div className="text-sm font-semibold text-slate-100 truncate">
-              {stats?.remaining ?? "…"}
-            </div>
-          </div>
+          <StatBox label="Distributed" value={stats?.distributed ?? "…"} tone="bg-white/70" />
+          <StatBox label="Remaining" value={stats?.remaining ?? "…"} tone="bg-white/70" />
         </div>
 
-        <div className="text-xs font-mono text-slate-500">
+        <div className="text-xs font-mono text-ink/60">
           {notStarted
             ? `Starts ${startDate}`
             : ended
@@ -171,26 +157,30 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
       </div>
 
       {/* Eligibility + claim */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-5">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300 font-mono flex items-center gap-1.5">
-          <Gift className="w-4 h-4 text-indigo-500" />
+      <div className={`bg-white p-6 space-y-5 ${POP_PANEL}`}>
+        <h3 className={`${POP_HEADING} flex items-center gap-1.5`}>
+          <Gift className="w-4 h-4 text-ink" />
           Eligibility check
         </h3>
 
         <ConnectGate prompt="Connect a wallet to check your eligibility.">
-          <div className="bg-slate-950 p-4 rounded-lg border border-slate-800/80 flex gap-2 items-start">
+          <div
+            className={`p-4 rounded-2xl border border-ink/15 flex gap-2 items-start ${
+              elig?.eligible ? "bg-pop-mint/40" : "bg-pop-cream"
+            }`}
+          >
             {eligLoading ? (
-              <Loader2 className="w-4 h-4 text-slate-500 animate-spin shrink-0 mt-0.5" />
+              <Loader2 className="w-4 h-4 text-ink/50 animate-spin shrink-0 mt-0.5" />
             ) : elig?.eligible ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+              <CheckCircle2 className="w-4 h-4 text-ink shrink-0 mt-0.5" />
             ) : (
-              <XCircle className="w-4 h-4 text-slate-600 shrink-0 mt-0.5" />
+              <XCircle className="w-4 h-4 text-ink/40 shrink-0 mt-0.5" />
             )}
             <div className="text-xs space-y-0.5">
-              <div className="font-bold text-slate-300">
+              <div className="font-bold text-ink">
                 {ELIG_COPY[eligState].title}
               </div>
-              <div className="text-slate-500 text-[11px] leading-snug">
+              <div className="text-ink/60 text-[11px] leading-snug">
                 {ELIG_COPY[eligState].detail}
               </div>
             </div>
@@ -209,13 +199,13 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
               <ReqRow ok={!!elig?.eligible} label="On the distribution list" />
               <ReqRow ok={windowOpen} label="Claim window open" />
             </ul>
-            <p className="text-[11px] text-slate-500 mt-2">
+            <p className="text-[11px] text-ink/50 mt-2">
               Self-claim only — one claim per eligible wallet.
             </p>
             {claimedOnChain && (
               <Link
                 href={`/c/${campaign.id}/receipt`}
-                className="text-[11px] text-emerald-600 underline mt-2 inline-block"
+                className="text-[11px] text-ink font-bold underline mt-2 inline-block"
               >
                 Tax receipt →
               </Link>
@@ -225,11 +215,9 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
       </div>
 
       {/* How to participate */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-3">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">
-          How to participate
-        </h3>
-        <ol className="space-y-1.5 text-[11px] text-slate-400 list-decimal list-inside leading-relaxed">
+      <div className={`bg-white p-6 space-y-3 ${POP_PANEL}`}>
+        <h3 className={POP_HEADING}>How to participate</h3>
+        <ol className="space-y-1.5 text-[11px] text-ink/70 list-decimal list-inside leading-relaxed">
           <li>
             Connect the wallet that&apos;s on the distribution list — the
             recipient list was fixed when the campaign was created.
@@ -243,11 +231,11 @@ export function ClaimPanel({ campaign }: { campaign: Campaign }) {
             ).
           </li>
           <li>
-            Press <span className="font-mono text-slate-300">Claim</span> — one
+            Press <span className="font-mono font-bold text-ink">Claim</span> — one
             transaction sends the tokens straight to your wallet.
           </li>
         </ol>
-        <p className="text-[11px] text-slate-500">
+        <p className="text-[11px] text-ink/50">
           Not on the list? This campaign can&apos;t be joined after creation —
           check other campaigns on Explore.
         </p>
@@ -260,11 +248,11 @@ function ReqRow({ ok, label }: { ok: boolean; label: string }) {
   return (
     <li className="flex items-center gap-2">
       {ok ? (
-        <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+        <Check className="w-3.5 h-3.5 text-ink shrink-0" />
       ) : (
-        <Minus className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+        <Minus className="w-3.5 h-3.5 text-ink/30 shrink-0" />
       )}
-      <span className={ok ? "text-slate-300" : "text-slate-400"}>{label}</span>
+      <span className={ok ? "text-ink" : "text-ink/50"}>{label}</span>
     </li>
   );
 }
