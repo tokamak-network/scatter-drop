@@ -5,14 +5,10 @@ import Link from "next/link";
 import { useAccount } from "wagmi";
 import { encodeFunctionData, type Hex } from "viem";
 import { merkleDropAbi } from "@tokamak-network/scatter-drop-sdk";
-import {
-  AlertCircle,
-  ArrowLeft,
-  Download,
-  Loader2,
-  Users,
-} from "lucide-react";
+import { AlertCircle, ArrowLeft, Download, Users } from "lucide-react";
 import { CopyButton } from "@/components/CopyButton";
+import { pillClass, POP_HEADING, POP_PANEL, whiteBtnClass } from "@/components/pop";
+import { EmptyBox, PageSpinner } from "@/components/states";
 import { TxButton } from "@/components/TxButton";
 import { TxHashLink } from "@/components/TxHashLink";
 import { useCampaign, useCampaignStats } from "@/lib/campaigns";
@@ -37,23 +33,20 @@ export default function ManageCampaignPage({
   const [tab, setTab] = useState<Tab>("Overview");
 
   if (isPending) {
-    return (
-      <div className="flex items-center justify-center p-12 text-slate-500">
-        <Loader2 className="w-6 h-6 animate-spin" />
-      </div>
-    );
+    return <PageSpinner />;
   }
   if (isError || !campaign) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 bg-slate-900 border border-slate-800 rounded-xl text-center space-y-3">
-        <AlertCircle className="w-8 h-8 text-slate-600" />
-        <p className="text-slate-400 text-sm">
-          {isError ? "Could not load campaign." : "Campaign not found."}
-        </p>
-        <Link href="/manage" className="text-emerald-600 text-sm hover:underline">
-          ← Back to console
-        </Link>
-      </div>
+      <EmptyBox
+        icon={<AlertCircle className="w-8 h-8 text-ink/40" />}
+        action={
+          <Link href="/manage" className="text-ink text-sm font-bold hover:underline">
+            ← Back to console
+          </Link>
+        }
+      >
+        {isError ? "Could not load campaign." : "Campaign not found."}
+      </EmptyBox>
     );
   }
 
@@ -69,31 +62,27 @@ export default function ManageCampaignPage({
     <div className="space-y-6 animate-fade-in">
       <Link
         href="/manage"
-        className="inline-flex items-center gap-2 text-slate-400 hover:text-slate-100 transition text-sm font-mono"
+        className="inline-flex items-center gap-2 text-ink/60 hover:text-ink transition text-sm font-bold"
       >
-        <ArrowLeft className="w-4 h-4" /> BACK TO CONSOLE
+        <ArrowLeft className="w-4 h-4" /> Back to console
       </Link>
 
       <div>
-        <h1 className="text-2xl font-bold text-slate-100 tracking-tight">
+        <h1 className="font-chunk uppercase text-2xl md:text-3xl tracking-tight text-ink">
           {campaign.name}
         </h1>
-        <p className="text-xs text-slate-500 font-mono mt-0.5">
-          {campaign.drop}
-        </p>
+        <p className="text-xs text-ink/50 font-mono mt-1">{campaign.drop}</p>
         {campaign.creationTx && <CreationTx hash={campaign.creationTx} />}
       </div>
 
-      <div className="flex flex-wrap gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800 w-fit">
+      <div className="flex flex-wrap gap-1.5 w-fit">
         {TABS.map((t) => (
           <button
             key={t}
+            type="button"
+            aria-pressed={tab === t}
             onClick={() => setTab(t)}
-            className={`px-4 py-1.5 text-xs font-mono font-medium rounded transition ${
-              tab === t
-                ? "bg-slate-800 text-slate-100"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
+            className={pillClass(tab === t, "bg-pop-yellow")}
           >
             {t}
           </button>
@@ -114,20 +103,18 @@ export default function ManageCampaignPage({
       )}
 
       {tab === "Sweep" && (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4 max-w-xl">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300 font-mono">
-            Sweep unclaimed
-          </h3>
-          <p className="text-sm text-slate-400 leading-relaxed">
+        <div className={`bg-white p-6 space-y-4 max-w-xl ${POP_PANEL}`}>
+          <h3 className={POP_HEADING}>Sweep unclaimed</h3>
+          <p className="text-sm text-ink/70 leading-relaxed">
             After the deadline, the operator can recover unclaimed tokens back to
             their wallet (MerkleDrop.sweep).
           </p>
           {!isOperator ? (
-            <p className="text-xs text-amber-600">
+            <p className="text-xs font-medium text-amber-600">
               Only the campaign operator can sweep.
             </p>
           ) : !ended ? (
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-ink/50">
               Available after the deadline ({campaign.deadline}).
             </p>
           ) : (
@@ -156,7 +143,7 @@ export default function ManageCampaignPage({
  */
 function CreationTx({ hash }: { hash: Hex }) {
   return (
-    <p className="text-xs text-slate-500 font-mono mt-1 flex items-center gap-1.5">
+    <p className="text-xs text-ink/50 font-mono mt-1 flex items-center gap-1.5">
       Created in tx <TxHashLink hash={hash} />
       <CopyButton value={hash} label="Copy transaction hash" />
     </p>
@@ -186,9 +173,11 @@ function Overview({ campaign, ended }: { campaign: Campaign; ended: boolean }) {
 
 function Kpi({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-      <div className="text-xs font-mono text-slate-500">{label}</div>
-      <div className="text-lg font-bold text-slate-100 mt-1">{value}</div>
+    <div className={`bg-white p-5 ${POP_PANEL}`}>
+      <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-ink/50">
+        {label}
+      </div>
+      <div className="text-lg font-bold text-ink mt-1">{value}</div>
     </div>
   );
 }
@@ -210,16 +199,12 @@ function Participants({ campaign }: { campaign: Campaign }) {
   } = useCampaignStats(campaign);
 
   if (metaLoading || statsLoading) {
-    return (
-      <div className="flex items-center justify-center p-12 text-slate-500">
-        <Loader2 className="w-6 h-6 animate-spin" />
-      </div>
-    );
+    return <PageSpinner />;
   }
   // A fetch failure must not masquerade as "0 claims" / "list not published".
   if (metaError || statsError) {
     return (
-      <p className="text-sm text-amber-600">
+      <p className="text-sm font-medium text-amber-600">
         Could not load participant stats — check the fork/RPC and retry.
       </p>
     );
@@ -244,24 +229,24 @@ function Participants({ campaign }: { campaign: Campaign }) {
         <Kpi label="Claim rate" value={claimRatePct !== null ? `${claimRatePct}%` : "—"} />
       </div>
       {eligible === null && (
-        <p className="text-xs text-amber-600">
+        <p className="text-xs font-medium text-amber-600">
           The recipient list isn&apos;t published, so eligible/unclaimed counts are
           unavailable — see the Proofs tab.
         </p>
       )}
       {stats && (
-        <p className="text-xs text-slate-500 font-mono">
+        <p className="text-xs text-ink/50 font-mono">
           Distributed {stats.distributed} · Remaining {stats.remaining}
         </p>
       )}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm text-slate-300">
-          <Users className="w-4 h-4 text-slate-500" />
+      <div className={`bg-white p-5 flex items-center justify-between ${POP_PANEL}`}>
+        <div className="flex items-center gap-2 text-sm text-ink/70">
+          <Users className="w-4 h-4 text-ink/50" />
           Participant breakdown &amp; distribution report
         </div>
         <Link
           href={`/manage/${campaign.id}/report`}
-          className="btn inline-flex items-center gap-1 text-xs"
+          className={`inline-flex items-center gap-1 text-xs ${whiteBtnClass("md")}`}
         >
           <Download className="w-3 h-3" /> Distribution report
         </Link>

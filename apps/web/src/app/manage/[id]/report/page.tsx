@@ -3,7 +3,7 @@
 import { use } from "react";
 import Link from "next/link";
 import { formatUnits } from "viem";
-import { Loader2 } from "lucide-react";
+import { PageSpinner } from "@/components/states";
 import { ReportActions } from "@/components/ReportActions";
 import { fmtUnixDateTime, useCampaign, useClaimEvents } from "@/lib/campaigns";
 import { toCsv } from "@/lib/reports";
@@ -29,9 +29,7 @@ export default function DistributionReportPage({
 
   if (isPending || recipientsLoading || claimsLoading) {
     return (
-      <div className="flex items-center justify-center p-12 text-slate-500">
-        <Loader2 className="w-6 h-6 animate-spin" />
-      </div>
+      <PageSpinner />
     );
   }
   if (!campaign) {
