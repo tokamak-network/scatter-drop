@@ -182,7 +182,7 @@ export default function NewAnnouncementPage() {
               id="ann-title"
               className={inputCls}
               maxLength={MAX_TITLE}
-              placeholder="ACME loyalty airdrop — season 2"
+              placeholder="ACME loyalty drop — season 2"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
             />
@@ -199,7 +199,7 @@ export default function NewAnnouncementPage() {
               }`}
               // No maxLength: it would truncate pasted addresses that carry
               // leading whitespace BEFORE the trim; isAddress gates submit.
-              placeholder="0x… (the airdropped ERC-20, if already deployed)"
+              placeholder="0x… (the distributed ERC-20, if already deployed)"
               value={tokenAddress}
               onChange={(e) => setTokenAddress(e.target.value)}
             />
