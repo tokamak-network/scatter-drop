@@ -90,7 +90,7 @@ export function StakingImport({ onRows }: { onRows: (rows: Recipient[]) => void 
     Number.isInteger(batchNum) && batchNum >= MIN_BATCH && batchNum <= MAX_BATCH;
 
   const csv = useMemo(
-    () => (result ? toCsv(["address", "amount"], result.map((r) => [r.address, r.amount])) : ""),
+    () => (result ? toCsv(["address", "balance"], result.map((r) => [r.address, r.amount])) : ""),
     [result],
   );
 
@@ -426,7 +426,7 @@ export function StakingImport({ onRows }: { onRows: (rows: Recipient[]) => void 
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => downloadCsv("stake-recipients.csv", `${csv}\n`)}
+              onClick={() => downloadCsv("stake-balances.csv", `${csv}\n`)}
               className="btn inline-flex items-center gap-1.5"
             >
               <Download className="w-3.5 h-3.5" /> Download CSV

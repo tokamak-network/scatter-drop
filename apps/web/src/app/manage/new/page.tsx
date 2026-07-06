@@ -82,17 +82,22 @@ const TYPES = [
 /**
  * Parse the recipients CSV using the SDK `parseCsv` (single source of truth) and
  * build the Merkle drop, so the wizard's tree/root/total match the SDK + claim
- * path exactly. `parseCsv` amounts are base-unit integers (wei-like, NO 18-dp
- * assumption); it and `buildDrop` throw on malformed/duplicate rows, which we
- * surface as a message instead of crashing the render.
+ * path exactly. CSV amounts are human token amounts ("1000", "1.5") — the
+ * operator's mental model — scaled to base units by the selected token's
+ * `decimals` before they're committed to the tree. `parseCsv` and `buildDrop`
+ * throw on malformed/duplicate rows, which we surface as a message instead of
+ * crashing the render.
  */
-function parseRecipients(text: string): {
+function parseRecipients(
+  text: string,
+  decimals: number,
+): {
   manifest: DropManifest | null;
   error: string | null;
 } {
   if (!text.trim()) return { manifest: null, error: null };
   try {
-    const entries = parseCsv(text);
+    const entries = parseCsv(text, { decimals });
     if (entries.length === 0) return { manifest: null, error: null };
     return { manifest: buildDrop(entries), error: null };
   } catch (e) {
@@ -140,15 +145,57 @@ export default function NewCampaignPage() {
   );
   const tierAllowed = tier !== undefined && Number(tier) === TokenTier.ALLOWED;
 
-  // Debounce parsing/Merkle build so large lists don't rebuild on every keystroke.
+  // Native ETH airdrop: the sentinel token, funded via msg.value (no approve).
+  const isNative =
+    tokenValid && (token as string).toLowerCase() === NATIVE_ETH.toLowerCase();
+
+  // Token decimals + symbol — CSV amounts are human units and scale by these.
+  // Native ETH has no ERC-20 contract, so use 18 / "ETH" directly.
+  const { data: erc20Decimals } = useErc20Decimals(
+    tokenValid && !isNative ? (token as Address) : undefined,
+  );
+  const { data: erc20Symbol } = useErc20Symbol(
+    tokenValid && !isNative ? (token as Address) : undefined,
+  );
+  // Normalize the on-chain uint8 (decoders may hand back number or bigint).
+  const decimals =
+    isNative ? 18 : erc20Decimals === undefined ? undefined : Number(erc20Decimals);
+  // Show the real token symbol instead of a generic "tokens" once it's known.
+  const unit = isNative ? "ETH" : erc20Symbol ? String(erc20Symbol) : "tokens";
+  /** Human-unit string for a base-unit value — the only dialect the wizard emits. */
+  const humanAmount = (v: bigint) =>
+    decimals !== undefined ? formatUnits(v, decimals) : v.toString();
+  const fmtAmount = (v: bigint) =>
+    decimals !== undefined ? `${humanAmount(v)} ${unit}` : `${v.toString()} base units`;
+
+  // Debounce parsing/Merkle build so large lists don't rebuild on every
+  // keystroke. Amounts are human units scaled by the token's decimals, so the
+  // build waits for them to resolve and re-runs on a token switch; the ref
+  // guard skips rebuilding an identical tree when a token re-read resolves to
+  // the same decimals (a 50k-row build is main-thread work).
   const [parsed, setParsed] = useState<{
     manifest: DropManifest | null;
     error: string | null;
   }>({ manifest: null, error: null });
+  const lastBuilt = useRef<{ csv: string; decimals: number } | null>(null);
   useEffect(() => {
-    const t = setTimeout(() => setParsed(parseRecipients(csv)), 400);
+    if (decimals === undefined) {
+      // Token cleared/invalid: drop the stale tree rather than keep showing a
+      // manifest scaled for the previous token. A mid-read undefined for the
+      // SAME token resolves quickly and the ref guard skips the no-op rebuild.
+      if (!tokenValid && lastBuilt.current) {
+        lastBuilt.current = null;
+        setParsed({ manifest: null, error: null });
+      }
+      return;
+    }
+    if (lastBuilt.current?.csv === csv && lastBuilt.current.decimals === decimals) return;
+    const t = setTimeout(() => {
+      lastBuilt.current = { csv, decimals };
+      setParsed(parseRecipients(csv, decimals));
+    }, 400);
     return () => clearTimeout(t);
-  }, [csv]);
+  }, [csv, decimals]);
   const { manifest, error: csvError } = parsed;
 
   // Prefill from the /tools CSV builder ("Use in a campaign") once on mount.
@@ -182,10 +229,6 @@ export default function NewCampaignPage() {
     totalAmount,
   );
   const totalDeposit = totalAmount + (fee ?? 0n);
-
-  // Native ETH airdrop: the sentinel token, funded via msg.value (no approve).
-  const isNative =
-    tokenValid && (token as string).toLowerCase() === NATIVE_ETH.toLowerCase();
 
   // Fee mode/rate for an inline label next to the fee (0 PERCENT / 1 FLAT).
   const { data: feeMode } = useFeeModeOf(factory, tokenValid ? (token as Address) : undefined);
@@ -318,34 +361,19 @@ export default function NewCampaignPage() {
       /* keep the default label */
     }
   }, []);
-  // Final recipient CSV (address,amount in base units) — exactly what's committed
-  // to the merkle root, downloadable as a record before creating.
+  // Final recipient CSV — the committed allocations in human token units
+  // (formatUnits is lossless), so the download round-trips through the same
+  // upload box. Guarded on decimals so only one dialect can leave the wizard.
   const downloadRecipients = () => {
-    if (!activeManifest) return;
+    if (!activeManifest || decimals === undefined) return;
     const claims = Object.values(activeManifest.claims) as { account: string; amount: string }[];
-    const body = claims.map((c) => `${c.account},${c.amount}`).join("\n");
+    const body = claims.map((c) => `${c.account},${humanAmount(BigInt(c.amount))}`).join("\n");
     downloadCsv(`${name.trim() || "airdrop"}-recipients.csv`, `address,amount\n${body}\n`);
   };
 
   // Operators pick from the admin-curated allow-list rather than pasting an
   // arbitrary address (the on-chain createDrop rejects non-allow-listed tokens).
   const { data: allowedTokens } = useAllowedTokens();
-
-  // Token decimals + symbol for human-readable display (amounts in CSV are base
-  // units). Native ETH has no ERC-20 contract, so use 18 / "ETH" directly.
-  const { data: erc20Decimals } = useErc20Decimals(
-    tokenValid && !isNative ? (token as Address) : undefined,
-  );
-  const { data: erc20Symbol } = useErc20Symbol(
-    tokenValid && !isNative ? (token as Address) : undefined,
-  );
-  const decimals = isNative ? 18 : erc20Decimals;
-  // Show the real token symbol instead of a generic "tokens" once it's known.
-  const unit = isNative ? "ETH" : erc20Symbol ? String(erc20Symbol) : "tokens";
-  const fmtAmount = (v: bigint) =>
-    decimals !== undefined
-      ? `${formatUnits(v, decimals)} ${unit}`
-      : `${v.toString()} base units`;
 
   // datetime-local values (YYYY-MM-DDTHH:MM:SS, no tz) are parsed as local time,
   // to the second, then converted to unix seconds for the on-chain window.
@@ -637,7 +665,9 @@ export default function NewCampaignPage() {
                           ? csvError
                           : manifest
                             ? `${recipientCount} recipients · total ${fmtAmount(totalAmount)} (auto)`
-                            : "Paste address,amount per line (amount in base units)"}
+                            : csv.trim() && decimals === undefined
+                              ? "Select the airdrop token first — amounts are validated against its decimals"
+                              : `Paste address,amount per line (amount in ${unit}, e.g. 120 or 1.5)`}
                       </span>
                       <div className="flex items-center gap-3">
                         <input
@@ -797,7 +827,7 @@ export default function NewCampaignPage() {
                   <button
                     type="button"
                     onClick={downloadRecipients}
-                    disabled={!activeManifest}
+                    disabled={!activeManifest || decimals === undefined}
                     className="btn text-xs disabled:opacity-50"
                   >
                     ↓ Download recipients CSV

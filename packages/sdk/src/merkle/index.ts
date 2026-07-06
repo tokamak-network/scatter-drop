@@ -6,6 +6,7 @@ export {
   buildDrop,
   verifyClaim,
   parseCsv,
+  parseHumanAmount,
   normalizeEntries,
   leafHash,
   buildTree,
