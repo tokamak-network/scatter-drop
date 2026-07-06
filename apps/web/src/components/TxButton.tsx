@@ -8,6 +8,7 @@ import {
   useWaitForTransactionReceipt,
 } from "wagmi";
 import type { Address, Hex, TransactionReceipt } from "viem";
+import { inkBtnClass, whiteBtnClass } from "@/components/pop";
 import { TxHashLink } from "@/components/TxHashLink";
 
 /**
@@ -76,7 +77,9 @@ export function TxButton({
   return (
     <div>
       <button
-        className={primary ? "btn btn-primary" : "btn"}
+        className={`text-sm disabled:opacity-50 disabled:pointer-events-none ${
+          primary ? inkBtnClass("md") : whiteBtnClass("md")
+        }`}
         disabled={
           disabled || busy || !request || (confirmed && disableWhenConfirmed)
         }
@@ -98,14 +101,10 @@ export function TxButton({
       {/* Live tx status + explorer link, shown as soon as a hash exists so the
           user can track progress and keep the result's transaction link. */}
       {hash && (
-        <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+        <div className="text-xs text-ink/60 mt-1">
           <span
-            style={
-              confirmed
-                ? { color: "var(--color-success)" }
-                : reverted
-                  ? { color: "var(--color-danger)" }
-                  : undefined
+            className={
+              confirmed ? "text-ink font-semibold" : reverted ? "text-rose-500 font-semibold" : undefined
             }
           >
             {mining
@@ -121,12 +120,7 @@ export function TxButton({
         </div>
       )}
       {error && (
-        <div
-          className="muted"
-          style={{ color: "var(--color-danger)", fontSize: 12, marginTop: 4 }}
-        >
-          {error.message.split("\n")[0]}
-        </div>
+        <div className="text-xs text-rose-500 mt-1">{error.message.split("\n")[0]}</div>
       )}
     </div>
   );

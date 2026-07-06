@@ -3,7 +3,8 @@
  * class recipes every page composes, so the app-wide rollout doesn't
  * copy-paste (and drift) the signature pill/chip/card strings per page.
  * Color tokens live in globals.css (@theme --color-pop-*, --color-ink);
- * offset shadows are the .pop-shadow utilities there.
+ * offset shadows are the .pop-shadow utilities there. JSX siblings
+ * (LiveChip, StatBox) live in popUi.tsx — this module stays plain strings.
  */
 
 /** Filter/tab pill. `activeBg` is a bg-pop-* token class; `extra` for layout (e.g. flex-1). */
@@ -22,11 +23,10 @@ export function inkBtnClass(size: keyof typeof BTN_PAD = "md"): string {
   return `${BTN_PAD[size]} font-bold text-white bg-ink hover:bg-ink/80 rounded-full transition`;
 }
 
-
-/** Secondary white pill CTA — the outline sibling of inkBtnClass. */
-export function whiteBtnClass(size: "sm" | "md" | "lg" = "md"): string {
+/** Secondary white pill CTA — the outline sibling of inkBtnClass. `bg` retones it. */
+export function whiteBtnClass(size: "sm" | "md" | "lg" = "md", bg = "bg-white"): string {
   const pad = size === "sm" ? "px-3 py-1" : size === "md" ? "px-3.5 py-1.5" : "px-4 py-2";
-  return `${pad} font-bold text-ink bg-white border-2 border-ink/20 hover:border-ink rounded-full transition`;
+  return `${pad} font-bold text-ink ${bg} border-2 border-ink/20 hover:border-ink rounded-full transition`;
 }
 
 /** Form text-field skin. Shape (radius/padding) composes via `extra`. */

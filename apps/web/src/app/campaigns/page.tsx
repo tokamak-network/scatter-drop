@@ -25,6 +25,7 @@ import {
   popInputClass,
   whiteBtnClass,
 } from "@/components/pop";
+import { LiveChip } from "@/components/popUi";
 import { PopHero } from "@/components/PopHero";
 import { EmptyBox } from "@/components/states";
 import { useAnnouncementsWithStatus } from "@/lib/announcements";
@@ -203,10 +204,7 @@ function CampaignCard({ c, tone }: { c: Campaign; tone: (typeof POP_TONES)[numbe
             ENDED
           </span>
         ) : (
-          <span className={`${POP_CHIP} text-white bg-ink border-ink flex items-center gap-1`}>
-            <span className="w-1.5 h-1.5 rounded-full bg-pop-mint animate-pulse" />
-            ACTIVE
-          </span>
+          <LiveChip>Active</LiveChip>
         )}
       </div>
 

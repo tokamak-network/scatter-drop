@@ -168,13 +168,6 @@ input:focus, select:focus, textarea:focus {
   gap: var(--space-4);
 }
 
-.row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
 .nav-link {
   padding: 6px 10px;
   border-radius: var(--radius-sm);
