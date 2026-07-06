@@ -20,7 +20,7 @@ import { CopyButton } from "@/components/CopyButton";
 import { IdentityGate } from "@/components/IdentityGate";
 import { useVerifiedUntil } from "@/lib/contracts";
 import { fmtUnixDateTime, useCampaign } from "@/lib/campaigns";
-import { explorerUrl } from "@/lib/explorer";
+import { chainLabel, explorerUrl } from "@/lib/explorer";
 import { ipfsUrl, useProofsAnchorCid } from "@/lib/proofs";
 import { ClaimPanel } from "./ClaimPanel";
 import { RecipientsList } from "./RecipientsList";
@@ -112,7 +112,7 @@ export default function CampaignDetailPage({
                   {/* Which chain this campaign lives on — contracts below are
                       only meaningful on this network. */}
                   <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold border uppercase tracking-wide bg-indigo-500/10 text-indigo-400 border-indigo-500/20">
-                    {currentChain ? `${currentChain.name} · ${chainId}` : `Chain ${chainId}`}
+                    {chainLabel(currentChain, chainId)}
                   </span>
                   {campaign.status === "active" ? (
                     <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 flex items-center gap-1">

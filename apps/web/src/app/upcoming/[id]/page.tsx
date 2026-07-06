@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -14,6 +14,7 @@ import {
   CalendarClock,
   CalendarPlus,
   ExternalLink,
+  Globe,
   Loader2,
   RotateCcw,
   User,
@@ -28,10 +29,11 @@ import {
   useAnnouncement,
   type Announcement,
 } from "@/lib/announcements";
-import { buildIcs } from "@/lib/calendar";
+import { buildIcs, googleCalendarUrl, outlookCalendarUrl } from "@/lib/calendar";
 import { fmtUnixDateTime, useCampaign } from "@/lib/campaigns";
 import { downloadFile } from "@/lib/download";
-import { explorerUrl, shortAddr } from "@/lib/explorer";
+import { chainLabel, explorerUrl, shortAddr } from "@/lib/explorer";
+import { mdFirstParagraph } from "@/lib/markdown";
 import { useWalletSession } from "@/lib/useWalletSession";
 
 export default function AnnouncementPage() {
@@ -42,6 +44,7 @@ export default function AnnouncementPage() {
   // The wallet chain only decides whether the claim CTA needs a switch prompt.
   const chainId = useChainId();
   const chains = useChains();
+  const announcementChain = a ? chains.find((c) => c.id === a.chainId) : undefined;
   const wrongChain = !!a && a.chainId !== chainId;
   const { data: campaign } = useCampaign(a?.drop ?? "", { chainId: a?.chainId });
 
@@ -87,10 +90,7 @@ export default function AnnouncementPage() {
                     {a.tokenSymbol}
                   </span>
                 )}
-                <TokenAddressChip
-                  tokenAddress={a.tokenAddress}
-                  chain={chains.find((c) => c.id === a.chainId)}
-                />
+                <TokenAddressChip tokenAddress={a.tokenAddress} chain={announcementChain} />
               </div>
             </div>
             <h1 className="text-xl font-bold text-slate-50 leading-tight">{a.title}</h1>
@@ -100,6 +100,11 @@ export default function AnnouncementPage() {
               </span>
               <span className="flex items-center gap-1.5">
                 <User className="w-3.5 h-3.5" /> {a.operator}
+              </span>
+              {/* Always shown (even on the right network) — a shared link must
+                  say where the drop lives without a wallet check. */}
+              <span className="flex items-center gap-1.5">
+                <Globe className="w-3.5 h-3.5" /> {chainLabel(announcementChain, a.chainId)}
               </span>
               <AddToCalendar a={a} />
             </div>
@@ -176,34 +181,103 @@ export default function AnnouncementPage() {
 }
 
 /**
- * "Add to calendar" (.ics download) for the announced claim window — the
- * self-contained slice of "remind me" (push/email reminders need external
- * notification infra and stay out of scope).
+ * "Add to calendar" menu for the announced claim window — Google/Outlook open
+ * their prefilled composers in a new tab; Apple has no add-event URL scheme,
+ * so it keeps the .ics download. Still the self-contained slice of "remind
+ * me" (push/email reminders need external notification infra and stay out of
+ * scope).
  */
 function AddToCalendar({ a }: { a: Announcement }) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Light-dismiss: outside pointer-down or Escape closes the menu.
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
   const start = new Date(a.expectedStart);
   if (Number.isNaN(start.getTime())) return null;
-  const end = a.expectedEnd ? new Date(a.expectedEnd) : undefined;
-  const exportIcs = () => {
-    const ics = buildIcs({
-      uid: a.id,
-      title: `${a.title} — claim window opens`,
-      description: `${a.body}\n\n${window.location.href}`,
-      start,
-      end: end && !Number.isNaN(end.getTime()) ? end : undefined,
-      url: window.location.href,
-    });
-    downloadFile(`drop-${a.id}.ics`, ics, "text/calendar;charset=utf-8");
-  };
+  const parsedEnd = a.expectedEnd ? new Date(a.expectedEnd) : undefined;
+  const end = parsedEnd && !Number.isNaN(parsedEnd.getTime()) ? parsedEnd : undefined;
+
+  // Calendar details get the body's first paragraph as plain text (composer
+  // fields render markdown literally) plus this page's URL. Only built while
+  // the menu is open — `open` is always false during prerender, so
+  // window.location never runs on the server.
+  const event = open
+    ? {
+        uid: a.id,
+        title: `${a.title} — claim window opens`,
+        description: mdFirstParagraph(a.body),
+        start,
+        end,
+        url: window.location.href,
+      }
+    : undefined;
+
+  const itemCls =
+    "w-full flex items-center px-3 py-1.5 text-left text-[11px] text-slate-200 hover:bg-slate-800 transition";
+
   return (
-    <button
-      type="button"
-      onClick={exportIcs}
-      className="flex items-center gap-1.5 text-emerald-600 hover:text-emerald-500 transition"
-      title="Download an .ics event for the expected claim window"
-    >
-      <CalendarPlus className="w-3.5 h-3.5" /> Add to calendar
-    </button>
+    <div ref={menuRef} className="relative">
+      {/* Simple disclosure popover, not an ARIA menu — the items are plain
+          links/buttons reached by normal tabbing, so menu roles (which imply
+          author-managed arrow-key focus) would overpromise to screen readers. */}
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex items-center gap-1.5 text-emerald-600 hover:text-emerald-500 transition"
+        title="Add the expected claim window to your calendar"
+      >
+        <CalendarPlus className="w-3.5 h-3.5" /> Add to calendar
+      </button>
+      {event && (
+        <div className="absolute left-0 top-full mt-1.5 z-20 min-w-44 bg-slate-900 border border-slate-800 rounded-lg shadow-xl py-1">
+          <a
+            href={googleCalendarUrl(event)}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setOpen(false)}
+            className={itemCls}
+          >
+            Google Calendar
+          </a>
+          <a
+            href={outlookCalendarUrl(event)}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setOpen(false)}
+            className={itemCls}
+          >
+            Outlook.com
+          </a>
+          <button
+            type="button"
+            onClick={() => {
+              downloadFile(`drop-${a.id}.ics`, buildIcs(event), "text/calendar;charset=utf-8");
+              setOpen(false);
+            }}
+            className={itemCls}
+          >
+            Apple Calendar (.ics)
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
