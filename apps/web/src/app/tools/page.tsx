@@ -47,7 +47,7 @@ function csvToRows(text: string): Row[] {
     .replace(/^﻿/, "")
     .split(/\r?\n/)
     .map((l) => l.trim())
-    .filter(Boolean)
+    .filter((l) => l !== "" && !l.startsWith("#"))
     .map((line) => {
       const [a, b] = line.split(/[,\t]/);
       const address = (a ?? "").trim().replace(/^["']|["']$/g, "");
@@ -272,9 +272,13 @@ export default function ToolsPage() {
       })
       .filter(Boolean) as string[];
     const header = withBalance ? "address,amount,balance" : "address,amount";
-    // Unit note as a '#' comment — parseCsv skips it, so the file/paste still
-    // round-trips through the campaign wizard.
-    const note = `# amounts in ${unit} (token units, decimals applied — not wei/base units)`;
+    // Unit note as a '#' comment — parseCsv (and csvToRows above) skip it, so
+    // the file/paste still round-trips. The symbol is reduced to printable
+    // ASCII: an exotic on-chain symbol must not break the CSV structure.
+    const safeUnit = unit.replace(/[^ -~]/g, "").trim() || "tokens";
+    const note = `# amounts in ${safeUnit} (token units, decimals applied — not wei/base units)${
+      withBalance ? "; balance column = source balances in base units" : ""
+    }`;
     return [note, header, ...lines].join("\n");
   };
 

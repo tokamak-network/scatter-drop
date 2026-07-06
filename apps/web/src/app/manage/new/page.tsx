@@ -368,9 +368,12 @@ export default function NewCampaignPage() {
     if (!activeManifest || decimals === undefined) return;
     const claims = Object.values(activeManifest.claims) as { account: string; amount: string }[];
     const body = claims.map((c) => `${c.account},${humanAmount(BigInt(c.amount))}`).join("\n");
+    // Printable-ASCII symbol only — an exotic on-chain symbol must not break
+    // the CSV structure or inject rows.
+    const safeUnit = unit.replace(/[^ -~]/g, "").trim() || "tokens";
     downloadCsv(
       `${name.trim() || "airdrop"}-recipients.csv`,
-      `# amounts in ${unit} (token units, decimals applied — not wei/base units)\naddress,amount\n${body}\n`,
+      `# amounts in ${safeUnit} (token units, decimals applied — not wei/base units)\naddress,amount\n${body}\n`,
     );
   };
 
