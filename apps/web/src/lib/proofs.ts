@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { useChainId, usePublicClient } from "wagmi";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAccount, useChainId, usePublicClient } from "wagmi";
 import type { Address, Hex, PublicClient } from "viem";
-import { verifyClaim, type ClaimProof } from "@tokamak-network/scatter-drop-sdk";
+import { merkleDropAbi, verifyClaim, type ClaimProof } from "@tokamak-network/scatter-drop-sdk";
+import { useCampaigns } from "./campaigns";
 import { useDeployment, type ChainOpt } from "./contracts";
 import type { WebDeployment } from "./deployment";
 import { scanLatestProofsCid } from "./dropScan";
@@ -138,7 +139,22 @@ async function fetchClaimsFromIpfs(
   if (!data || typeof data !== "object" || data.root?.toLowerCase() !== root) {
     throw new Error("Anchored proofs file is malformed or for a different root");
   }
-  const valid = validateClaims(data.claims ?? {});
+  return merkleVerified(data.claims ?? {}, root);
+}
+
+/**
+ * Shape-validate a claims map, then keep only entries that merkle-verify
+ * against `root`. The proofs stores (app DB and IPFS) are BOTH untrusted:
+ * `/api/proofs` POST is unauthenticated and first-writer-wins, so an attacker
+ * who sees a fresh `DropCreated` root can race the operator and poison it with
+ * shape-valid junk. A merkle list is self-verifying — the on-chain root is the
+ * only authority — so we hash every claim to the root and drop the rest.
+ */
+function merkleVerified(
+  raw: Record<string, unknown>,
+  root: Hex,
+): Record<string, ClaimProof> {
+  const valid = validateClaims(raw);
   const verified: Record<string, ClaimProof> = {};
   for (const [addr, claim] of Object.entries(valid)) {
     if (verifyClaim(root, claim)) verified[addr] = claim;
@@ -147,8 +163,10 @@ async function fetchClaimsFromIpfs(
 }
 
 /**
- * The validated claims map for a root, or `null` when no proofs are published
- * anywhere (store 404 and no on-chain IPFS anchor).
+ * The verified claims map for a root, or `null` when no proofs are published
+ * anywhere (store 404 and no on-chain IPFS anchor). Both sources are
+ * merkle-verified against `root`; a store payload that verifies to nothing is
+ * treated as poisoned/absent and the on-chain IPFS anchor is tried instead.
  */
 async function fetchClaims(
   root: Hex,
@@ -164,9 +182,14 @@ async function fetchClaims(
     });
     if (res.ok) {
       const data = (await res.json()) as { claims?: Record<string, unknown> };
-      return validateClaims(data.claims ?? {});
+      const verified = merkleVerified(data.claims ?? {}, root);
+      // Non-empty store payload that verifies to zero entries = poisoned (or a
+      // different root's data) — fall through to the on-chain anchor instead
+      // of trusting it.
+      if (Object.keys(verified).length > 0) return verified;
+    } else {
+      notPublished = res.status === 404;
     }
-    notPublished = res.status === 404;
   } catch {
     /* store unreachable → try the anchor */
   }
@@ -211,6 +234,89 @@ function useClaims(campaign: Campaign | undefined, opts?: ChainOpt) {
     queryFn: () =>
       fetchClaims(root!, { client: client ?? undefined, dep, drop: campaign?.drop }),
   });
+}
+
+/** One row of the wallet's allocations across the viewed chain's campaigns. */
+export type MyClaimRow = {
+  campaign: Campaign;
+  /** Allocation in base units (scale by campaign.decimals for display). */
+  amount: bigint;
+  claimed: boolean;
+};
+
+/**
+ * The connected wallet's allocations across every campaign on the viewed
+ * chain. Each campaign's recipient list is read through the shared
+ * ["proofs", chainId, root] cache (fetchClaims — validated, with the
+ * IPFS-anchor fallback), so this page and the claim pages download each list
+ * once between them. The claimed flag comes from the drop contract's
+ * isClaimed bitmap — authoritative where a log scan could miss a window.
+ * Campaigns whose list isn't published (or whose read fails) are skipped
+ * rather than failing the whole page.
+ */
+export function useMyClaims(opts?: ChainOpt) {
+  const { address } = useAccount();
+  const walletChainId = useChainId();
+  const chainId = opts?.chainId ?? walletChainId;
+  const client = usePublicClient({ chainId });
+  // Gate on dep resolving: fetchClaims caches under ["proofs", chainId, root],
+  // and the claim pages read that same entry — populating it before the
+  // deployment is known would cache a store-only result with no IPFS-anchor
+  // fallback and poison the shared cache.
+  const { data: dep } = useDeployment(opts);
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: campaignsPending,
+    isError: campaignsError,
+  } = useCampaigns(opts);
+  const campaigns = data?.campaigns;
+
+  const query = useQuery({
+    queryKey: [
+      "myClaims",
+      chainId,
+      address?.toLowerCase(),
+      campaigns?.map((c) => c.drop),
+    ],
+    enabled: !!address && !!client && !!campaigns && dep !== undefined,
+    staleTime: 15_000,
+    queryFn: async (): Promise<MyClaimRow[]> => {
+      const addr = address!.toLowerCase();
+      const lookups = campaigns!.map(async (campaign): Promise<MyClaimRow | null> => {
+        const root = campaign.merkleRoot?.toLowerCase() as Hex | undefined;
+        if (!root) return null;
+        // No catch here: fetchClaims returns null for "not on this list"
+        // (expected — skip the campaign), but THROWS on a store/RPC outage.
+        // Let that propagate so the page shows an error instead of silently
+        // dropping the wallet's real allocation (a "disappearing data" bug).
+        const claims = await queryClient.fetchQuery({
+          queryKey: ["proofs", chainId, root],
+          staleTime: Infinity, // a root's proofs are immutable
+          queryFn: () =>
+            fetchClaims(root, { client: client ?? undefined, dep, drop: campaign.drop }),
+        });
+        const mine = claims?.[addr];
+        if (!mine) return null;
+        const claimed = (await client!.readContract({
+          address: campaign.drop,
+          abi: merkleDropAbi,
+          functionName: "isClaimed",
+          args: [BigInt(mine.index)],
+        })) as boolean;
+        return { campaign, amount: BigInt(mine.amount), claimed };
+      });
+      return (await Promise.all(lookups)).filter((r): r is MyClaimRow => r !== null);
+    },
+  });
+  // Campaign enumeration counts as loading/error too — the dependent query is
+  // disabled (stuck isPending) until the list resolves, so expose an explicit
+  // narrow shape rather than the raw query's misleading flags.
+  return {
+    data: query.data,
+    isLoading: campaignsPending || query.isLoading,
+    isError: campaignsError || query.isError,
+  };
 }
 
 export type ProofsMeta = { count: number; cid: string | null };

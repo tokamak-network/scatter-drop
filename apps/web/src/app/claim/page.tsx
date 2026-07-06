@@ -1,33 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { useAccount } from "wagmi";
-import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronRight, Gift } from "lucide-react";
+import { formatUnits } from "viem";
 import { EmptyState, Loading, ErrorState } from "@/components/states";
 import { ConnectGate } from "@/components/ConnectGate";
 import { inkBtnClass, POP_CHIP, POP_PANEL } from "@/components/pop";
 import { LiveChip } from "@/components/popUi";
 import { PageHeader } from "@/components/ui";
-import { listMyClaims } from "@/lib/stub";
+import { useMyClaims } from "@/lib/proofs";
 
 export default function MyClaimsPage() {
-  const { address } = useAccount();
-  const {
-    data: claims,
-    isLoading,
-    isError,
-  } = useQuery({
-    queryKey: ["myClaims", address],
-    queryFn: () => listMyClaims(address),
-    enabled: !!address,
-  });
+  const { data: claims, isLoading, isError } = useMyClaims();
 
   return (
     <div className="space-y-6 animate-fade-in">
       <PageHeader
         title="My Claims"
-        subtitle="Your pre-confirmed (Merkle) allocations. A shortcut — not required to claim."
+        subtitle="Your allocations across this network's campaigns, looked up in the published recipient lists. A shortcut — not required to claim."
       />
 
       <ConnectGate prompt="Connect a wallet to see your allocations.">
@@ -43,11 +33,11 @@ export default function MyClaimsPage() {
           />
         ) : (
           <div className="space-y-4">
-            {claims.map((claim) => (
+            {claims.map(({ campaign, amount, claimed }) => (
               <div
-                key={claim.campaignId}
+                key={campaign.drop}
                 className={`flex flex-wrap items-center justify-between gap-3 p-5 ${
-                  claim.claimed ? "bg-white" : "bg-pop-mint"
+                  claimed ? "bg-white" : "bg-pop-mint"
                 } ${POP_PANEL}`}
               >
                 <div className="flex items-center gap-3 min-w-0">
@@ -56,34 +46,34 @@ export default function MyClaimsPage() {
                   </div>
                   <div className="min-w-0">
                     <h3 className="text-sm font-bold text-ink truncate">
-                      {claim.campaignName}
+                      {campaign.name}
                     </h3>
                     <p className="text-[11px] font-mono text-ink/60 mt-0.5">
-                      {claim.amount}
+                      {formatUnits(amount, campaign.decimals ?? 18)} {campaign.tokenSymbol}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  {claim.claimed ? (
+                  {claimed ? (
                     <span className={`${POP_CHIP} text-ink/60 bg-white/70 border-ink/20 flex items-center gap-1`}>
                       <Check className="w-3 h-3" /> CLAIMED
                     </span>
                   ) : (
                     <LiveChip>Available</LiveChip>
                   )}
-                  {claim.claimed && (
+                  {claimed && (
                     <Link
-                      href={`/c/${claim.campaignId}/receipt`}
+                      href={`/c/${campaign.drop}/receipt`}
                       className="text-[11px] font-bold text-ink underline underline-offset-2 hover:text-ink/70"
                     >
                       Receipt →
                     </Link>
                   )}
                   <Link
-                    href={`/c/${claim.campaignId}`}
+                    href={`/c/${campaign.drop}`}
                     className={`flex items-center gap-0.5 text-xs hover:translate-x-0.5 ${inkBtnClass("sm")}`}
                   >
-                    {claim.claimed ? "View" : "Claim"} <ChevronRight className="w-3.5 h-3.5" />
+                    {claimed ? "View" : "Claim"} <ChevronRight className="w-3.5 h-3.5" />
                   </Link>
                 </div>
               </div>
