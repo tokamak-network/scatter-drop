@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { Prisma } from "@prisma/client";
+import { verifyClaim, type ClaimProof } from "@tokamak-network/scatter-drop-sdk";
+import type { Hex } from "viem";
 import { prisma } from "@/lib/db";
 import { LOWER_ADDR_RE, ROOT_RE } from "@/lib/server/apiInput";
 import { pinJson } from "@/lib/server/pinning";
@@ -22,6 +24,26 @@ export const dynamic = "force-dynamic";
 // IPFS). Cap claims per root and total roots to limit DoS surface.
 const MAX_CLAIMS = 50_000;
 const MAX_ROOTS = 100;
+// Hard ceiling on the stored blob (~64 MB at 50k claims of ~1.2 KB each) so a
+// single unauthenticated POST can't stuff an unbounded string into SQLite.
+const MAX_CLAIMS_BYTES = 64 * 1024 * 1024;
+
+/** One claim's shape, mirroring the client's isValidClaim — reject junk values. */
+function isValidClaim(c: unknown): c is ClaimProof {
+  if (!c || typeof c !== "object") return false;
+  const x = c as Record<string, unknown>;
+  return (
+    Number.isInteger(x.index) &&
+    (x.index as number) >= 0 &&
+    typeof x.account === "string" &&
+    /^0x[0-9a-fA-F]{40}$/.test(x.account) &&
+    typeof x.amount === "string" &&
+    /^\d{1,78}$/.test(x.amount) &&
+    Array.isArray(x.proof) &&
+    x.proof.length <= 64 &&
+    x.proof.every((p) => typeof p === "string" && /^0x[0-9a-fA-F]{64}$/.test(p))
+  );
+}
 
 export async function POST(req: NextRequest) {
   let body: unknown;
@@ -47,11 +69,33 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Too many claims (max ${MAX_CLAIMS})` }, { status: 400 });
   }
   // Null-prototype object + address-only keys: blocks prototype pollution
-  // (__proto__/constructor aren't valid addresses) and junk keys.
-  const norm: Record<string, unknown> = Object.create(null);
+  // (__proto__/constructor aren't valid addresses) and junk keys. Each value
+  // must be a well-formed claim whose account matches its key AND that
+  // merkle-verifies against `root`. The last check is the real defense: this
+  // endpoint is unauthenticated and first-writer-wins, so without it an
+  // attacker who sees a fresh DropCreated root could squat the immutable slot
+  // with shape-valid junk. Only the operator holds proofs that hash to their
+  // own root, so a poisoner literally cannot produce an accepted entry.
+  const norm: Record<string, ClaimProof> = Object.create(null);
   for (const [k, v] of entries) {
     const key = k.toLowerCase();
-    if (LOWER_ADDR_RE.test(key)) norm[key] = v;
+    if (!LOWER_ADDR_RE.test(key)) continue;
+    // isValidClaim already bounds index/amount, so verifyClaim's leaf encoding
+    // can't throw on range — but keep it in the guard: an uncaught throw here
+    // would 500 and leak a claim-shape oracle on this unauthenticated route.
+    let ok = false;
+    try {
+      ok = isValidClaim(v) && v.account.toLowerCase() === key && verifyClaim(root as Hex, v);
+    } catch {
+      ok = false;
+    }
+    if (!ok) {
+      return NextResponse.json(
+        { error: `Claim for ${key} is malformed or does not verify against the merkle root` },
+        { status: 400 },
+      );
+    }
+    norm[key] = v as ClaimProof;
   }
   const count = Object.keys(norm).length;
   // All keys were junk → nothing claimable; storing it would only let junk
@@ -59,9 +103,15 @@ export async function POST(req: NextRequest) {
   if (count === 0) {
     return NextResponse.json({ error: "No valid claims" }, { status: 400 });
   }
+  const serialized = JSON.stringify(norm);
+  // Byte length as stored (UTF-8), not UTF-16 code units — .length would
+  // undercount multi-byte data and weaken the ceiling.
+  if (Buffer.byteLength(serialized, "utf8") > MAX_CLAIMS_BYTES) {
+    return NextResponse.json({ error: "Claims payload too large" }, { status: 413 });
+  }
   try {
     await prisma.campaignProofs.create({
-      data: { root, claims: JSON.stringify(norm), count },
+      data: { root, claims: serialized, count },
     });
   } catch (err) {
     // Unique violation — proofs are immutable (tied to the root), so a second
