@@ -51,25 +51,25 @@ export function Nav() {
   return (
     <>
       {/* Header */}
-      <header className="bg-ink text-white sticky top-0 z-40 px-4 py-4 md:px-8">
+      <header className="border-b border-slate-900 bg-slate-950/80 backdrop-blur-md sticky top-0 z-40 px-4 py-4 md:px-8">
         <div className="max-w-7xl mx-auto flex justify-between items-center gap-4">
           <Link href="/" className="flex items-center gap-2.5 cursor-pointer select-none">
-            <div className="w-7 h-7 rounded-lg bg-pop-yellow flex items-center justify-center font-chunk text-ink">
+            <div className="w-7 h-7 rounded-lg bg-emerald-500 flex items-center justify-center font-bold text-white shadow-md shadow-emerald-500/10">
               S
             </div>
-            <span className="font-display font-bold text-lg tracking-tight text-white">
-              scatter<span className="text-pop-yellow">.drop</span>
+            <span className="font-display font-bold text-lg tracking-tight text-slate-50">
+              scatter<span className="text-emerald-400">.drop</span>
             </span>
           </Link>
 
-          <nav className="hidden md:flex items-center gap-6 text-xs font-mono font-medium text-white/70">
+          <nav className="hidden md:flex items-center gap-6 text-xs font-mono font-medium text-slate-300">
             {LINKS.map((l) => (
               <Link
                 key={l.href}
                 href={l.href}
-                className={`hover:text-white transition ${
+                className={`hover:text-slate-50 transition ${
                   isActive(pathname, l.match)
-                    ? "text-pop-yellow border-b-2 border-pop-yellow pb-0.5"
+                    ? "text-emerald-400 border-b-2 border-emerald-500 pb-0.5"
                     : ""
                 }`}
               >
@@ -79,12 +79,12 @@ export function Nav() {
             <Link
               href="/admin"
               title={isAdmin ? "Platform admin" : "Platform admin (owner only)"}
-              className={`hover:text-white transition flex items-center gap-1.5 ${
+              className={`hover:text-slate-50 transition flex items-center gap-1.5 ${
                 isActive(pathname, ["/admin"])
-                  ? "text-amber-400 border-b-2 border-amber-400 pb-0.5 font-bold"
+                  ? "text-amber-500 border-b-2 border-amber-500 pb-0.5 font-bold"
                   : isAdmin
-                    ? "text-amber-400"
-                    : "text-white/50"
+                    ? "text-amber-500"
+                    : "text-slate-400"
               }`}
             >
               <Shield className="w-3.5 h-3.5 text-amber-500" /> Admin
@@ -94,15 +94,15 @@ export function Nav() {
           <div className="flex items-center gap-3 font-mono text-xs">
             {/* Network chip — left of the wallet button, reflects the connected chain */}
             {onSupported ? (
-              <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[11px] text-white/70">
+              <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-400">
                 <span
-                  className={`w-2 h-2 rounded-full ${connected ? "bg-pop-mint animate-pulse" : "bg-white/40"}`}
+                  className={`w-2 h-2 rounded-full ${connected ? "bg-emerald-400 animate-pulse" : "bg-slate-500"}`}
                 />
                 {connected ? "Connected: " : "Target chain: "}
-                <strong className="text-white">{chainLabel}</strong>
+                <strong className="text-slate-200">{chainLabel}</strong>
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-pop-yellow px-2.5 py-1 text-[11px] text-ink font-semibold">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500 px-2.5 py-1 text-[11px] text-amber-950">
                 Unsupported network.
                 {chains[0] && (
                   <button
@@ -117,18 +117,18 @@ export function Nav() {
             {connected ? (
               <button
                 onClick={() => disconnect()}
-                className="bg-white/10 border border-white/20 hover:border-white/50 px-3 py-1.5 rounded-full text-white transition flex items-center gap-2 cursor-pointer"
+                className="bg-slate-800 border border-slate-700 hover:border-slate-600 px-3 py-1.5 rounded-lg text-slate-100 transition flex items-center gap-2 cursor-pointer"
                 title="Click to disconnect"
               >
-                <User className="w-3.5 h-3.5 text-white/70" />
+                <User className="w-3.5 h-3.5 text-slate-300" />
                 <span>{short(address)}</span>
-                <span className="w-1.5 h-1.5 rounded-full bg-pop-mint" />
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
               </button>
             ) : (
               <button
                 onClick={() => injector && connect({ connector: injector })}
                 disabled={!injector || isPending}
-                className="bg-pop-yellow hover:bg-pop-yellow/85 text-ink font-bold px-4 py-2 rounded-full transition cursor-pointer disabled:opacity-60"
+                className="bg-emerald-500 hover:bg-emerald-400 text-white font-bold px-4 py-2 rounded-lg transition cursor-pointer disabled:opacity-60"
               >
                 {isPending ? "Connecting…" : "Connect Wallet"}
               </button>
@@ -138,13 +138,13 @@ export function Nav() {
       </header>
 
       {/* Mobile nav */}
-      <div className="md:hidden bg-ink px-4 py-2 flex justify-around gap-2 text-[11px] font-mono font-medium text-white/60">
+      <div className="md:hidden border-b border-slate-900/60 bg-slate-950 px-4 py-2 flex justify-around gap-2 text-[11px] font-mono font-medium text-slate-400">
         {LINKS.map((l) => (
           <Link
             key={l.href}
             href={l.href}
             className={`px-2 py-1 rounded ${
-              isActive(pathname, l.match) ? "text-pop-yellow bg-white/10" : ""
+              isActive(pathname, l.match) ? "text-emerald-400 bg-slate-900/40" : ""
             }`}
           >
             {l.label}
@@ -154,8 +154,8 @@ export function Nav() {
           href="/admin"
           className={`px-2 py-1 rounded flex items-center gap-1 ${
             isActive(pathname, ["/admin"])
-              ? "text-amber-400 bg-white/10"
-              : "text-amber-400/80"
+              ? "text-amber-400 bg-slate-900/40"
+              : "text-amber-500/80"
           }`}
         >
           Admin
