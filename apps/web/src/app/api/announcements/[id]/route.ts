@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { MAX_ANNOUNCEMENTS, MAX_OPEN_PER_OPERATOR } from "@/lib/announcementLimits";
-import { verifyDropOperator } from "@/lib/server/dropVerify";
+import { canonicalDropToken, verifyDropOperatorDetailed } from "@/lib/server/dropVerify";
 import { requireWallet } from "@/lib/server/session";
 import {
   announcementDto,
@@ -59,13 +59,44 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   if (typeof parsed.value.drop === "string" && parsed.value.drop !== row.drop) {
     // Optional creation-tx hash → O(1) receipt check inside the verifier
     // (normalization/validation happen there).
-    const dropErr = await verifyDropOperator(
+    const verdict = await verifyDropOperatorDetailed(
       row.chainId,
       parsed.value.drop,
       row.operator,
       body && typeof body === "object" ? (body as Record<string, unknown>).txHash : undefined,
     );
-    if (dropErr) return NextResponse.json({ error: dropErr }, { status: 422 });
+    if ("error" in verdict) {
+      return NextResponse.json({ error: verdict.error }, { status: 422 });
+    }
+    // F3: the announced token must be what the linked drop actually
+    // distributes — otherwise a scam drop could keep a reputable token's
+    // address on its explorer-linked chip. The on-chain airdropToken is
+    // canonical: a patch that explicitly contradicts it is rejected; a stale
+    // stored value, an operator typo, or an omitted field is silently
+    // corrected (native-ETH drops carry no ERC-20, so they clear the field).
+    const canonical = canonicalDropToken(verdict.created);
+    if (parsed.value.tokenAddress != null && parsed.value.tokenAddress !== canonical) {
+      return NextResponse.json(
+        { error: "tokenAddress does not match the linked drop's on-chain token" },
+        { status: 400 },
+      );
+    }
+    parsed.value.tokenAddress = canonical;
+  } else if (
+    row.drop &&
+    parsed.value.drop !== null &&
+    parsed.value.tokenAddress !== undefined &&
+    parsed.value.tokenAddress !== row.tokenAddress
+  ) {
+    // Once a drop is linked, its token is fixed: a later patch that touches
+    // ONLY tokenAddress (drop unchanged / omitted, not being unlinked) must
+    // not repoint the chip to another token. row.tokenAddress is already the
+    // canonical value the link-time check stored, so re-deriving it on-chain
+    // would just burn an RPC round-trip for the same answer.
+    return NextResponse.json(
+      { error: "tokenAddress is fixed to the linked drop's on-chain token" },
+      { status: 400 },
+    );
   }
   // Reopening (canceled → open) takes a board slot back, so it must pass the
   // same caps as POST — otherwise cancel + repost + reopen multiplies an

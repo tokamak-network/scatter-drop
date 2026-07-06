@@ -1,6 +1,7 @@
 import { createPublicClient, http, isAddress, type Address, type Hex } from "viem";
+import { NATIVE_ETH } from "@tokamak-network/scatter-drop-sdk";
 import { prisma } from "@/lib/db";
-import { findDropCreated, scanDropCreated } from "@/lib/dropScan";
+import { findDropCreated, scanDropCreated, type DropCreatedArgs } from "@/lib/dropScan";
 import { TX_HASH_RE } from "./apiInput";
 
 /**
@@ -13,9 +14,13 @@ import { TX_HASH_RE } from "./apiInput";
  * unknown network or an unreachable RPC rejects.
  */
 
+export type DropVerification = { error: string } | { created: DropCreatedArgs };
+
 /**
- * Null when `drop` was created by `operator` (lowercased) on `chainId`'s
- * registered network; otherwise the rejection reason.
+ * Verify that `drop` was created by `operator` on `chainId`'s registered
+ * network; a success returns the matched DropCreated event so callers can
+ * read the drop's on-chain fields (e.g. the announcement link cross-checks
+ * its announced tokenAddress against the drop's real airdropToken).
  *
  * `txHash` (the creation transaction, when the caller holds the receipt) is
  * the O(1) fast path: one getTransactionReceipt instead of a log scan, and
@@ -24,7 +29,7 @@ import { TX_HASH_RE } from "./apiInput";
  * falls back to the bounded scan rather than failing — a wrong hash must not
  * reject a legitimately owned drop.
  */
-export async function verifyDropOperator(
+export async function verifyDropOperatorDetailed(
   chainId: number,
   drop: string,
   operator: string,
@@ -35,19 +40,19 @@ export async function verifyDropOperator(
    * the drop — without it, an operator of ANY campaign could act on any root.
    */
   expectedRoot?: string,
-): Promise<string | null> {
+): Promise<DropVerification> {
   // The routes' input validation already guarantees lowercased addresses;
   // normalizing + validating here keeps the lib safe for future callers
   // (a checksummed input must not fail the case-sensitive comparisons or
   // burn an RPC round-trip) and stops malformed values from reaching the
   // DB/RPC, where a throw would be misreported as a transient RPC failure.
-  if (!isAddress(drop)) return "Invalid drop address format";
-  if (!isAddress(operator)) return "Invalid operator address format";
+  if (!isAddress(drop)) return { error: "Invalid drop address format" };
+  if (!isAddress(operator)) return { error: "Invalid operator address format" };
   const lowerDrop = drop.toLowerCase() as Address;
   const lowerOperator = operator.toLowerCase();
   const network = await prisma.network.findUnique({ where: { chainId } });
   if (!network?.rpcUrl || /^0x0{40}$/i.test(network.dropFactory)) {
-    return "This network is not registered for on-chain verification";
+    return { error: "This network is not registered for on-chain verification" };
   }
   const factory = network.dropFactory as Address;
   try {
@@ -68,7 +73,7 @@ export async function verifyDropOperator(
           created.operator.toLowerCase() === lowerOperator &&
           (!expectedRoot || created.merkleRoot.toLowerCase() === expectedRoot)
         ) {
-          return null;
+          return { created };
         }
         /* receipt didn't prove it — fall through to the scan */
       } catch {
@@ -84,17 +89,43 @@ export async function verifyDropOperator(
       },
       { drop: lowerDrop },
     );
-    const owned = logs.some(
+    const match = logs.find(
       (l) =>
         l.operator.toLowerCase() === lowerOperator &&
         (!expectedRoot || l.merkleRoot.toLowerCase() === expectedRoot),
     );
-    return owned
-      ? null
-      : expectedRoot
+    if (match) return { created: match };
+    return {
+      error: expectedRoot
         ? "Drop not found on-chain for this operator and root"
-        : "Drop not found on-chain for this operator";
+        : "Drop not found on-chain for this operator",
+    };
   } catch {
-    return "Could not verify the drop on-chain — please retry";
+    return { error: "Could not verify the drop on-chain — please retry" };
   }
+}
+
+/**
+ * The token a verified drop actually distributes, in the announcements
+ * store's dialect: lowercased ERC-20 address, or null for native-ETH drops
+ * (the NATIVE_ETH sentinel is not a contract to link an explorer chip to).
+ */
+export function canonicalDropToken(created: DropCreatedArgs): string | null {
+  const token = created.airdropToken.toLowerCase();
+  return token === NATIVE_ETH.toLowerCase() ? null : token;
+}
+
+/**
+ * String form of verifyDropOperatorDetailed for callers that only need
+ * pass/fail: null on success, otherwise the rejection reason.
+ */
+export async function verifyDropOperator(
+  chainId: number,
+  drop: string,
+  operator: string,
+  txHash?: unknown,
+  expectedRoot?: string,
+): Promise<string | null> {
+  const verdict = await verifyDropOperatorDetailed(chainId, drop, operator, txHash, expectedRoot);
+  return "error" in verdict ? verdict.error : null;
 }
