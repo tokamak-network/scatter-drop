@@ -74,6 +74,41 @@ const IPFS_GATEWAY = (process.env.NEXT_PUBLIC_IPFS_GATEWAY || "https://ipfs.io")
   "",
 );
 
+/** Gateway URL for a pinned CID — the user-verifiable link to the raw proofs.json. */
+export function ipfsUrl(cid: string): string {
+  return `${IPFS_GATEWAY}/ipfs/${encodeURIComponent(cid)}`;
+}
+
+/**
+ * Cache key for a campaign's anchored-CID scan — exported so the publish tx
+ * (ProofsPanel) invalidates the exact key the hook reads; a drifting literal
+ * would silently stop matching.
+ */
+export function proofsAnchorQueryKey(chainId: number, drop?: string) {
+  return ["proofsAnchor", chainId, drop] as const;
+}
+
+/**
+ * The campaign's on-chain anchored proofs CID (latest ProofsPublished event),
+ * or null when the operator never anchored one. Shared by the operator's
+ * Proofs panel and the public detail page so both read (and invalidate) the
+ * same cache entry. The CID only changes on an explicit publishProofs tx —
+ * which invalidates this key — so a long staleTime avoids re-scanning logs on
+ * every list↔detail bounce.
+ */
+export function useProofsAnchorCid(campaign?: Campaign, opts?: ChainOpt) {
+  const walletChainId = useChainId();
+  const chainId = opts?.chainId ?? walletChainId;
+  const client = usePublicClient({ chainId });
+  const { data: dep } = useDeployment(opts);
+  return useQuery({
+    queryKey: proofsAnchorQueryKey(chainId, campaign?.drop),
+    enabled: !!client && !!dep && !!campaign?.drop,
+    staleTime: 5 * 60_000,
+    queryFn: () => scanLatestProofsCid(client!, dep!, campaign!.drop),
+  });
+}
+
 /**
  * Recover a campaign's claims from IPFS via its on-chain anchor: latest
  * ProofsPublished(drop) event → CID → gateway fetch. The gateway is an
@@ -93,7 +128,7 @@ async function fetchClaimsFromIpfs(
   // an anchor, so a failure is a recovery OUTAGE and must throw — mapping it
   // to null would misreport an anchored campaign as "not published".
   if (!cid) return null;
-  const res = await fetch(`${IPFS_GATEWAY}/ipfs/${encodeURIComponent(cid)}`);
+  const res = await fetch(ipfsUrl(cid));
   if (!res.ok) throw new Error(`IPFS gateway error: ${res.status}`);
   const data = (await res.json()) as
     | { root?: string; claims?: Record<string, unknown> }
