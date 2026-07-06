@@ -404,17 +404,20 @@ export function useCampaign(id: string, opts?: ChainOpt) {
   const { data: dep } = useDeployment(opts);
 
   return useQuery({
+    // Empty id (e.g. an announcement with no linked drop yet) must not run:
+    // react-query v5 treats an undefined result as an error, and there is
+    // nothing to resolve anyway. `null` = looked up but not found.
     queryKey: ["campaign", chainId, id, dep?.dropFactory],
     staleTime: 15_000,
-    enabled: dep !== undefined && !!client,
-    queryFn: async (): Promise<Campaign | undefined> => {
+    enabled: !!id && dep !== undefined && !!client,
+    queryFn: async (): Promise<Campaign | null> => {
       if (isAddress(id) && client && dep) {
         const [args] = await scanDropCreated(client, dep, { drop: id as Address });
-        if (!args) return undefined;
+        if (!args) return null;
         const [campaign] = await enrichCampaigns(client, dep.chainId, [args], args.drop);
-        return campaign;
+        return campaign ?? null;
       }
-      return getStubCampaign(id);
+      return (await getStubCampaign(id)) ?? null;
     },
   });
 }

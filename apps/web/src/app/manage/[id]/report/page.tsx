@@ -24,8 +24,8 @@ export default function DistributionReportPage({
   // isLoading, not isPending: both queries are disabled until the campaign
   // resolves, and a disabled query stays isPending forever — the not-found
   // branch below would be unreachable.
-  const { data: recipients, isLoading: recipientsLoading } = useRecipients(campaign);
-  const { data: claims, isLoading: claimsLoading } = useClaimEvents(campaign);
+  const { data: recipients, isLoading: recipientsLoading } = useRecipients(campaign ?? undefined);
+  const { data: claims, isLoading: claimsLoading } = useClaimEvents(campaign ?? undefined);
 
   if (isPending || recipientsLoading || claimsLoading) {
     return (
