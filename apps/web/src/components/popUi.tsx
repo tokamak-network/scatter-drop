@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { POP_CHIP } from "@/components/pop";
+import { POP_CHIP, segBtnClass } from "@/components/pop";
 
 /**
  * Pop design-system micro-components — the JSX siblings of the class recipes
@@ -9,6 +9,26 @@ import { POP_CHIP } from "@/components/pop";
  * components (e.g. the landing page) import from here, so everything must be
  * pure presentational JSX. Anything stateful belongs in its own client file.
  */
+
+/**
+ * One segment of a single-choice toggle — wrap a row of these in a `SEG_WRAP`
+ * shell. `aria-pressed` marks the active choice.
+ */
+export function SegButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button type="button" aria-pressed={active} onClick={onClick} className={segBtnClass(active)}>
+      {children}
+    </button>
+  );
+}
 
 /** Ink chip with the signature pulsing mint dot (ACTIVE / LIVE / AVAILABLE). */
 export function LiveChip({ children }: { children: ReactNode }) {
