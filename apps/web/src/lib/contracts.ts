@@ -1,11 +1,12 @@
 "use client";
 
 import { useChainId, useReadContract } from "wagmi";
-import type { Address } from "viem";
+import { isAddress, zeroAddress, type Address } from "viem";
 import { useQuery } from "@tanstack/react-query";
 import {
   dropFactoryAbi,
   identityRegistryAbi,
+  isVerificationValid,
   merkleDropAbi,
   type ScatterDropDeployment,
 } from "@tokamak-network/scatter-drop-sdk";
@@ -379,6 +380,52 @@ export function useVerifiedUntil(
     chainId: useChainId(),
     query: { enabled: !!registry && !!account },
   });
+}
+
+/** The gate outcome for one (registry, account) pair. */
+export type GateStatus =
+  /** No identity gate (registry is unset / the zero-address sentinel). */
+  | "off"
+  /** Gated, but no account to check yet. */
+  | "noAccount"
+  /** Gated, account set, the `verifiedUntil` read is still resolving. */
+  | "loading"
+  /** Gated and the account's verification is current. */
+  | "verified"
+  /** Gated and the account is not verified (or expired). */
+  | "unverified";
+
+/**
+ * The single "does this wallet pass the gate?" rule — the zero-address = no-gate
+ * sentinel plus the SDK's `isVerificationValid` freshness check — resolved from
+ * `verifiedUntil`. Any surface that needs gate state (preview, claim panel,
+ * detail card) should read it here so the rule lives in one place.
+ */
+export function useGateState(
+  registry: Address | undefined,
+  account: Address | undefined,
+): { status: GateStatus; verifiedUntil: bigint | undefined; gated: boolean } {
+  const gated = !!registry && isAddress(registry, { strict: false }) && registry !== zeroAddress;
+  const { data: verifiedUntil, isLoading, isError } = useVerifiedUntil(
+    gated ? registry : undefined,
+    account,
+  );
+  const now = BigInt(Math.floor(Date.now() / 1000));
+  const status: GateStatus = !gated
+    ? "off"
+    : !account
+      ? "noAccount"
+      : isLoading
+        ? "loading"
+        : // A failed read (RPC error, or the registry isn't a live contract so
+          // the call reverts) or a still-missing value resolves conservatively
+          // to unverified — never a wallet that can't be confirmed as passing.
+          isError || verifiedUntil === undefined
+          ? "unverified"
+          : isVerificationValid(verifiedUntil, now)
+            ? "verified"
+            : "unverified";
+  return { status, verifiedUntil, gated };
 }
 
 /** MerkleDrop.isClaimed(index) — live claimed flag for an allocation. */
