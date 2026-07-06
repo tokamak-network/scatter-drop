@@ -5,6 +5,8 @@ import { useAccount } from "wagmi";
 import { airdropTypeLabel } from "@tokamak-network/scatter-drop-sdk";
 import { AlertCircle, BarChart3, ChevronRight, Loader2, Megaphone, Plus } from "lucide-react";
 import { ConnectGate } from "@/components/ConnectGate";
+import { inkBtnClass, POP_CARD, POP_CHIP, whiteBtnClass } from "@/components/pop";
+import { EmptyBox } from "@/components/states";
 import { useManagedCampaigns } from "@/lib/campaigns";
 
 export default function ManagePage() {
@@ -15,23 +17,23 @@ export default function ManagePage() {
     <div className="space-y-6 animate-fade-in">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100 tracking-tight">
-            Campaign Operations Console
+          <h1 className="font-chunk uppercase text-2xl md:text-3xl tracking-tight text-ink">
+            Operations console
           </h1>
-          <p className="text-xs text-slate-500 font-mono mt-0.5">
+          <p className="text-xs text-ink/60 font-medium mt-1">
             Manage and track the campaigns you created.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Link
             href="/manage/announcements/new"
-            className="bg-slate-900 border border-slate-800 hover:border-sky-500/40 text-slate-200 font-semibold px-4 py-2 rounded-lg text-xs transition flex items-center gap-1.5"
+            className={`text-xs flex items-center gap-1.5 ${whiteBtnClass("lg")}`}
           >
-            <Megaphone className="w-4 h-4 text-sky-500" /> New Announcement
+            <Megaphone className="w-4 h-4" /> New Announcement
           </Link>
           <Link
             href="/manage/new"
-            className="bg-emerald-500 hover:bg-emerald-400 text-white font-semibold px-4 py-2 rounded-lg text-xs transition flex items-center gap-1.5"
+            className={`text-xs flex items-center gap-1.5 ${inkBtnClass("lg")}`}
           >
             <Plus className="w-4 h-4" /> Create New Campaign
           </Link>
@@ -40,33 +42,26 @@ export default function ManagePage() {
 
       <ConnectGate prompt="Connect a wallet to manage your campaigns.">
         {isPending ? (
-          <div className="flex items-center justify-center gap-2 p-12 text-slate-500 text-sm font-mono">
-            <Loader2 className="w-5 h-5 animate-spin" />
+          <EmptyBox icon={<Loader2 className="w-8 h-8 text-ink/40 animate-spin" />}>
             Loading your campaigns…
-          </div>
+          </EmptyBox>
         ) : isError ? (
-          <div className="flex flex-col items-center justify-center p-12 bg-slate-900 border border-slate-800 rounded-xl text-center space-y-3">
-            <AlertCircle className="w-8 h-8 text-red-500" />
-            <p className="text-slate-400 text-sm max-w-sm">
-              Could not load your campaigns. Is the fork running?
-            </p>
-          </div>
+          <EmptyBox icon={<AlertCircle className="w-8 h-8 text-red-500" />}>
+            Could not load your campaigns. Is the fork running?
+          </EmptyBox>
         ) : !campaigns || campaigns.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-12 bg-slate-900 border border-slate-800 rounded-xl text-center space-y-4">
-            <div className="w-12 h-12 rounded-full bg-slate-950 border border-slate-800 flex items-center justify-center">
-              <BarChart3 className="w-5 h-5 text-slate-600" />
+          <div className={`flex flex-col items-center justify-center p-12 bg-white text-center space-y-4 ${POP_CARD}`}>
+            <div className="w-14 h-14 rounded-full bg-pop-yellow border-2 border-ink flex items-center justify-center">
+              <BarChart3 className="w-6 h-6 text-ink" />
             </div>
             <div className="space-y-1">
-              <h3 className="text-slate-300 font-medium">No campaigns yet</h3>
-              <p className="text-slate-500 text-xs max-w-sm">
+              <h3 className="font-chunk uppercase text-sm text-ink">No campaigns yet</h3>
+              <p className="text-ink/60 text-xs max-w-sm">
                 You haven&apos;t launched any campaigns. Deploy a secure
                 identity-gated distribution in seconds.
               </p>
             </div>
-            <Link
-              href="/manage/new"
-              className="bg-slate-100 hover:bg-white text-slate-950 font-semibold px-4 py-1.5 rounded-lg text-xs transition"
-            >
+            <Link href="/manage/new" className={`text-xs ${inkBtnClass("md")}`}>
               + Deploy Campaign
             </Link>
           </div>
@@ -76,20 +71,20 @@ export default function ManagePage() {
               <Link
                 key={c.id}
                 href={`/manage/${c.id}`}
-                className="bg-slate-900 border border-slate-800 hover:border-slate-700/80 p-5 rounded-xl transition flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
+                className={`group bg-white p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 ${POP_CARD}`}
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-lg bg-slate-800 flex items-center justify-center font-bold text-slate-400 text-xs shrink-0">
+                  <div className="w-12 h-12 shrink-0 rounded-full bg-pop-yellow border-2 border-ink flex items-center justify-center font-bold text-[11px] text-ink">
                     {c.tokenSymbol.slice(0, 4)}
                   </div>
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-bold text-slate-100">{c.name}</h3>
-                      <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800/80 text-slate-400">
+                      <h3 className="text-sm font-bold text-ink">{c.name}</h3>
+                      <span className={`${POP_CHIP} uppercase tracking-wide bg-pop-cream text-ink/70 border-ink/25`}>
                         {airdropTypeLabel(c.type)}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-500 font-mono">
+                    <p className="text-xs text-ink/60 font-mono">
                       Pool: {c.totalAmount}
                     </p>
                   </div>
@@ -97,22 +92,20 @@ export default function ManagePage() {
 
                 <div className="flex flex-wrap items-center gap-6 text-xs font-mono">
                   <div className="space-y-0.5">
-                    <span className="text-slate-500 block text-[10px]">CLAIMS</span>
-                    <span className="text-slate-200 font-bold">
-                      {c.claimedPct}%
-                    </span>
+                    <span className="text-ink/50 block text-[10px]">CLAIMS</span>
+                    <span className="text-ink font-bold">{c.claimedPct}%</span>
                   </div>
                   <div className="space-y-0.5">
-                    <span className="text-slate-500 block text-[10px]">
+                    <span className="text-ink/50 block text-[10px]">
                       WINDOW CLOSES
                     </span>
                     <span
-                      className={`font-semibold ${c.status === "ended" ? "text-rose-400" : "text-slate-300"}`}
+                      className={`font-semibold ${c.status === "ended" ? "text-rose-500" : "text-ink"}`}
                     >
                       {c.deadline}
                     </span>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-slate-600 hidden md:block" />
+                  <ChevronRight className="w-5 h-5 text-ink/40 hidden md:block group-hover:translate-x-0.5 transition-transform" />
                 </div>
               </Link>
             ))}
