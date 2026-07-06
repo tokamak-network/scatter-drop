@@ -628,7 +628,7 @@ export default function ToolsPage() {
                       </td>
                       <td className="px-1 py-1 text-center">
                         {nonEmpty(r) && (
-                          <button onClick={() => removeRow(i)} className="text-ink/40 hover:text-rose-500 transition" title="Remove row">
+                          <button type="button" onClick={() => removeRow(i)} className="text-ink/40 hover:text-rose-500 transition" title="Remove row">
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         )}
@@ -736,6 +736,7 @@ function StepPill({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={disabled}
       aria-current={active ? "step" : undefined}
@@ -877,6 +878,7 @@ function ViewBtn({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       aria-pressed={active}
       className={`px-2.5 py-1 text-[11px] font-bold rounded-full transition ${
@@ -901,6 +903,7 @@ function ToolbarBtn({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={disabled}
       className={`inline-flex items-center gap-1.5 text-xs disabled:opacity-50 disabled:pointer-events-none ${whiteBtnClass("md")}`}
