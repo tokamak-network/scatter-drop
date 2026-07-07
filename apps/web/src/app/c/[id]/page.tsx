@@ -195,7 +195,9 @@ export default function CampaignDetailPage({
                 <div className="min-w-0">
                   <div className="text-sm font-bold text-ink truncate">{quest.title}</div>
                   <div className="text-xs text-ink/60">
-                    Complete this campaign&apos;s tasks to qualify for the recipient list
+                    {new Date(quest.closesAt) < new Date()
+                      ? "This quest has closed"
+                      : "Complete this campaign's tasks to qualify for the recipient list"}
                   </div>
                 </div>
               </div>

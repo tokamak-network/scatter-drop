@@ -31,6 +31,10 @@ async function getByDrop(chainId: number, drop: string) {
   const row = await prisma.questCampaign.findFirst({
     where: { chainId, drop },
     select: { id: true, title: true, closesAt: true },
+    // No unique constraint on (chainId, drop) — `drop` is patchable, so more
+    // than one campaign could in principle end up linked to the same vault.
+    // Prefer the most recently created one for a deterministic result.
+    orderBy: { createdAt: "desc" },
   });
   if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
   return NextResponse.json({
@@ -46,10 +50,14 @@ async function getByDrop(chainId: number, drop: string) {
  */
 export async function GET(req: NextRequest) {
   if (req.nextUrl.searchParams.has("chainId") || req.nextUrl.searchParams.has("drop")) {
-    const chainId = Number(req.nextUrl.searchParams.get("chainId"));
+    const chainIdParam = req.nextUrl.searchParams.get("chainId");
+    const chainId = Number(chainIdParam);
     const dropParam = req.nextUrl.searchParams.get("drop")?.toLowerCase();
-    if (!isChainId(chainId) || !dropParam || !LOWER_ADDR_RE.test(dropParam)) {
+    if (chainIdParam === null || dropParam === undefined) {
       return NextResponse.json({ error: "chainId and drop query required" }, { status: 400 });
+    }
+    if (!isChainId(chainId) || !LOWER_ADDR_RE.test(dropParam)) {
+      return NextResponse.json({ error: "invalid chainId or drop" }, { status: 400 });
     }
     return getByDrop(chainId, dropParam);
   }
