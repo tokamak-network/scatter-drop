@@ -94,3 +94,70 @@ model Announcement {
   // The board's hottest read: list by chain ordered by expected start.
   @@index([chainId, expectedStart])
 }
+
+// --- Native quests (docs/SOCIAL-TASK-DESIGN.md §5) ---
+
+/// A quest campaign — the container of tasks BEFORE createDrop. On close, the
+/// completions aggregate to an (address, amount) list that feeds the existing
+/// buildDrop → createDrop(type=SOCIAL) path; `drop` links the result back.
+model QuestCampaign {
+  id          String            @id @default(cuid())
+  chainId     Int
+  operator    String // lowercased, SIWE-verified creator
+  title       String
+  closesAt    DateTime
+  amountMode  String // "equal" (v1: equal split only)
+  totalAmount String // human-unit amount string, split at aggregation time
+  drop        String? // lowercased drop address once createDrop ran
+  tasks       QuestTask[]
+  completions QuestCompletion[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([operator, chainId])
+}
+
+/// One verifiable task inside a campaign. `tier` is derived from `kind`
+/// (VERIFIED | METERED | INTENT) and stored for auditability.
+model QuestTask {
+  id          String            @id @default(cuid())
+  campaignId  String
+  campaign    QuestCampaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  kind        String // DISCORD_JOIN | DISCORD_ROLE | TELEGRAM_JOIN | GITHUB_STAR | ONCHAIN | LINK_VISIT (X kinds: post-v1)
+  config      String // JSON: guildId/roleId, chatId, owner/repo, …
+  required    Boolean           @default(true)
+  tier        String // VERIFIED | METERED | INTENT
+  completions QuestCompletion[]
+}
+
+/// A server-verified task completion for a wallet. Composite PK makes the
+/// verify endpoint idempotent per (campaign, wallet, task).
+model QuestCompletion {
+  campaignId String
+  campaign   QuestCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  wallet     String // lowercased
+  taskId     String
+  task       QuestTask     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  verifiedAt DateTime      @default(now())
+  evidence   String? // JSON: minimal proof (guild member joined_at, …)
+
+  @@id([campaignId, wallet, taskId])
+  @@index([campaignId, wallet])
+}
+
+/// Sybil axis: 1 social account = 1 wallet. Unbind is SOFT — the row stays
+/// (unboundAt set) so cooldowns and history survive; rebinding is allowed only
+/// after the cooldown. Verifiers record completions only against an ACTIVE
+/// binding (unboundAt = null), and aggregation re-joins against the binding so
+/// account-hopping across wallets is excluded (§7).
+model WalletSocial {
+  provider          String // discord | telegram | github | x
+  providerAccountId String
+  wallet            String // lowercased — currently (or last) bound wallet
+  boundAt           DateTime  @default(now())
+  unboundAt         DateTime? // null = active binding
+  quality           String? // JSON: account age, joined_at flags, … (scoring signals)
+
+  @@id([provider, providerAccountId])
+  @@index([wallet])
+}
