@@ -19,9 +19,11 @@ export async function GET(
 ) {
   const { provider } = await params;
   const adapter = oauthProviderFor(provider);
-  if (!adapter || !adapter.configured()) {
+  // Truly unknown provider (bad route param) — nothing to redirect back to.
+  if (!adapter) {
     return NextResponse.json({ error: "Unsupported provider" }, { status: 404 });
   }
+
   const session = await getSession();
   const wallet = session.address;
   const expectedState = session.oauthState;
@@ -36,6 +38,12 @@ export async function GET(
   const fail = (message: string) =>
     back(`social_error=${encodeURIComponent(message)}`);
 
+  // Configured is a runtime/deployment state (env vars), not a route problem —
+  // send the user back to the quest page with a readable reason instead of a
+  // bare 404, consistent with every other failure in this callback.
+  if (!adapter.configured()) {
+    return fail(`${provider} account linking is not configured on this server.`);
+  }
   if (!wallet) return fail("Sign in with your wallet first.");
   const code = req.nextUrl.searchParams.get("code");
   const state = req.nextUrl.searchParams.get("state");
