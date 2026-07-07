@@ -24,9 +24,22 @@ async function fetchMember(
   userId: string,
   botToken: string,
 ): Promise<{ member: GuildMember } | { fail: VerifyOutcome & { ok: false } }> {
-  const res = await fetch(`${DISCORD_API}/guilds/${guildId}/members/${userId}`, {
-    headers: { Authorization: `Bot ${botToken}`, accept: "application/json" },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${DISCORD_API}/guilds/${guildId}/members/${userId}`, {
+      headers: { Authorization: `Bot ${botToken}`, accept: "application/json" },
+    });
+  } catch {
+    // Network failure (DNS, timeout, Discord down) — a verifier outcome, not
+    // an unhandled exception that would 500 the whole verify route.
+    return {
+      fail: {
+        ok: false,
+        reason: "Could not reach Discord — try again later.",
+        status: 502,
+      },
+    };
+  }
   if (res.status === 404) {
     return {
       fail: { ok: false, reason: "You are not a member of this Discord server yet." },

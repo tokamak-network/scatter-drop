@@ -38,32 +38,38 @@ export const discordOAuth: OAuthAdapter = {
   },
 
   async fetchUser(code, redirectUri) {
-    const tokenRes = await fetch(`${DISCORD_API}/oauth2/token`, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        client_id: process.env.DISCORD_CLIENT_ID!,
-        client_secret: process.env.DISCORD_CLIENT_SECRET!,
-        grant_type: "authorization_code",
-        code,
-        redirect_uri: redirectUri,
-      }),
-    });
-    if (!tokenRes.ok) return { error: `Discord token exchange failed (${tokenRes.status})` };
-    const { access_token } = (await tokenRes.json()) as { access_token?: string };
-    if (!access_token) return { error: "Discord returned no access token" };
+    try {
+      const tokenRes = await fetch(`${DISCORD_API}/oauth2/token`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: process.env.DISCORD_CLIENT_ID!,
+          client_secret: process.env.DISCORD_CLIENT_SECRET!,
+          grant_type: "authorization_code",
+          code,
+          redirect_uri: redirectUri,
+        }),
+      });
+      if (!tokenRes.ok) return { error: `Discord token exchange failed (${tokenRes.status})` };
+      const { access_token } = (await tokenRes.json()) as { access_token?: string };
+      if (!access_token) return { error: "Discord returned no access token" };
 
-    const userRes = await fetch(`${DISCORD_API}/users/@me`, {
-      headers: { Authorization: `Bearer ${access_token}`, accept: "application/json" },
-    });
-    if (!userRes.ok) return { error: `Discord user lookup failed (${userRes.status})` };
-    const user = (await userRes.json()) as { id?: string };
-    if (!user.id) return { error: "Discord returned no account id" };
+      const userRes = await fetch(`${DISCORD_API}/users/@me`, {
+        headers: { Authorization: `Bearer ${access_token}`, accept: "application/json" },
+      });
+      if (!userRes.ok) return { error: `Discord user lookup failed (${userRes.status})` };
+      const user = (await userRes.json()) as { id?: string };
+      if (!user.id) return { error: "Discord returned no account id" };
 
-    const createdAt = snowflakeToDate(user.id);
-    return {
-      id: user.id,
-      quality: JSON.stringify({ accountCreatedAt: createdAt ? createdAt.toISOString() : null }),
-    };
+      const createdAt = snowflakeToDate(user.id);
+      return {
+        id: user.id,
+        quality: JSON.stringify({ accountCreatedAt: createdAt ? createdAt.toISOString() : null }),
+      };
+    } catch {
+      // Network failure (DNS, timeout, Discord down) — a redirect-back
+      // failure, not an unhandled exception that would 500 the callback route.
+      return { error: "Failed to connect to Discord during authentication. Please try again." };
+    }
   },
 };
