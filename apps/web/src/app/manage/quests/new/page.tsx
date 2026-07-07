@@ -24,6 +24,8 @@ const inputCls = popInputClass("px-3 py-2 rounded-xl");
 const labelCls = POP_LABEL;
 
 interface TaskDraft {
+  /** Client-only identity for React keys — never sent to the server. */
+  id: string;
   kind: QuestTaskKind;
   guildId: string;
   roleId: string;
@@ -33,15 +35,18 @@ interface TaskDraft {
   required: boolean;
 }
 
-const EMPTY_TASK: TaskDraft = {
-  kind: "DISCORD_JOIN",
-  guildId: "",
-  roleId: "",
-  inviteUrl: "",
-  url: "",
-  label: "",
-  required: true,
-};
+function newTaskDraft(): TaskDraft {
+  return {
+    id: crypto.randomUUID(),
+    kind: "DISCORD_JOIN",
+    guildId: "",
+    roleId: "",
+    inviteUrl: "",
+    url: "",
+    label: "",
+    required: true,
+  };
+}
 
 const KIND_LABELS: Record<QuestTaskKind, string> = {
   DISCORD_JOIN: "Join a Discord server",
@@ -88,7 +93,7 @@ export default function NewQuestPage() {
   const [title, setTitle] = useState("");
   const [closesAt, setClosesAt] = useState("");
   const [totalAmount, setTotalAmount] = useState("");
-  const [tasks, setTasks] = useState<TaskDraft[]>([{ ...EMPTY_TASK }]);
+  const [tasks, setTasks] = useState<TaskDraft[]>(() => [newTaskDraft()]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -101,8 +106,8 @@ export default function NewQuestPage() {
     tasks.length > 0 &&
     tasks.every(draftValid);
 
-  const setTask = (i: number, patch: Partial<TaskDraft>) =>
-    setTasks((ts) => ts.map((t, j) => (j === i ? { ...t, ...patch } : t)));
+  const setTask = (id: string, patch: Partial<TaskDraft>) =>
+    setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, ...patch } : t)));
 
   const submit = async () => {
     setError(null);
@@ -196,15 +201,13 @@ export default function NewQuestPage() {
           <div className="space-y-3">
             <span className={labelCls}>Tasks (max {MAX_QUEST_TASKS})</span>
             {tasks.map((t, i) => (
-              // Index keys are fine here: rows are only appended/removed in place.
-              // eslint-disable-next-line react/no-array-index-key
-              <div key={i} className="rounded-xl border-2 border-ink/15 p-3 space-y-2">
+              <div key={t.id} className="rounded-xl border-2 border-ink/15 p-3 space-y-2">
                 <div className="flex gap-2 items-center">
                   <select
                     aria-label={`Task ${i + 1} kind`}
                     className={inputCls}
                     value={t.kind}
-                    onChange={(e) => setTask(i, { kind: e.target.value as QuestTaskKind })}
+                    onChange={(e) => setTask(t.id, { kind: e.target.value as QuestTaskKind })}
                   >
                     {(Object.keys(QUEST_TASK_KINDS) as QuestTaskKind[]).map((k) => (
                       <option key={k} value={k}>
@@ -216,7 +219,7 @@ export default function NewQuestPage() {
                     <input
                       type="checkbox"
                       checked={t.required}
-                      onChange={(e) => setTask(i, { required: e.target.checked })}
+                      onChange={(e) => setTask(t.id, { required: e.target.checked })}
                     />
                     required
                   </label>
@@ -224,7 +227,7 @@ export default function NewQuestPage() {
                     <button
                       type="button"
                       aria-label={`Remove task ${i + 1}`}
-                      onClick={() => setTasks((ts) => ts.filter((_, j) => j !== i))}
+                      onClick={() => setTasks((ts) => ts.filter((x) => x.id !== t.id))}
                       className="shrink-0 px-2 text-ink/40 hover:text-rose-500 transition"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -239,14 +242,14 @@ export default function NewQuestPage() {
                       className={inputCls}
                       placeholder="https://… (shown as unverified / on trust)"
                       value={t.url}
-                      onChange={(e) => setTask(i, { url: e.target.value })}
+                      onChange={(e) => setTask(t.id, { url: e.target.value })}
                     />
                     <input
                       aria-label={`Task ${i + 1} label`}
                       className={`${inputCls} basis-1/3`}
                       placeholder="Label"
                       value={t.label}
-                      onChange={(e) => setTask(i, { label: e.target.value })}
+                      onChange={(e) => setTask(t.id, { label: e.target.value })}
                     />
                   </div>
                 ) : (
@@ -257,7 +260,7 @@ export default function NewQuestPage() {
                         className={`${inputCls} font-mono`}
                         placeholder="Discord server id (e.g. 1029384756…)"
                         value={t.guildId}
-                        onChange={(e) => setTask(i, { guildId: e.target.value })}
+                        onChange={(e) => setTask(t.id, { guildId: e.target.value })}
                       />
                       {t.kind === "DISCORD_ROLE" && (
                         <input
@@ -265,7 +268,7 @@ export default function NewQuestPage() {
                           className={`${inputCls} font-mono`}
                           placeholder="Role id"
                           value={t.roleId}
-                          onChange={(e) => setTask(i, { roleId: e.target.value })}
+                          onChange={(e) => setTask(t.id, { roleId: e.target.value })}
                         />
                       )}
                     </div>
@@ -274,7 +277,7 @@ export default function NewQuestPage() {
                       className={inputCls}
                       placeholder="https://discord.gg/… (invite shown to recipients)"
                       value={t.inviteUrl}
-                      onChange={(e) => setTask(i, { inviteUrl: e.target.value })}
+                      onChange={(e) => setTask(t.id, { inviteUrl: e.target.value })}
                     />
                     <p className="text-[10px] text-ink/50 leading-snug">
                       Verification uses the platform bot — it must be installed on
@@ -288,7 +291,7 @@ export default function NewQuestPage() {
             {tasks.length < MAX_QUEST_TASKS && (
               <button
                 type="button"
-                onClick={() => setTasks((ts) => [...ts, { ...EMPTY_TASK }])}
+                onClick={() => setTasks((ts) => [...ts, newTaskDraft()])}
                 className="inline-flex items-center gap-1.5 text-xs font-bold text-ink/60 hover:text-ink transition"
               >
                 <Plus className="w-3.5 h-3.5" /> Add task
