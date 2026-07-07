@@ -125,10 +125,16 @@ function parseTasks(v: unknown): Result<QuestTaskCreate[]> {
       config?: unknown;
       required?: unknown;
     };
-    if (typeof kind !== "string" || !(kind in QUEST_TASK_KINDS)) {
+    // Object.hasOwn (not `in`) — `in` also matches the prototype chain (e.g.
+    // "toString", "constructor"), which would let a crafted kind bypass the
+    // switch in parseTaskConfig and fall through to `undefined`.
+    if (typeof kind !== "string" || !Object.hasOwn(QUEST_TASK_KINDS, kind)) {
       return {
         error: `each task needs a supported kind (${Object.keys(QUEST_TASK_KINDS).join(", ")})`,
       };
+    }
+    if (required !== undefined && typeof required !== "boolean") {
+      return { error: "each task's required field must be a boolean" };
     }
     const k = kind as QuestTaskKind;
     const parsedCfg = parseTaskConfig(k, config);
@@ -136,16 +142,24 @@ function parseTasks(v: unknown): Result<QuestTaskCreate[]> {
     tasks.push({
       kind: k,
       config: JSON.stringify(parsedCfg.value),
-      required: required !== false,
+      required: required ?? true,
       tier: QUEST_TASK_KINDS[k],
     });
+  }
+  if (!tasks.some((t) => t.required)) {
+    // Otherwise eligibleWallets (required.length === 0) never has anything to
+    // check, and no recipient can ever qualify for the pot.
+    return { error: "at least one task must be required" };
   }
   return { value: tasks };
 }
 
 /** POST /api/quests body. */
 export function parseQuestCreate(body: unknown): Result<QuestCreate> {
-  const b = (body ?? {}) as Record<string, unknown>;
+  if (typeof body !== "object" || body === null) {
+    return { error: "Input must be a non-null object" };
+  }
+  const b = body as Record<string, unknown>;
   if (!isChainId(b.chainId)) return { error: "chainId must be a positive integer" };
   // §9 decision: v1 is equal split only — reject anything else loudly instead
   // of silently coercing.

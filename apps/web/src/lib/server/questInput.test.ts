@@ -70,6 +70,50 @@ describe("parseQuestCreate", () => {
     });
     expect(result).toEqual({ error: expect.stringContaining("url") });
   });
+
+  it("rejects a prototype-chain property masquerading as a kind", () => {
+    const result = parseQuestCreate({
+      ...VALID_BODY,
+      tasks: [{ kind: "toString", config: {}, required: true }],
+    });
+    expect(result).toEqual({ error: expect.stringContaining("kind") });
+  });
+
+  it("rejects a non-boolean required field", () => {
+    const result = parseQuestCreate({
+      ...VALID_BODY,
+      tasks: [
+        { kind: "DISCORD_JOIN", config: { guildId: "123456789012345" }, required: "yes" },
+      ],
+    });
+    expect(result).toEqual({ error: expect.stringContaining("required") });
+  });
+
+  it("defaults required to true when omitted", () => {
+    const result = parseQuestCreate({
+      ...VALID_BODY,
+      tasks: [{ kind: "DISCORD_JOIN", config: { guildId: "123456789012345" } }],
+    });
+    expect("value" in result && result.value.tasks[0].required).toBe(true);
+  });
+
+  it("rejects a campaign where every task is optional", () => {
+    const result = parseQuestCreate({
+      ...VALID_BODY,
+      tasks: [
+        { kind: "DISCORD_JOIN", config: { guildId: "123456789012345" }, required: false },
+      ],
+    });
+    expect(result).toEqual({ error: expect.stringContaining("required") });
+  });
+
+  it("rejects a null body", () => {
+    expect(parseQuestCreate(null)).toEqual({ error: expect.stringContaining("object") });
+  });
+
+  it("rejects a primitive body", () => {
+    expect(parseQuestCreate("nope")).toEqual({ error: expect.stringContaining("object") });
+  });
 });
 
 describe("parseQuestPatch", () => {
