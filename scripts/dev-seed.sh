@@ -10,6 +10,11 @@
 # Run after dev-fork.sh (same anvil still up). Prints the drop address and the
 # customer's claim proof for in-browser claiming.
 set -euo pipefail
+# Force ASCII-byte string comparison for every `[[ ... < ... ]]` below (address
+# sort, sorted-pair root hashing): under a non-C locale, `<` collates instead
+# of comparing bytes, which can reorder hex strings differently across
+# developer machines and produce a different root from the same addresses.
+export LC_ALL=C
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # Exported so the child dev-verify.sh inherits a custom RPC_URL.
@@ -63,8 +68,8 @@ pack() {
 # always rebuilds indices this way, so a hardcoded assignment that happens to
 # disagree with address order produces an on-chain root no CSV can ever
 # reproduce (the campaign becomes permanently unrecoverable).
-CUSTOMER_LC="$(echo "$CUSTOMER" | tr '[:upper:]' '[:lower:]')"
-OTHER_LC="$(echo "$OTHER" | tr '[:upper:]' '[:lower:]')"
+CUSTOMER_LC="${CUSTOMER,,}"
+OTHER_LC="${OTHER,,}"
 if [[ "$CUSTOMER_LC" < "$OTHER_LC" ]]; then
   ADDR0="$CUSTOMER"; AMT0="$CUST_AMT"; CUSTOMER_IDX=0
   ADDR1="$OTHER";    AMT1="$OTHER_AMT"
@@ -110,4 +115,4 @@ echo "[seed] done."
 echo "  drop          $DROP"
 echo "  customer      $CUSTOMER  (index $CUSTOMER_IDX, amount $CUST_AMT)"
 echo "  customer proof [$CUSTOMER_PROOF]"
-echo "  claim in-browser: connect as customer, claim($CUSTOMER_IDX, customer, $CUST_AMT, [$CUSTOMER_PROOF])"
+echo "  claim in-browser: connect as customer, claim($CUSTOMER_IDX, $CUSTOMER, $CUST_AMT, [$CUSTOMER_PROOF])"
