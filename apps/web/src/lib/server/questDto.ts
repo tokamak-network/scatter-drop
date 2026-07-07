@@ -22,10 +22,16 @@ export function campaignDto(
 }
 
 export function taskDto(t: Prisma.QuestTaskGetPayload<object>) {
+  let config: Record<string, string> = {};
+  try {
+    config = JSON.parse(t.config) as Record<string, string>;
+  } catch {
+    /* corrupt row — degrade to an empty config rather than 500 the whole read */
+  }
   return {
     id: t.id,
     kind: t.kind,
-    config: JSON.parse(t.config) as Record<string, string>,
+    config,
     required: t.required,
     tier: t.tier,
   };
