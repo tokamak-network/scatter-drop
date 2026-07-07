@@ -1,7 +1,10 @@
 /**
  * Native quests (docs/SOCIAL-TASK-DESIGN.md) — shared types, field caps, and
  * client fetch helpers. Server-side validation lives in lib/server/questInput;
- * the caps here are shared with the forms so both sides agree.
+ * the caps here are shared with the forms so both sides agree. No "use
+ * client" here on purpose — this module is isomorphic (plain functions, no
+ * hooks) so route.ts (a server route handler) can import MAX_QUESTS_PER_OPERATOR
+ * /providersForTasks from it alongside client pages.
  */
 
 export const MAX_QUEST_TITLE = 120;
@@ -140,6 +143,31 @@ export interface QuestCompletionsDto {
   wallets: string[];
   count: number;
   amountPerWallet: string | null;
+}
+
+export type QuestLinkDto = { id: string; title: string; closesAt: string };
+
+/**
+ * Does this (chainId, drop) vault have a linked quest campaign? Powers the
+ * "quest tasks" link on the on-chain campaign detail page (§9-3). `null` when
+ * none is linked (404) or the lookup fails — best-effort, since the link is
+ * a discovery nicety, not load-bearing for the campaign page itself.
+ */
+export async function getQuestForDrop(
+  chainId: number,
+  drop: string,
+): Promise<QuestLinkDto | null> {
+  try {
+    const res = await fetch(
+      `/api/quests?chainId=${chainId}&drop=${encodeURIComponent(drop.toLowerCase())}`,
+      { cache: "no-store" },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as { quest?: QuestLinkDto };
+    return data.quest ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function getQuestCompletions(
