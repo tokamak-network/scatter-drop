@@ -1,5 +1,10 @@
 import { isAddress } from "viem";
-import { parseHumanAmount } from "@tokamak-network/scatter-drop-sdk";
+import {
+  buildDrop,
+  parseCsv,
+  parseHumanAmount,
+  type DropManifest,
+} from "@tokamak-network/scatter-drop-sdk";
 
 /**
  * Pure recipient-list core for the list builder — CSV <-> rows, dedup, and the
@@ -60,6 +65,33 @@ export function csvToRows(text: string): Recipient[] {
     })
     .filter((r) => !/^address$/i.test(r.address));
   return rows.length ? rows : [{ ...BLANK_ROW }];
+}
+
+/**
+ * Parse a recipients CSV using the SDK `parseCsv` (single source of truth) and
+ * build the Merkle drop, so the caller's tree/root/total match the SDK + claim
+ * path exactly. CSV amounts are human token amounts ("1000", "1.5") — the
+ * operator's mental model — scaled to base units by the token's `decimals`
+ * before they're committed to the tree. `parseCsv` and `buildDrop` throw on
+ * malformed/duplicate rows, surfaced as a message instead of crashing the
+ * render. Shared by the creation wizard and the operator console's post-hoc
+ * republish flow, so both rebuild identical trees from the same CSV.
+ */
+export function parseRecipients(
+  text: string,
+  decimals: number,
+): {
+  manifest: DropManifest | null;
+  error: string | null;
+} {
+  if (!text.trim()) return { manifest: null, error: null };
+  try {
+    const entries = parseCsv(text, { decimals });
+    if (entries.length === 0) return { manifest: null, error: null };
+    return { manifest: buildDrop(entries), error: null };
+  } catch (e) {
+    return { manifest: null, error: e instanceof Error ? e.message : "Invalid CSV" };
+  }
 }
 
 /** Ensure the grid ends in a blank row to type into. */

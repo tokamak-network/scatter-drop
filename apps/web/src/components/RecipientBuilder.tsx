@@ -17,6 +17,7 @@ import { SegButton } from "@/components/popUi";
 import { StakingImport } from "@/components/StakingImport";
 import { useErc20Decimals, useErc20Symbol } from "@/lib/contracts";
 import { useAllowedTokens } from "@/lib/campaigns";
+import { readCsvFileInput } from "@/lib/csvFile";
 import { downloadCsv } from "@/lib/download";
 import {
   BLANK_ROW,
@@ -87,14 +88,8 @@ export function RecipientBuilder({
   const loadRecipients = (recipients: Recipient[]) =>
     setCsvText(recipients.map((r) => `${r.address},${r.amount}`).join("\n"));
 
-  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setCsvText(String(reader.result ?? "").trim());
-    reader.readAsText(file);
-    e.target.value = "";
-  };
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) =>
+    readCsvFileInput(e, (t) => setCsvText(t.trim()));
 
   const parsedRows = useMemo(() => csvToRows(csvText), [csvText]);
   const parsedCount = useMemo(

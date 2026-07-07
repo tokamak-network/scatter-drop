@@ -28,13 +28,19 @@ function isValidClaim(c: unknown): c is ClaimProof {
   );
 }
 
+export type PublishProofsResult =
+  | { ok: true; cid: string | null }
+  | { ok: false; error: string };
+
 /**
- * Publish a campaign's per-recipient proofs to the store, keyed by the
- * vault (chainId, drop).
- * Best-effort — a failure doesn't block campaign creation (proofs can be
- * re-published later). Called after `createDrop` confirms. Returns the IPFS
- * CID when the server has pinning configured (null otherwise), so the wizard
- * can offer the on-chain publishProofs(drop, cid) anchor tx.
+ * Publish a campaign's per-recipient proofs to the store, keyed by the vault
+ * (chainId, drop), reporting the outcome: the IPFS CID when the server has
+ * pinning configured (null otherwise), or the server's rejection reason.
+ * Requires an established SIWE session (the store only takes operator
+ * writes); `txHash` (the creation tx) is the server's O(1) ownership check.
+ * Callers decide severity: the wizard treats a failure as best-effort (the
+ * list can be republished later from the operator console), the console's
+ * republish flow surfaces the error to the operator.
  */
 export async function publishProofs(
   chainId: number,
@@ -42,18 +48,23 @@ export async function publishProofs(
   root: Hex,
   claims: Record<string, unknown>,
   txHash?: Hex,
-): Promise<string | null> {
+): Promise<PublishProofsResult> {
   try {
     const res = await fetch("/api/proofs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chainId, drop, root, claims, txHash }),
     });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { cid?: string | null };
-    return data.cid ?? null;
+    const data = (await res.json().catch(() => null)) as {
+      cid?: string | null;
+      error?: string;
+    } | null;
+    if (!res.ok) {
+      return { ok: false, error: data?.error ?? `Publish failed (HTTP ${res.status})` };
+    }
+    return { ok: true, cid: data?.cid ?? null };
   } catch {
-    return null; /* best-effort */
+    return { ok: false, error: "Publish failed — network error, please retry." };
   }
 }
 
@@ -91,6 +102,21 @@ export function ipfsUrl(cid: string): string {
  */
 export function proofsAnchorQueryKey(chainId: number, drop?: string) {
   return ["proofsAnchor", chainId, drop] as const;
+}
+
+/**
+ * Cache key for a vault's downloaded claims map (useClaims/useMyClaims) —
+ * exported for the same reason as `proofsAnchorQueryKey`: a post-hoc publish
+ * (ProofsPanel's republish flow) must invalidate the exact key these hooks
+ * read, or eligibility keeps its cached "not published" verdict.
+ */
+export function proofsQueryKey(chainId: number, drop?: string) {
+  return ["proofs", chainId, drop] as const;
+}
+
+/** Cache key for a vault's proofs store status (useProofsMeta) — see above. */
+export function proofsMetaQueryKey(chainId: number, drop?: string) {
+  return ["proofsMeta", chainId, drop] as const;
 }
 
 /**
@@ -240,7 +266,7 @@ function useClaims(campaign: Campaign | undefined, opts?: ChainOpt) {
   return useQuery({
     // Keyed by (chainId, drop) — the vault is the store identity, and the
     // IPFS-anchor fallback reads that chain's factory logs.
-    queryKey: ["proofs", chainId, drop],
+    queryKey: proofsQueryKey(chainId, drop),
     enabled: !!root && !!drop && dep !== undefined,
     staleTime: 60_000,
     queryFn: () =>
@@ -259,7 +285,7 @@ export type MyClaimRow = {
 /**
  * The connected wallet's allocations across every campaign on the viewed
  * chain. Each campaign's recipient list is read through the shared
- * ["proofs", chainId, root] cache (fetchClaims — validated, with the
+ * proofsQueryKey(chainId, drop) cache (fetchClaims — validated, with the
  * IPFS-anchor fallback), so this page and the claim pages download each list
  * once between them. The claimed flag comes from the drop contract's
  * isClaimed bitmap — authoritative where a log scan could miss a window.
@@ -303,7 +329,7 @@ export function useMyClaims(opts?: ChainOpt) {
         // Let that propagate so the page shows an error instead of silently
         // dropping the wallet's real allocation (a "disappearing data" bug).
         const claims = await queryClient.fetchQuery({
-          queryKey: ["proofs", chainId, campaign.drop],
+          queryKey: proofsQueryKey(chainId, campaign.drop),
           staleTime: Infinity, // a vault's proofs are immutable
           queryFn: () =>
             fetchClaims(chainId, campaign.drop, root, { client: client ?? undefined, dep }),
@@ -344,7 +370,7 @@ export function useProofsMeta(campaign: Campaign | undefined, opts?: ChainOpt) {
   const walletChainId = useChainId();
   const chainId = opts?.chainId ?? walletChainId;
   return useQuery({
-    queryKey: ["proofsMeta", chainId, drop],
+    queryKey: proofsMetaQueryKey(chainId, drop),
     enabled: !!drop,
     queryFn: async (): Promise<ProofsMeta | null> => {
       const res = await fetch(
