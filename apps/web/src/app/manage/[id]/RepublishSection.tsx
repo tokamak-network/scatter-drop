@@ -73,6 +73,12 @@ export function RepublishSection({
       void queryClient.invalidateQueries({
         queryKey: proofsQueryKey(chainId, campaign.drop),
       });
+    } catch {
+      // ensureSession/publishProofs reject on a wallet/network failure (as
+      // opposed to publishProofs's own {ok:false} for a server-side
+      // rejection, handled above) — surface it instead of an unhandled
+      // rejection with no operator-visible feedback.
+      setPublishError("Publish failed — please retry.");
     } finally {
       setPublishing(false);
     }

@@ -22,6 +22,14 @@ const EMPTY: ParsedRecipients = { manifest: null, error: null };
  * cleared/invalid token (drop the stale tree rather than keep showing a
  * manifest scaled for the previous token) from a mid-read undefined for the
  * SAME token, which resolves quickly and no-ops via the ref guard.
+ *
+ * A token switch (new decimals) also clears the manifest synchronously,
+ * before scheduling the debounced rebuild: without this, the OLD token's
+ * manifest — its merkleRoot/totalAmount computed under the OLD decimals —
+ * would stay visible (and submittable) for up to 400ms after the NEW
+ * decimals resolves, since only the CSV/decimals *equal to the last build*
+ * short-circuits above; a differing decimals does not by itself clear
+ * anything.
  */
 export function useParsedRecipients(
   csv: string,
@@ -39,6 +47,9 @@ export function useParsedRecipients(
       return;
     }
     if (lastBuilt.current?.csv === csv && lastBuilt.current.decimals === decimals) return;
+    if (lastBuilt.current && lastBuilt.current.decimals !== decimals) {
+      setParsed(EMPTY);
+    }
     const t = setTimeout(() => {
       lastBuilt.current = { csv, decimals };
       setParsed(parseRecipients(csv, decimals));
