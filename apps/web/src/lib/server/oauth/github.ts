@@ -11,7 +11,7 @@
  */
 
 import type { OAuthAdapter } from "./types";
-import { GITHUB_API } from "../githubApi";
+import { GITHUB_API, GITHUB_API_HEADERS } from "../githubApi";
 
 export const githubOAuth: OAuthAdapter = {
   configured() {
@@ -51,7 +51,7 @@ export const githubOAuth: OAuthAdapter = {
       }
 
       const userRes = await fetch(`${GITHUB_API}/user`, {
-        headers: { Authorization: `Bearer ${access_token}`, accept: "application/vnd.github+json" },
+        headers: { ...GITHUB_API_HEADERS, Authorization: `Bearer ${access_token}` },
       });
       if (!userRes.ok) return { error: `GitHub user lookup failed (${userRes.status})` };
       const user = (await userRes.json()) as { id?: number; login?: string };

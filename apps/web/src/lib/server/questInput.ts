@@ -5,7 +5,8 @@
  */
 
 import {
-  GITHUB_NAME_RE,
+  GITHUB_OWNER_RE,
+  GITHUB_REPO_RE,
   MAX_QUEST_TASKS,
   MAX_QUEST_TITLE,
   QUEST_TASK_KINDS,
@@ -128,7 +129,7 @@ function parseTaskConfig(
     case "GITHUB_STAR": {
       const owner = str("owner");
       const repo = str("repo");
-      if (!GITHUB_NAME_RE.test(owner) || !GITHUB_NAME_RE.test(repo)) {
+      if (!GITHUB_OWNER_RE.test(owner) || !GITHUB_REPO_RE.test(repo)) {
         return { error: "GITHUB_STAR: config.owner and config.repo must be valid GitHub names" };
       }
       return { value: { owner, repo } };

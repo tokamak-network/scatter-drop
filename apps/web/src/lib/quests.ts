@@ -15,8 +15,16 @@ export const SNOWFLAKE_RE = /^\d{5,25}$/;
 export const QUEST_URL_RE = /^https:\/\/[^\s]{1,300}$/;
 /** Telegram public channel/group username or numeric chat id (`@name` or `-100…`). */
 export const TELEGRAM_CHAT_RE = /^(@[A-Za-z0-9_]{5,32}|-?\d{5,20})$/;
-/** GitHub username/org and repo name — the two path segments of owner/repo. */
-export const GITHUB_NAME_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
+/**
+ * GitHub owner (user/org login): alphanumerics joined by single hyphens, no leading,
+ * trailing, or consecutive hyphens, ≤39 chars. Stricter than the repo rule.
+ */
+export const GITHUB_OWNER_RE = /^[A-Za-z0-9](?:-?[A-Za-z0-9]){0,38}$/;
+/**
+ * GitHub repo name: alphanumerics plus `.`, `_`, `-`, ≤100 chars, and never `.` or
+ * `..`. Looser than the owner rule so valid names like `.github` are accepted.
+ */
+export const GITHUB_REPO_RE = /^(?!\.\.?$)[A-Za-z0-9._-]{1,100}$/;
 
 /**
  * Verification tier per task kind (design §3: the tier is honest UI, fixed by

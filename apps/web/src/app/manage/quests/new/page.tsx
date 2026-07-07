@@ -12,7 +12,8 @@ import { useWalletSession } from "@/lib/useWalletSession";
 import { isPositiveDecimal } from "@/lib/validation";
 import {
   createQuest,
-  GITHUB_NAME_RE,
+  GITHUB_OWNER_RE,
+  GITHUB_REPO_RE,
   MAX_QUEST_TASKS,
   MAX_QUEST_TITLE,
   QUEST_TASK_KINDS,
@@ -100,7 +101,7 @@ function draftValid(t: TaskDraft): boolean {
     case "TELEGRAM_JOIN":
       return TELEGRAM_CHAT_RE.test(t.chatId.trim());
     case "GITHUB_STAR":
-      return GITHUB_NAME_RE.test(t.owner.trim()) && GITHUB_NAME_RE.test(t.repo.trim());
+      return GITHUB_OWNER_RE.test(t.owner.trim()) && GITHUB_REPO_RE.test(t.repo.trim());
   }
 }
 

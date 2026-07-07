@@ -156,6 +156,22 @@ describe("parseQuestCreate", () => {
     });
     expect(result).toEqual({ error: expect.stringContaining("GITHUB_STAR") });
   });
+
+  it("accepts a GITHUB_STAR repo name with dots/underscores (e.g. .github)", () => {
+    const result = parseQuestCreate({
+      ...VALID_BODY,
+      tasks: [{ kind: "GITHUB_STAR", config: { owner: "tokamak-network", repo: ".github" }, required: true }],
+    });
+    expect("value" in result).toBe(true);
+  });
+
+  it("rejects a GITHUB_STAR owner with a trailing hyphen", () => {
+    const result = parseQuestCreate({
+      ...VALID_BODY,
+      tasks: [{ kind: "GITHUB_STAR", config: { owner: "tokamak-", repo: "scatter-drop" }, required: true }],
+    });
+    expect(result).toEqual({ error: expect.stringContaining("GITHUB_STAR") });
+  });
 });
 
 describe("parseQuestPatch", () => {

@@ -7,7 +7,7 @@
  */
 
 import type { QuestVerifier } from "./types";
-import { GITHUB_API } from "../githubApi";
+import { GITHUB_API, GITHUB_API_HEADERS } from "../githubApi";
 
 export const verifyGithubStarTask: QuestVerifier = async (task, _wallet, binding) => {
   if (!binding || binding.provider !== "github") {
@@ -23,7 +23,9 @@ export const verifyGithubStarTask: QuestVerifier = async (task, _wallet, binding
     };
   }
 
-  const { owner, repo } = JSON.parse(task.config) as { owner?: string; repo?: string };
+  const parsed = JSON.parse(task.config);
+  const config = typeof parsed === "object" && parsed !== null ? parsed : {};
+  const { owner, repo } = config as { owner?: string; repo?: string };
   if (!owner || !repo) {
     return { ok: false, reason: "Task is misconfigured (missing owner/repo).", status: 500 };
   }
@@ -31,10 +33,7 @@ export const verifyGithubStarTask: QuestVerifier = async (task, _wallet, binding
   let res: Response;
   try {
     res = await fetch(`${GITHUB_API}/user/starred/${owner}/${repo}`, {
-      headers: {
-        Authorization: `Bearer ${binding.accessToken}`,
-        accept: "application/vnd.github+json",
-      },
+      headers: { ...GITHUB_API_HEADERS, Authorization: `Bearer ${binding.accessToken}` },
     });
   } catch {
     return { ok: false, reason: "Could not reach GitHub — try again later.", status: 502 };
