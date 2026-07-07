@@ -75,7 +75,7 @@ campaign, and wire the web app:
 
 ```bash
 # one-time DB init (Prisma needs DATABASE_URL + a pushed schema before any seed)
-echo 'DATABASE_URL="file:./dev.db"' >> apps/web/.env
+[ -f apps/web/.env ] || echo 'DATABASE_URL="file:./dev.db"' > apps/web/.env
 pnpm --filter @scatter-drop/web db:push      # apply the schema (creates the tables)
 
 scripts/dev-fork.sh                          # anvil fork + deploy + seed (+ writes apps/web/.env.local)

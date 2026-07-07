@@ -9,11 +9,12 @@ const OWNER = "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266"; // anvil #0 (dev own
 // Read the current fork deployment (dev-fork.sh writes this) so re-seeding after
 // a redeploy refreshes the factory/token addresses in the registry.
 const here = dirname(fileURLToPath(import.meta.url));
+const CHAIN_ID = Number(process.env.FORK_CHAIN_ID) || 31337; // matches dev-fork.sh's default/override
 let dep = {};
 try {
-  dep = JSON.parse(readFileSync(join(here, "../../../contracts/deployments/31337.json"), "utf8"));
+  dep = JSON.parse(readFileSync(join(here, `../../../contracts/deployments/${CHAIN_ID}.json`), "utf8"));
 } catch {
-  console.warn("no contracts/deployments/31337.json — run scripts/dev-fork.sh first");
+  console.warn(`no contracts/deployments/${CHAIN_ID}.json — run scripts/dev-fork.sh first`);
 }
 
 const net = {
@@ -34,9 +35,9 @@ await prisma.platformAdmin.upsert({
   create: { address: OWNER, label: "anvil #0 (dev owner)" },
 });
 await prisma.network.upsert({
-  where: { chainId: 31337 },
+  where: { chainId: CHAIN_ID },
   update: net, // refresh addresses on redeploy
-  create: { chainId: 31337, ...net },
+  create: { chainId: CHAIN_ID, ...net },
 });
-console.log("seeded: admin + network 31337 → factory", net.dropFactory);
+console.log(`seeded: admin + network ${CHAIN_ID} → factory`, net.dropFactory);
 await prisma.$disconnect();
