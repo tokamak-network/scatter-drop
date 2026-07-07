@@ -107,6 +107,7 @@ model QuestCampaign {   // 캠페인 = 아직 createDrop 전의 퀘스트 컨테
   totalAmount String  // 사람단위 문자열, 집계 시 분배
   drop       String?  // createDrop 후 연결되는 드랍 주소 (lowercased)
   tasks      QuestTask[]
+  completions QuestCompletion[]
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   @@index([operator, chainId])
@@ -115,28 +116,32 @@ model QuestCampaign {   // 캠페인 = 아직 createDrop 전의 퀘스트 컨테
 model QuestTask {
   id         String @id @default(cuid())
   campaignId String
-  campaign   QuestCampaign @relation(fields: [campaignId], references: [id])
+  campaign   QuestCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   kind       String  // DISCORD_JOIN | DISCORD_ROLE | TELEGRAM_JOIN | GITHUB_STAR | ONCHAIN | X_POST | X_FOLLOW | LINK_VISIT
   config     String  // JSON: guildId/roleId, chatId, owner/repo, tweet 조건 등
   required   Boolean @default(true)
   tier       String  // VERIFIED | METERED | INTENT (kind에서 유도, 저장은 감사용)
+  completions QuestCompletion[]
 }
 
 model QuestCompletion {
   campaignId String
+  campaign   QuestCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   wallet     String   // lowercased
   taskId     String
+  task       QuestTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
   verifiedAt DateTime @default(now())
   evidence   String?  // JSON: guild member joined_at, tweet id 등 (최소한만)
   @@id([campaignId, wallet, taskId])
   @@index([campaignId, wallet])
 }
 
-model WalletSocial {   // sybil 축: 1 소셜계정 = 1 지갑
+model WalletSocial {   // sybil 축: 1 소셜계정 = 1 지갑 (소프트 언바인드 — 행은 이력·쿨다운을 위해 유지)
   provider          String  // discord | telegram | github | x
   providerAccountId String
-  wallet            String  // lowercased
+  wallet            String  // lowercased — 현재 바인딩된 지갑 (언바인드 상태여도 마지막 지갑 유지)
   boundAt           DateTime @default(now())
+  unboundAt         DateTime?  // null = 활성 바인딩. 언바인드 시 기록 → 쿨다운 판정 근거
   quality           String?  // JSON: 계정 나이·팔로워 등 스코어링 신호
   @@id([provider, providerAccountId])
   @@index([wallet])
@@ -159,7 +164,13 @@ model WalletSocial {   // sybil 축: 1 소셜계정 = 1 지갑
 ## 7. Sybil 정책
 
 1. **zk-X509 신원게이트** — SOCIAL 캠페인 default-on. 클레임 시 1인 1검증이 최종 방어선.
-2. **1 소셜계정 = 1 지갑** — `WalletSocial` PK로 강제. 재바인딩은 기존 바인딩 해제 후 쿨다운.
+2. **1 소셜계정 = 1 지갑** — `WalletSocial` PK로 강제. 언바인드는 **소프트**(행 유지, `unboundAt` 기록)라
+   쿨다운·이력이 DB에 남는다. 재바인딩은 `unboundAt + 쿨다운` 경과 후에만 허용.
+   **리바인딩 악용 차단**: 같은 소셜 계정을 지갑 A→B로 옮겨 두 지갑에서 완료를 쌓는 시나리오는
+   ① 검증 시점 — 검증기는 활성 바인딩(`unboundAt = null`)에서만 완료를 기록,
+   ② 집계 시점 — 집계는 `QuestCompletion ⋈ WalletSocial`로 **집계 시점에 바인딩이 활성이고
+   완료 당시 지갑과 일치하는** 완료만 계수, 소셜 검증 경유 완료는 언바인드 시 해당 지갑 것을 집계 제외 —
+   두 층에서 막는다. 잔여 리스크(캠페인 사이의 이동)는 신원게이트(1인 1검증)가 흡수.
 3. **계정 품질 임계(운영자 옵션)** — Discord 계정 나이(스노우플레이크 역산, 무료), 가입 시점
    (`joined_at`이 마감 직전이면 플래그), X 계정 나이·팔로워(연결 시 1회 $0.01 조회에 포함), GitHub 계정 나이.
 4. **마감 시 재검증(옵션)** — VERIFIED 태스크는 집계 직전 배치 재확인(Discord 봇 경로는 무료).
