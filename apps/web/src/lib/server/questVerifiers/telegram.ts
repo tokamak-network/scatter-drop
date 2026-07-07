@@ -35,7 +35,9 @@ export const verifyTelegramTask: QuestVerifier = async (task, _wallet, binding) 
     return { ok: false, reason: "Connect your Telegram account first.", status: 409 };
   }
 
-  const { chatId } = JSON.parse(task.config) as { chatId?: string };
+  const parsed = JSON.parse(task.config);
+  const config = typeof parsed === "object" && parsed !== null ? parsed : {};
+  const { chatId } = config as { chatId?: string };
   if (!chatId) {
     return { ok: false, reason: "Task is misconfigured (missing chatId).", status: 500 };
   }
@@ -59,12 +61,17 @@ export const verifyTelegramTask: QuestVerifier = async (task, _wallet, binding) 
     };
   }
   if (!body.ok || !body.result) {
-    // A 400 here is almost always "bot is not an admin of this chat" or "chat
-    // not found" — an OPERATOR setup problem, not the recipient's failure.
-    const reason =
-      res.status === 403 || /not enough rights|bot is not a member/i.test(body.description ?? "")
-        ? "The verification bot is not an admin of this Telegram chat — ask the campaign operator to add it."
-        : `Telegram verification failed: ${body.description ?? res.status}`;
+    // These are almost always OPERATOR setup problems, not the recipient's failure.
+    // Telegram signals them as a 403 OR a 400 with a telltale description, so match
+    // both: "chat not found" / "member list is inaccessible" (bot not admin) come
+    // back as 400, while "bot is not a member" / "not enough rights" can be either.
+    const desc = body.description ?? "";
+    const operatorSetupIssue =
+      res.status === 403 ||
+      /not enough rights|bot is not a member|chat not found|member list is inaccessible/i.test(desc);
+    const reason = operatorSetupIssue
+      ? "The verification bot is not set up for this Telegram chat — ask the campaign operator to add it as an admin."
+      : `Telegram verification failed: ${desc || res.status}`;
     return { ok: false, reason, status: 503 };
   }
 

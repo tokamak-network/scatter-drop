@@ -41,6 +41,39 @@ describe("telegramOAuth", () => {
     expect(result).toEqual({ id: "555000111", quality: JSON.stringify({ username: "ada_dev" }) });
   });
 
+  it("verifies a payload carrying a Telegram field not in a fixed allow-list", async () => {
+    // Telegram can sign extra fields (e.g. language_code); the data-check-string is
+    // built from all received fields, so this must still verify rather than fail.
+    const params = signedParams({
+      id: "555000111",
+      first_name: "Ada",
+      username: "ada_dev",
+      language_code: "en",
+      auth_date: String(Math.floor(Date.now() / 1000)),
+    });
+    const result = await telegramOAuth.fetchUser(params, "https://example.test/callback");
+    expect(result).toEqual({ id: "555000111", quality: JSON.stringify({ username: "ada_dev" }) });
+  });
+
+  it("ignores our own unsigned `state` param when verifying", async () => {
+    const params = signedParams({
+      id: "555000111",
+      auth_date: String(Math.floor(Date.now() / 1000)),
+    });
+    params.set("state", "csrf-round-trip"); // added by us, not signed by Telegram
+    const result = await telegramOAuth.fetchUser(params, "https://example.test/callback");
+    expect(result).toEqual({ id: "555000111", quality: JSON.stringify({ username: null }) });
+  });
+
+  it("tolerates minor clock skew (auth_date slightly in the future)", async () => {
+    const params = signedParams({
+      id: "555000111",
+      auth_date: String(Math.floor(Date.now() / 1000) + 60), // 1 min ahead
+    });
+    const result = await telegramOAuth.fetchUser(params, "https://example.test/callback");
+    expect(result).toEqual({ id: "555000111", quality: JSON.stringify({ username: null }) });
+  });
+
   it("rejects a payload with a tampered hash", async () => {
     const params = signedParams({
       id: "555000111",

@@ -13,10 +13,18 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { OAuthAdapter } from "./types";
 
-/** Fields Telegram itself signs — everything else in the query is ours (e.g. `state`) or noise. */
-const SIGNED_FIELDS = ["id", "first_name", "last_name", "username", "photo_url", "auth_date"];
+/**
+ * Query params that are NOT part of Telegram's signature: `hash` is the signature
+ * itself, `state` is our own round-trip value. Everything else in the callback was
+ * signed by Telegram, so we build the data-check-string from all remaining fields
+ * rather than a fixed allow-list — Telegram can add signed fields (e.g. `language_code`)
+ * and this stays correct instead of failing verification.
+ */
+const UNSIGNED_FIELDS = new Set(["hash", "state"]);
 /** Reject a login payload older than this — caps replay of a stale shared link. */
 const MAX_AUTH_AGE_SECONDS = 24 * 60 * 60;
+/** Tolerate small clock skew between Telegram's servers and ours on the lower bound. */
+const CLOCK_SKEW_SECONDS = 5 * 60;
 
 function botId(): string | null {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -39,7 +47,9 @@ export const telegramOAuth: OAuthAdapter = {
     const url = new URL("https://oauth.telegram.org/auth");
     url.searchParams.set("bot_id", id);
     url.searchParams.set("origin", returnTo.origin);
-    url.searchParams.set("request_access", "write");
+    // No `request_access`: we only need to authenticate/bind the account. Membership
+    // checks run through the admin bot (getChatMember), not by messaging the user, so
+    // requesting write access would be an unnecessary permission prompt.
     url.searchParams.set("return_to", returnTo.toString());
     return url.toString();
   },
@@ -55,9 +65,13 @@ export const telegramOAuth: OAuthAdapter = {
       return { error: "Telegram did not return a signed login payload" };
     }
 
-    const dataCheckString = SIGNED_FIELDS.filter((k) => params.has(k))
-      .map((k) => `${k}=${params.get(k)}`)
+    // Telegram spec: data-check-string is every received field except `hash`, with
+    // keys sorted alphabetically, joined as `key=value` by newlines. Sort the keys
+    // first (not the formatted strings) so it matches the spec exactly.
+    const dataCheckString = [...new Set(params.keys())]
+      .filter((k) => !UNSIGNED_FIELDS.has(k))
       .sort()
+      .map((k) => `${k}=${params.get(k)}`)
       .join("\n");
     const secretKey = createHash("sha256").update(botToken).digest();
     const computed = createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
@@ -69,7 +83,11 @@ export const telegramOAuth: OAuthAdapter = {
     }
 
     const ageSeconds = Date.now() / 1000 - Number(authDate);
-    if (!Number.isFinite(ageSeconds) || ageSeconds < 0 || ageSeconds > MAX_AUTH_AGE_SECONDS) {
+    if (
+      !Number.isFinite(ageSeconds) ||
+      ageSeconds < -CLOCK_SKEW_SECONDS ||
+      ageSeconds > MAX_AUTH_AGE_SECONDS
+    ) {
       return { error: "Telegram login link has expired — try linking again." };
     }
 
