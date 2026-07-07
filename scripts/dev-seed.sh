@@ -2,11 +2,19 @@
 # dev-seed.sh — seed one demo campaign on the local fork so the frontend shows
 # something immediately. Reads the addresses written by dev-fork.sh, verifies
 # the operator + demo customer (dev-verify.sh), funds/approves, and createDrop's
-# a 2-leaf campaign (customer = anvil #1, other = anvil #2).
+# a 2-leaf campaign (customer = anvil #1, other = anvil #2). Leaf indices are
+# assigned by ascending address — the same rule packages/merkle's buildDrop
+# uses — so the on-chain root matches what a recipients CSV reconstructs
+# through the frontend (wizard or ProofsPanel's post-hoc republish).
 #
 # Run after dev-fork.sh (same anvil still up). Prints the drop address and the
 # customer's claim proof for in-browser claiming.
 set -euo pipefail
+# Force ASCII-byte string comparison for every `[[ ... < ... ]]` below (address
+# sort, sorted-pair root hashing): under a non-C locale, `<` collates instead
+# of comparing bytes, which can reorder hex strings differently across
+# developer machines and produce a different root from the same addresses.
+export LC_ALL=C
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # Exported so the child dev-verify.sh inherits a custom RPC_URL.
@@ -53,14 +61,32 @@ pack() {
   acct="${2#0x}"
   echo "0x${idx#0x}${acct}${amt#0x}"
 }
-L0="$(cast keccak "$(pack 0 "$CUSTOMER" "$CUST_AMT")")"
-L1="$(cast keccak "$(pack 1 "$OTHER" "$OTHER_AMT")")"
+
+# Leaf index MUST be assigned by ascending address (packages/merkle's
+# normalizeEntries/buildDrop rule), not a fixed customer=0/other=1 — a CSV
+# reconstruction (the frontend wizard, or ProofsPanel's post-hoc republish)
+# always rebuilds indices this way, so a hardcoded assignment that happens to
+# disagree with address order produces an on-chain root no CSV can ever
+# reproduce (the campaign becomes permanently unrecoverable).
+CUSTOMER_LC="${CUSTOMER,,}"
+OTHER_LC="${OTHER,,}"
+if [[ "$CUSTOMER_LC" < "$OTHER_LC" ]]; then
+  ADDR0="$CUSTOMER"; AMT0="$CUST_AMT"; CUSTOMER_IDX=0
+  ADDR1="$OTHER";    AMT1="$OTHER_AMT"
+else
+  ADDR0="$OTHER";    AMT0="$OTHER_AMT"
+  ADDR1="$CUSTOMER"; AMT1="$CUST_AMT";  CUSTOMER_IDX=1
+fi
+L0="$(cast keccak "$(pack 0 "$ADDR0" "$AMT0")")"
+L1="$(cast keccak "$(pack 1 "$ADDR1" "$AMT1")")"
 # sorted-pair root (OZ commutative)
 if [[ "$L0" < "$L1" || "$L0" == "$L1" ]]; then
   ROOT_HASH="$(cast keccak "${L0}${L1#0x}")"
 else
   ROOT_HASH="$(cast keccak "${L1}${L0#0x}")"
 fi
+# The customer's proof is just the sibling leaf in a 2-leaf tree.
+if [ "$CUSTOMER_IDX" = "0" ]; then CUSTOMER_PROOF="$L1"; else CUSTOMER_PROOF="$L0"; fi
 
 echo "[seed] verifying operator + customer on the fork..."
 "$ROOT/scripts/dev-verify.sh" "$OPERATOR" >/dev/null
@@ -87,6 +113,6 @@ DROP="$(cast call "$FACTORY" 'dropAt(uint256)(address)' "$(( LEN - 1 ))" --rpc-u
 
 echo "[seed] done."
 echo "  drop          $DROP"
-echo "  customer      $CUSTOMER  (index 0, amount $CUST_AMT)"
-echo "  customer proof [$L1]"
-echo "  claim in-browser: connect as customer, claim(0, customer, $CUST_AMT, [$L1])"
+echo "  customer      $CUSTOMER  (index $CUSTOMER_IDX, amount $CUST_AMT)"
+echo "  customer proof [$CUSTOMER_PROOF]"
+echo "  claim in-browser: connect as customer, claim($CUSTOMER_IDX, $CUSTOMER, $CUST_AMT, [$CUSTOMER_PROOF])"
