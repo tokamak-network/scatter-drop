@@ -13,12 +13,14 @@ import { shortHash } from "@/lib/explorer";
 import {
   ipfsUrl,
   proofsAnchorQueryKey,
+  proofsMetaQueryKey,
   useProofsAnchorCid,
   useProofsMeta,
   type ProofsMeta,
 } from "@/lib/proofs";
 import type { Campaign } from "@/lib/stub";
 import { useWalletSession } from "@/lib/useWalletSession";
+import { RepublishSection } from "./RepublishSection";
 
 /**
  * Operator console — durability status of the campaign's recipient list and
@@ -77,7 +79,7 @@ export function ProofsPanel({
       }
       // Update in place when cached; otherwise refetch rather than seeding a
       // possibly-wrong count.
-      const metaKey = ["proofsMeta", chainId, campaign.drop] as const;
+      const metaKey = proofsMetaQueryKey(chainId, campaign.drop);
       const prev = queryClient.getQueryData<ProofsMeta | null>(metaKey);
       if (prev) {
         queryClient.setQueryData(metaKey, { ...prev, cid: data.cid! });
@@ -119,10 +121,18 @@ export function ProofsPanel({
           Could not load proofs status — check the fork/RPC and retry.
         </p>
       ) : !meta ? (
-        <p className="text-xs font-medium text-amber-600">
-          No recipient list is stored for this campaign — republish it from the
-          creation flow first.
-        </p>
+        isOperator && root ? (
+          // campaigns.ts resolves decimals with the same 18 fallback; a wrong
+          // guess can only produce a root mismatch (surfaced in the section),
+          // never a wrong publish — the rebuilt root must match on-chain.
+          <RepublishSection campaign={campaign} root={root} decimals={campaign.decimals ?? 18} />
+        ) : (
+          <p className="text-xs font-medium text-amber-600">
+            {isOperator
+              ? "No recipient list is stored, and this campaign has no on-chain merkle root to verify one against."
+              : "No recipient list is stored for this campaign — the campaign operator can publish it from this console."}
+          </p>
+        )
       ) : (
         <>
           <dl className="text-xs space-y-1.5 font-mono">

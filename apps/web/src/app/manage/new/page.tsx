@@ -17,12 +17,9 @@ import {
   buildCreateDropRequest,
   buildCreateDropOneTxRequest,
   buildPublishProofsRequest,
-  buildDrop,
   getZkX509,
   NATIVE_ETH,
-  parseCsv,
   TokenTier,
-  type DropManifest,
 } from "@tokamak-network/scatter-drop-sdk";
 import { ArrowLeft, ArrowRight, ArrowUpRight, Check, Download, Loader2, Upload } from "lucide-react";
 import Link from "next/link";
@@ -51,7 +48,9 @@ import { toCsv } from "@/lib/reports";
 import { explorerUrl, shortHash } from "@/lib/explorer";
 import { patchAnnouncement, useAnnouncements } from "@/lib/announcements";
 import { publishCampaignMeta } from "@/lib/campaignMeta";
+import { readCsvFileInput } from "@/lib/csvFile";
 import { publishProofs } from "@/lib/proofs";
+import { useParsedRecipients } from "@/lib/useParsedRecipients";
 import { useWalletSession } from "@/lib/useWalletSession";
 import {
   deploymentIssue,
@@ -117,32 +116,6 @@ const TYPES: {
   },
 ];
 
-/**
- * Parse the recipients CSV using the SDK `parseCsv` (single source of truth) and
- * build the Merkle drop, so the wizard's tree/root/total match the SDK + claim
- * path exactly. CSV amounts are human token amounts ("1000", "1.5") — the
- * operator's mental model — scaled to base units by the selected token's
- * `decimals` before they're committed to the tree. `parseCsv` and `buildDrop`
- * throw on malformed/duplicate rows, which we surface as a message instead of
- * crashing the render.
- */
-function parseRecipients(
-  text: string,
-  decimals: number,
-): {
-  manifest: DropManifest | null;
-  error: string | null;
-} {
-  if (!text.trim()) return { manifest: null, error: null };
-  try {
-    const entries = parseCsv(text, { decimals });
-    if (entries.length === 0) return { manifest: null, error: null };
-    return { manifest: buildDrop(entries), error: null };
-  } catch (e) {
-    return { manifest: null, error: e instanceof Error ? e.message : "Invalid CSV" };
-  }
-}
-
 export default function NewCampaignPage() {
   const { data: dep, isLoading: depLoading } = useDeployment();
   const factory = dep?.dropFactory;
@@ -160,14 +133,7 @@ export default function NewCampaignPage() {
   // RecipientBuilder as /tools) which writes its result back into `csv`.
   const [recipMode, setRecipMode] = useState<"paste" | "build">("paste");
   const csvFileRef = useRef<HTMLInputElement>(null);
-  function handleCsvFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setCsv(String(reader.result ?? ""));
-    reader.readAsText(file);
-    e.target.value = ""; // allow re-selecting the same file
-  }
+  const handleCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => readCsvFileInput(e, setCsv);
   const [startDate, setStartDate] = useState("");
   const [deadline, setDeadline] = useState("");
   // W24: identity gate is optional. Off → open claim (identityRegistry = 0).
@@ -228,37 +194,9 @@ export default function NewCampaignPage() {
   const fmtAmount = (v: bigint) =>
     decimals !== undefined ? `${humanAmount(v)} ${unit}` : `${v.toString()} base units`;
 
-  // Debounce parsing/Merkle build so large lists don't rebuild on every
-  // keystroke. Amounts are human units scaled by the token's decimals, so the
-  // build waits for them to resolve and re-runs on a token switch; the ref
-  // guard skips rebuilding an identical tree when a token re-read resolves to
-  // the same decimals (a 50k-row build is main-thread work).
-  const [parsed, setParsed] = useState<{
-    manifest: DropManifest | null;
-    error: string | null;
-  }>({ manifest: null, error: null });
-  const lastBuilt = useRef<{ csv: string; decimals: number } | null>(null);
-  useEffect(() => {
-    if (decimals === undefined) {
-      // Token cleared/invalid: drop the stale tree rather than keep showing a
-      // manifest scaled for the previous token. A mid-read undefined for the
-      // SAME token resolves quickly and the ref guard skips the no-op rebuild.
-      if (!tokenValid && lastBuilt.current) {
-        lastBuilt.current = null;
-        setParsed({ manifest: null, error: null });
-      }
-      return;
-    }
-    if (lastBuilt.current?.csv === csv && lastBuilt.current.decimals === decimals) return;
-    const t = setTimeout(() => {
-      lastBuilt.current = { csv, decimals };
-      setParsed(parseRecipients(csv, decimals));
-    }, 400);
-    return () => clearTimeout(t);
-    // tokenValid only matters on the decimals===undefined early return; the
-    // ref guard makes re-runs no-ops, so satisfying the linter is free.
-  }, [csv, decimals, tokenValid]);
-  const { manifest, error: csvError } = parsed;
+  // Debounced parse + Merkle build (shared with the republish flow); waits
+  // for decimals to resolve and drops the stale tree when the token clears.
+  const { manifest, error: csvError } = useParsedRecipients(csv, decimals, tokenValid);
 
   // Prefill from the /tools CSV builder ("Use in a campaign") once on mount.
   useEffect(() => {
@@ -410,7 +348,9 @@ export default function NewCampaignPage() {
           manifest.claims,
           receipt.transactionHash,
         )
-          .then(setProofsCid)
+          // Best-effort here: a rejected publish leaves cid null and the
+          // success checklist offers recovery from the operator console.
+          .then((r) => setProofsCid(r.ok ? r.cid : null))
           .finally(() => setPinSettled(true));
       } else {
         setPinSettled(true);

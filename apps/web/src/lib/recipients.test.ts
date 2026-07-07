@@ -6,6 +6,7 @@ import {
   duplicateCount,
   hasInvalidAddress,
   isqrt,
+  parseRecipients,
   rowsToCsv,
   toBaseUnits,
   withTrailingBlank,
@@ -78,6 +79,28 @@ describe("hasInvalidAddress / duplicateCount", () => {
     expect(duplicateCount([row(A, "1"), row(B, "2")])).toBe(0);
     expect(duplicateCount([row(A, "1"), row(A.toLowerCase(), "2"), row(A, "3")])).toBe(2);
     expect(duplicateCount([row("bad", "1"), row("bad", "2")])).toBe(0);
+  });
+});
+
+describe("parseRecipients", () => {
+  it("builds a manifest whose root is deterministic for the same CSV + decimals", () => {
+    const csv = `${A},1000\n${B},500`;
+    const one = parseRecipients(csv, 18);
+    const two = parseRecipients(csv, 18);
+    expect(one.error).toBeNull();
+    expect(one.manifest?.count).toBe(2);
+    expect(one.manifest?.merkleRoot).toBe(two.manifest?.merkleRoot);
+    // Decimals are committed to the tree — a different scale is a different root.
+    expect(parseRecipients(csv, 6).manifest?.merkleRoot).not.toBe(one.manifest?.merkleRoot);
+  });
+  it("returns null manifest (no error) for empty/comment-only input", () => {
+    expect(parseRecipients("", 18)).toEqual({ manifest: null, error: null });
+    expect(parseRecipients("# just a note\n", 18)).toEqual({ manifest: null, error: null });
+  });
+  it("surfaces malformed rows as an error message instead of throwing", () => {
+    const bad = parseRecipients(`${A},not-a-number`, 18);
+    expect(bad.manifest).toBeNull();
+    expect(bad.error).toBeTruthy();
   });
 });
 
