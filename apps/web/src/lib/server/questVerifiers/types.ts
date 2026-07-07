@@ -18,6 +18,8 @@ export interface VerifierBinding {
   provider: string;
   providerAccountId: string;
   wallet: string;
+  /** User access token (GitHub only — see WalletSocial.accessToken). */
+  accessToken?: string | null;
 }
 
 export type VerifyOutcome =

@@ -13,25 +13,36 @@ export const MAX_QUESTS_PER_OPERATOR = 50;
 /** Discord snowflake ids (guild/role) — numeric strings. */
 export const SNOWFLAKE_RE = /^\d{5,25}$/;
 export const QUEST_URL_RE = /^https:\/\/[^\s]{1,300}$/;
+/** Telegram public channel/group username or numeric chat id (`@name` or `-100…`). */
+export const TELEGRAM_CHAT_RE = /^(@[A-Za-z0-9_]{5,32}|-?\d{5,20})$/;
+/** GitHub username/org and repo name — the two path segments of owner/repo. */
+export const GITHUB_NAME_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 
 /**
  * Verification tier per task kind (design §3: the tier is honest UI, fixed by
  * kind). v1 ships the free/certain kinds plus the click-trust LINK_VISIT;
- * X kinds are deliberately absent (§9 decision: no X module in v1) and
- * Telegram/GitHub/onchain kinds unlock as their verifiers land (SOC-5').
+ * X kinds are deliberately absent (§9 decision: no X module in v1). Onchain
+ * kinds remain unlocked for a later slice.
  */
 export const QUEST_TASK_KINDS = {
   DISCORD_JOIN: "VERIFIED",
   DISCORD_ROLE: "VERIFIED",
+  TELEGRAM_JOIN: "VERIFIED",
+  GITHUB_STAR: "VERIFIED",
   LINK_VISIT: "INTENT",
 } as const;
 
 export type QuestTaskKind = keyof typeof QUEST_TASK_KINDS;
 export type QuestTier = (typeof QUEST_TASK_KINDS)[QuestTaskKind];
 
+export type SocialProvider = "discord" | "telegram" | "github";
+
 /** Social provider a kind verifies through (null = no account binding needed). */
-export function providerForKind(kind: string): "discord" | null {
-  return kind.startsWith("DISCORD_") ? "discord" : null;
+export function providerForKind(kind: string): SocialProvider | null {
+  if (kind.startsWith("DISCORD_")) return "discord";
+  if (kind.startsWith("TELEGRAM_")) return "telegram";
+  if (kind.startsWith("GITHUB_")) return "github";
+  return null;
 }
 
 /** Distinct providers a task set verifies through (binding checklist). */

@@ -5,11 +5,13 @@
  */
 
 import {
+  GITHUB_NAME_RE,
   MAX_QUEST_TASKS,
   MAX_QUEST_TITLE,
   QUEST_TASK_KINDS,
   QUEST_URL_RE,
   SNOWFLAKE_RE,
+  TELEGRAM_CHAT_RE,
   type QuestTaskKind,
 } from "@/lib/quests";
 import { isPositiveDecimal } from "@/lib/validation";
@@ -68,6 +70,21 @@ function parseAmount(v: unknown): Result<string> {
  * JSON so a creative operator can't stash arbitrary payloads that the public
  * task list would then serve.
  */
+/**
+ * Optional invite link shown to recipients so they can actually join —
+ * shared by every "join a chat/server" kind (Discord, Telegram).
+ */
+function parseOptionalInviteUrl(
+  kind: string,
+  inviteUrl: string,
+): Result<string | undefined> {
+  if (!inviteUrl) return { value: undefined };
+  if (!QUEST_URL_RE.test(inviteUrl)) {
+    return { error: `${kind}: config.inviteUrl must be an https:// URL` };
+  }
+  return { value: inviteUrl };
+}
+
 function parseTaskConfig(
   kind: QuestTaskKind,
   raw: unknown,
@@ -90,15 +107,31 @@ function parseTaskConfig(
         }
         out.roleId = roleId;
       }
-      // Optional invite link shown to recipients so they can actually join.
-      const inviteUrl = str("inviteUrl");
-      if (inviteUrl) {
-        if (!QUEST_URL_RE.test(inviteUrl)) {
-          return { error: `${kind}: config.inviteUrl must be an https:// URL` };
-        }
-        out.inviteUrl = inviteUrl;
-      }
+      const inviteUrl = parseOptionalInviteUrl(kind, str("inviteUrl"));
+      if ("error" in inviteUrl) return inviteUrl;
+      if (inviteUrl.value) out.inviteUrl = inviteUrl.value;
       return { value: out };
+    }
+    case "TELEGRAM_JOIN": {
+      const chatId = str("chatId");
+      if (!TELEGRAM_CHAT_RE.test(chatId)) {
+        return {
+          error: "TELEGRAM_JOIN: config.chatId must be a @username or numeric chat id",
+        };
+      }
+      const out: Record<string, string> = { chatId };
+      const inviteUrl = parseOptionalInviteUrl(kind, str("inviteUrl"));
+      if ("error" in inviteUrl) return inviteUrl;
+      if (inviteUrl.value) out.inviteUrl = inviteUrl.value;
+      return { value: out };
+    }
+    case "GITHUB_STAR": {
+      const owner = str("owner");
+      const repo = str("repo");
+      if (!GITHUB_NAME_RE.test(owner) || !GITHUB_NAME_RE.test(repo)) {
+        return { error: "GITHUB_STAR: config.owner and config.repo must be valid GitHub names" };
+      }
+      return { value: { owner, repo } };
     }
     case "LINK_VISIT": {
       const url = str("url");

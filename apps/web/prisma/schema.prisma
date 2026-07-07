@@ -157,6 +157,12 @@ model WalletSocial {
   boundAt           DateTime  @default(now())
   unboundAt         DateTime? // null = active binding
   quality           String? // JSON: account age, joined_at flags, … (scoring signals)
+  // Server-only user access token — ONLY GitHub needs it: star-checking is
+  // `GET /user/starred/{owner}/{repo}` as the user themselves (design §2.2),
+  // so unlike Discord/Telegram (checked via a platform bot token any time),
+  // the GITHUB_STAR verifier must re-use this at check time. Never returned
+  // by any API response (see questVerifiers/github.ts, /api/quests/*/me).
+  accessToken       String?
 
   @@id([provider, providerAccountId])
   @@index([wallet])
