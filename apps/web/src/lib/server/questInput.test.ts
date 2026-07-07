@@ -114,6 +114,64 @@ describe("parseQuestCreate", () => {
   it("rejects a primitive body", () => {
     expect(parseQuestCreate("nope")).toEqual({ error: expect.stringContaining("object") });
   });
+
+  it("accepts a TELEGRAM_JOIN task with a @username chat id", () => {
+    const result = parseQuestCreate({
+      ...VALID_BODY,
+      tasks: [{ kind: "TELEGRAM_JOIN", config: { chatId: "@some_channel" }, required: true }],
+    });
+    expect("value" in result).toBe(true);
+  });
+
+  it("accepts a TELEGRAM_JOIN task with a numeric chat id", () => {
+    const result = parseQuestCreate({
+      ...VALID_BODY,
+      tasks: [{ kind: "TELEGRAM_JOIN", config: { chatId: "-1001234567890" }, required: true }],
+    });
+    expect("value" in result).toBe(true);
+  });
+
+  it("rejects a TELEGRAM_JOIN task with a malformed chat id", () => {
+    const result = parseQuestCreate({
+      ...VALID_BODY,
+      tasks: [{ kind: "TELEGRAM_JOIN", config: { chatId: "not a chat" }, required: true }],
+    });
+    expect(result).toEqual({ error: expect.stringContaining("chatId") });
+  });
+
+  it("accepts a GITHUB_STAR task with owner + repo", () => {
+    const result = parseQuestCreate({
+      ...VALID_BODY,
+      tasks: [
+        { kind: "GITHUB_STAR", config: { owner: "tokamak-network", repo: "scatter-drop" }, required: true },
+      ],
+    });
+    expect("value" in result).toBe(true);
+  });
+
+  it("rejects a GITHUB_STAR task missing repo", () => {
+    const result = parseQuestCreate({
+      ...VALID_BODY,
+      tasks: [{ kind: "GITHUB_STAR", config: { owner: "tokamak-network" }, required: true }],
+    });
+    expect(result).toEqual({ error: expect.stringContaining("GITHUB_STAR") });
+  });
+
+  it("accepts a GITHUB_STAR repo name with dots/underscores (e.g. .github)", () => {
+    const result = parseQuestCreate({
+      ...VALID_BODY,
+      tasks: [{ kind: "GITHUB_STAR", config: { owner: "tokamak-network", repo: ".github" }, required: true }],
+    });
+    expect("value" in result).toBe(true);
+  });
+
+  it("rejects a GITHUB_STAR owner with a trailing hyphen", () => {
+    const result = parseQuestCreate({
+      ...VALID_BODY,
+      tasks: [{ kind: "GITHUB_STAR", config: { owner: "tokamak-", repo: "scatter-drop" }, required: true }],
+    });
+    expect(result).toEqual({ error: expect.stringContaining("GITHUB_STAR") });
+  });
 });
 
 describe("parseQuestPatch", () => {

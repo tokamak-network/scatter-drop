@@ -45,14 +45,17 @@ export async function GET(
     return fail(`${provider} account linking is not configured on this server.`);
   }
   if (!wallet) return fail("Sign in with your wallet first.");
-  const code = req.nextUrl.searchParams.get("code");
+  // `state` is the only field every provider's redirect carries — Discord and
+  // GitHub also return `code`, but Telegram's login widget signs the user
+  // fields directly instead, so the adapter (not this route) decides what it
+  // needs from the rest of the query.
   const state = req.nextUrl.searchParams.get("state");
-  if (!code || !state || !expectedState || state !== expectedState) {
+  if (!state || !expectedState || state !== expectedState) {
     return fail(`${provider} sign-in was cancelled or expired — try again.`);
   }
 
   const redirectUri = `${req.nextUrl.origin}/api/oauth/${provider}/callback`;
-  const user = await adapter.fetchUser(code, redirectUri);
+  const user = await adapter.fetchUser(req.nextUrl.searchParams, redirectUri);
   if ("error" in user) return fail(user.error);
 
   // Binding rules (§7): 1 account = 1 wallet (soft-unbind cooldown) and one
@@ -75,12 +78,19 @@ export async function GET(
       );
       if (walletErr) return walletErr;
 
+      const accessToken = user.accessToken ?? null;
       await tx.walletSocial.upsert({
         where: { provider_providerAccountId: { provider, providerAccountId: user.id } },
-        create: { provider, providerAccountId: user.id, wallet, quality: user.quality },
+        create: { provider, providerAccountId: user.id, wallet, quality: user.quality, accessToken },
         // Rebind after cooldown (or idempotent re-link): fresh boundAt,
         // binding re-activated. History stays via the same row's audit trail.
-        update: { wallet, boundAt: new Date(), unboundAt: null, quality: user.quality },
+        update: {
+          wallet,
+          boundAt: new Date(),
+          unboundAt: null,
+          quality: user.quality,
+          accessToken,
+        },
       });
       return null;
     },

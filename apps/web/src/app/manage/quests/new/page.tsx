@@ -12,11 +12,14 @@ import { useWalletSession } from "@/lib/useWalletSession";
 import { isPositiveDecimal } from "@/lib/validation";
 import {
   createQuest,
+  GITHUB_OWNER_RE,
+  GITHUB_REPO_RE,
   MAX_QUEST_TASKS,
   MAX_QUEST_TITLE,
   QUEST_TASK_KINDS,
   QUEST_URL_RE,
   SNOWFLAKE_RE,
+  TELEGRAM_CHAT_RE,
   type QuestTaskKind,
 } from "@/lib/quests";
 
@@ -29,6 +32,9 @@ interface TaskDraft {
   kind: QuestTaskKind;
   guildId: string;
   roleId: string;
+  chatId: string;
+  owner: string;
+  repo: string;
   inviteUrl: string;
   url: string;
   label: string;
@@ -41,6 +47,9 @@ function newTaskDraft(): TaskDraft {
     kind: "DISCORD_JOIN",
     guildId: "",
     roleId: "",
+    chatId: "",
+    owner: "",
+    repo: "",
     inviteUrl: "",
     url: "",
     label: "",
@@ -51,27 +60,49 @@ function newTaskDraft(): TaskDraft {
 const KIND_LABELS: Record<QuestTaskKind, string> = {
   DISCORD_JOIN: "Join a Discord server",
   DISCORD_ROLE: "Hold a Discord role",
+  TELEGRAM_JOIN: "Join a Telegram channel/group",
+  GITHUB_STAR: "Star a GitHub repo",
   LINK_VISIT: "Visit a link (unverified)",
 };
 
 function draftToInput(t: TaskDraft) {
   const config: Record<string, string> = {};
-  if (t.kind === "DISCORD_JOIN" || t.kind === "DISCORD_ROLE") {
-    config.guildId = t.guildId.trim();
-    if (t.inviteUrl.trim()) config.inviteUrl = t.inviteUrl.trim();
-    if (t.kind === "DISCORD_ROLE") config.roleId = t.roleId.trim();
-  } else {
-    config.url = t.url.trim();
-    if (t.label.trim()) config.label = t.label.trim();
+  switch (t.kind) {
+    case "DISCORD_JOIN":
+    case "DISCORD_ROLE":
+      config.guildId = t.guildId.trim();
+      if (t.inviteUrl.trim()) config.inviteUrl = t.inviteUrl.trim();
+      if (t.kind === "DISCORD_ROLE") config.roleId = t.roleId.trim();
+      break;
+    case "TELEGRAM_JOIN":
+      config.chatId = t.chatId.trim();
+      if (t.inviteUrl.trim()) config.inviteUrl = t.inviteUrl.trim();
+      break;
+    case "GITHUB_STAR":
+      config.owner = t.owner.trim();
+      config.repo = t.repo.trim();
+      break;
+    case "LINK_VISIT":
+      config.url = t.url.trim();
+      if (t.label.trim()) config.label = t.label.trim();
+      break;
   }
   return { kind: t.kind, config, required: t.required };
 }
 
 function draftValid(t: TaskDraft): boolean {
-  if (t.kind === "LINK_VISIT") return QUEST_URL_RE.test(t.url.trim());
-  if (!SNOWFLAKE_RE.test(t.guildId.trim())) return false;
-  if (t.kind === "DISCORD_ROLE" && !SNOWFLAKE_RE.test(t.roleId.trim())) return false;
-  return true;
+  switch (t.kind) {
+    case "LINK_VISIT":
+      return QUEST_URL_RE.test(t.url.trim());
+    case "DISCORD_JOIN":
+      return SNOWFLAKE_RE.test(t.guildId.trim());
+    case "DISCORD_ROLE":
+      return SNOWFLAKE_RE.test(t.guildId.trim()) && SNOWFLAKE_RE.test(t.roleId.trim());
+    case "TELEGRAM_JOIN":
+      return TELEGRAM_CHAT_RE.test(t.chatId.trim());
+    case "GITHUB_STAR":
+      return GITHUB_OWNER_RE.test(t.owner.trim()) && GITHUB_REPO_RE.test(t.repo.trim());
+  }
 }
 
 /**
@@ -235,7 +266,7 @@ export default function NewQuestPage() {
                   )}
                 </div>
 
-                {t.kind === "LINK_VISIT" ? (
+                {t.kind === "LINK_VISIT" && (
                   <div className="flex gap-2">
                     <input
                       aria-label={`Task ${i + 1} URL`}
@@ -252,7 +283,9 @@ export default function NewQuestPage() {
                       onChange={(e) => setTask(t.id, { label: e.target.value })}
                     />
                   </div>
-                ) : (
+                )}
+
+                {(t.kind === "DISCORD_JOIN" || t.kind === "DISCORD_ROLE") && (
                   <div className="space-y-2">
                     <div className="flex gap-2">
                       <input
@@ -283,6 +316,54 @@ export default function NewQuestPage() {
                       Verification uses the platform bot — it must be installed on
                       this server (Server Settings → enable Developer Mode to copy
                       ids).
+                    </p>
+                  </div>
+                )}
+
+                {t.kind === "TELEGRAM_JOIN" && (
+                  <div className="space-y-2">
+                    <input
+                      aria-label={`Task ${i + 1} chat id`}
+                      className={`${inputCls} font-mono`}
+                      placeholder="@channelname or numeric chat id"
+                      value={t.chatId}
+                      onChange={(e) => setTask(t.id, { chatId: e.target.value })}
+                    />
+                    <input
+                      aria-label={`Task ${i + 1} invite URL`}
+                      className={inputCls}
+                      placeholder="https://t.me/… (invite shown to recipients)"
+                      value={t.inviteUrl}
+                      onChange={(e) => setTask(t.id, { inviteUrl: e.target.value })}
+                    />
+                    <p className="text-[10px] text-ink/50 leading-snug">
+                      Verification uses the admin bot — it must be an admin of
+                      this channel/group.
+                    </p>
+                  </div>
+                )}
+
+                {t.kind === "GITHUB_STAR" && (
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <input
+                        aria-label={`Task ${i + 1} repo owner`}
+                        className={`${inputCls} font-mono`}
+                        placeholder="owner (e.g. tokamak-network)"
+                        value={t.owner}
+                        onChange={(e) => setTask(t.id, { owner: e.target.value })}
+                      />
+                      <input
+                        aria-label={`Task ${i + 1} repo name`}
+                        className={`${inputCls} font-mono`}
+                        placeholder="repo (e.g. scatter-drop)"
+                        value={t.repo}
+                        onChange={(e) => setTask(t.id, { repo: e.target.value })}
+                      />
+                    </div>
+                    <p className="text-[10px] text-ink/50 leading-snug">
+                      Verified with the recipient&apos;s own GitHub token — the
+                      repo must be public.
                     </p>
                   </div>
                 )}

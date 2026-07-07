@@ -6,9 +6,13 @@
 
 import type { OAuthAdapter } from "./types";
 import { discordOAuth } from "./discord";
+import { telegramOAuth } from "./telegram";
+import { githubOAuth } from "./github";
 
 const PROVIDERS: Record<string, OAuthAdapter> = {
   discord: discordOAuth,
+  telegram: telegramOAuth,
+  github: githubOAuth,
 };
 
 export function oauthProviderFor(provider: string): OAuthAdapter | null {

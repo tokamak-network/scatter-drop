@@ -37,7 +37,9 @@ export const discordOAuth: OAuthAdapter = {
     return url.toString();
   },
 
-  async fetchUser(code, redirectUri) {
+  async fetchUser(params, redirectUri) {
+    const code = params.get("code");
+    if (!code) return { error: "Discord did not return an authorization code" };
     try {
       const tokenRes = await fetch(`${DISCORD_API}/oauth2/token`, {
         method: "POST",
