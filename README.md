@@ -74,10 +74,17 @@ Stand up an anvil fork of Sepolia with the real zk-X509 registries, deploy a Dro
 campaign, and wire the web app:
 
 ```bash
+# one-time DB init (Prisma needs DATABASE_URL + a pushed schema before any seed)
+[ -f apps/web/.env ] || echo 'DATABASE_URL="file:./dev.db"' > apps/web/.env
+pnpm --filter @scatter-drop/web db:push      # apply the schema (creates the tables)
+
 scripts/dev-fork.sh                          # anvil fork + deploy + seed (+ writes apps/web/.env.local)
-node apps/web/prisma/seed.mjs                # re-seed the network registry after each redeploy
+pnpm --filter @scatter-drop/web db:seed      # re-seed the network registry after each redeploy
 pnpm --filter @scatter-drop/web dev          # → http://localhost:3000
 ```
+
+The fork runs on chain-id `31337` by default (not Sepolia's real `11155111`) so a wallet can't
+silently broadcast to the live network; override with `FORK_CHAIN_ID` if needed.
 
 The app resolves the DropFactory from the DB registry, so re-run the seed after every `dev-fork.sh`
 redeploy. See [`docs/LOCAL-TESTING.md`](docs/LOCAL-TESTING.md) for details.
