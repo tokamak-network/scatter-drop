@@ -2,10 +2,11 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import { useAccount, useChainId, useChains } from "wagmi";
 import { zeroAddress } from "viem";
 import { airdropTypeLabel } from "@tokamak-network/scatter-drop-sdk";
-import { AlertCircle, ArrowLeft, Clock, Loader2 } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowUpRight, Clock, ListChecks, Loader2 } from "lucide-react";
 import { CopyButton } from "@/components/CopyButton";
 import { GatePreview } from "@/components/GatePreview";
 import { IdentityGate } from "@/components/IdentityGate";
@@ -16,6 +17,7 @@ import { useGateState } from "@/lib/contracts";
 import { fmtUnixDateTime, useCampaign } from "@/lib/campaigns";
 import { chainLabel, explorerUrl } from "@/lib/explorer";
 import { ipfsUrl, useProofsAnchorCid } from "@/lib/proofs";
+import { getQuestForDrop } from "@/lib/quests";
 import { ClaimPanel } from "./ClaimPanel";
 import { RecipientsList } from "./RecipientsList";
 
@@ -37,6 +39,16 @@ export default function CampaignDetailPage({
   const chains = useChains();
   const currentChain = chains.find((c) => c.id === chainId);
   const { data: proofsCid } = useProofsAnchorCid(campaign ?? undefined);
+  // Quest campaigns (docs/SOCIAL-TASK-DESIGN.md §9-3) are a separate
+  // pre-createDrop recipient-list stage, not bound to this on-chain campaign
+  // — so surface the link only when one exists for this exact (chainId, drop)
+  // vault, rather than assuming every campaign has a quest.
+  const { data: quest } = useQuery({
+    queryKey: ["questForDrop", chainId, campaign?.drop],
+    queryFn: () => getQuestForDrop(chainId, campaign!.drop),
+    enabled: !!campaign?.drop,
+    staleTime: 60_000,
+  });
 
   if (isPending) {
     return (
@@ -172,6 +184,24 @@ export default function CampaignDetailPage({
               </div>
             </div>
           </div>
+
+          {quest && (
+            <Link
+              href={`/q/${quest.id}`}
+              className={`flex items-center justify-between gap-3 bg-pop-mint/30 p-4 hover:bg-pop-mint/50 transition ${POP_PANEL}`}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <ListChecks className="w-5 h-5 text-ink shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-sm font-bold text-ink truncate">{quest.title}</div>
+                  <div className="text-xs text-ink/60">
+                    Complete this campaign&apos;s tasks to qualify for the recipient list
+                  </div>
+                </div>
+              </div>
+              <ArrowUpRight className="w-4 h-4 text-ink/60 shrink-0" />
+            </Link>
+          )}
 
           <TimelineCard
             startUnix={campaign.startTimeUnix}
