@@ -5,6 +5,11 @@ import { prisma } from "@/lib/db";
 export interface SessionData {
   nonce?: string;
   address?: string; // lowercased, set after a successful SIWE verify
+  // In-flight social OAuth (quests): CSRF state + where to land afterwards.
+  // Session-stored so the callback can only complete a flow this browser
+  // started (docs/SOCIAL-TASK-DESIGN.md §4②).
+  oauthState?: string;
+  oauthReturnTo?: string;
 }
 
 const cookieName = "scatterdrop_session";

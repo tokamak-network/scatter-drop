@@ -3,7 +3,15 @@
 import Link from "next/link";
 import { useAccount } from "wagmi";
 import { airdropTypeLabel } from "@tokamak-network/scatter-drop-sdk";
-import { AlertCircle, BarChart3, ChevronRight, Loader2, Megaphone, Plus } from "lucide-react";
+import {
+  AlertCircle,
+  BarChart3,
+  ChevronRight,
+  ClipboardCheck,
+  Loader2,
+  Megaphone,
+  Plus,
+} from "lucide-react";
 import { ConnectGate } from "@/components/ConnectGate";
 import { inkBtnClass, POP_CARD, POP_CHIP, whiteBtnClass } from "@/components/pop";
 import { EmptyBox } from "@/components/states";
@@ -25,6 +33,12 @@ export default function ManagePage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Link
+            href="/manage/quests"
+            className={`text-xs flex items-center gap-1.5 ${whiteBtnClass("lg")}`}
+          >
+            <ClipboardCheck className="w-4 h-4" /> Quests
+          </Link>
           <Link
             href="/manage/announcements/new"
             className={`text-xs flex items-center gap-1.5 ${whiteBtnClass("lg")}`}
